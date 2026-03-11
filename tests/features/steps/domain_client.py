@@ -193,9 +193,9 @@ def then_can_send_commands(domain_client_context):
 
 @then("I should receive a CommandResponse")
 def then_receive_command_response(domain_client_context):
-    assert domain_client_context["command_response"] is not None, (
-        "Should receive a CommandResponse"
-    )
+    assert (
+        domain_client_context["command_response"] is not None
+    ), "Should receive a CommandResponse"
 
 
 @then(parsers.parse("I should receive {count:d} EventPages"))
@@ -207,21 +207,21 @@ def then_receive_event_pages(domain_client_context, count):
 
 @then("both operations should succeed on the same connection")
 def then_both_operations_succeed(domain_client_context):
-    assert domain_client_context["command_response"] is not None, (
-        "Command should have succeeded"
-    )
-    assert domain_client_context["query_response"] is not None, (
-        "Query should have succeeded"
-    )
+    assert (
+        domain_client_context["command_response"] is not None
+    ), "Command should have succeeded"
+    assert (
+        domain_client_context["query_response"] is not None
+    ), "Query should have succeeded"
 
 
 @then("subsequent commands should fail with ConnectionError")
 def then_subsequent_commands_fail(domain_client_context):
     assert domain_client_context["closed"], "Client should be closed"
     when_send_command(domain_client_context)
-    assert domain_client_context["error"] is not None, (
-        "Commands should fail after close"
-    )
+    assert (
+        domain_client_context["error"] is not None
+    ), "Commands should fail after close"
 
 
 @then("subsequent queries should fail with ConnectionError")

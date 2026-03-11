@@ -70,9 +70,9 @@ def when_connect_to(connection_context, endpoint):
 
 @then("the connection should succeed")
 def then_connection_succeeds(connection_context):
-    assert connection_context["connection_succeeded"], (
-        f"Connection should succeed, got error: {connection_context.get('error')}"
-    )
+    assert connection_context[
+        "connection_succeeded"
+    ], f"Connection should succeed, got error: {connection_context.get('error')}"
 
 
 @then("the client should be ready for operations")

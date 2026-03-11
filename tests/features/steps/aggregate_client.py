@@ -201,9 +201,9 @@ def then_handler_should_be_invoked(aggregate_context, handler_name, request):
     """Check if handler was invoked. Works with aggregate_context, router_context, or state_context."""
     # Check aggregate_context first (for aggregate scenarios)
     if aggregate_context.get("invoked_handlers"):
-        assert handler_name in aggregate_context["invoked_handlers"], (
-            f"Handler {handler_name} was not invoked. Invoked: {aggregate_context['invoked_handlers']}"
-        )
+        assert (
+            handler_name in aggregate_context["invoked_handlers"]
+        ), f"Handler {handler_name} was not invoked. Invoked: {aggregate_context['invoked_handlers']}"
         return
 
     # Try router_context (for router scenarios)
@@ -233,9 +233,9 @@ def then_handler_should_not_be_invoked(aggregate_context, handler_name, request)
     """Check handler NOT invoked. Works with aggregate_context or router_context."""
     # Check aggregate_context first
     if aggregate_context.get("invoked_handlers"):
-        assert handler_name not in aggregate_context["invoked_handlers"], (
-            f"Handler {handler_name} was invoked but should not have been"
-        )
+        assert (
+            handler_name not in aggregate_context["invoked_handlers"]
+        ), f"Handler {handler_name} was invoked but should not have been"
         return
 
     # Try router_context
@@ -808,9 +808,9 @@ def when_execute_to_domain(client_context, domain):
 
 @then("the command should succeed")
 def then_command_succeeds(client_context):
-    assert client_context.get("error") is None, (
-        f"Expected success but got error: {client_context.get('error')}"
-    )
+    assert (
+        client_context.get("error") is None
+    ), f"Expected success but got error: {client_context.get('error')}"
     assert client_context.get("response") is not None, "Expected response"
 
 
@@ -819,9 +819,9 @@ def then_command_succeeds(client_context):
 def then_response_contains_events(client_context, count):
     response = client_context["response"]
     assert response is not None, "No response"
-    assert response.event_count == count, (
-        f"Expected {count} events, got {response.event_count}"
-    )
+    assert (
+        response.event_count == count
+    ), f"Expected {count} events, got {response.event_count}"
 
 
 @then(parsers.parse('the event should have type "{event_type}"'))
@@ -902,17 +902,17 @@ def then_error_describes_missing_field(client_context):
 
 @then("the command should fail")
 def then_command_should_fail(client_context):
-    assert client_context.get("error") is not None, (
-        "Expected command to fail with error"
-    )
+    assert (
+        client_context.get("error") is not None
+    ), "Expected command to fail with error"
 
 
 @then("the error should indicate unknown domain")
 def then_error_indicates_unknown_domain(client_context):
     error_msg = str(client_context["error"]).lower()
-    assert "domain" in error_msg or "not found" in error_msg, (
-        f"Expected domain error, got: {client_context['error']}"
-    )
+    assert (
+        "domain" in error_msg or "not found" in error_msg
+    ), f"Expected domain error, got: {client_context['error']}"
 
 
 # ==========================================================================

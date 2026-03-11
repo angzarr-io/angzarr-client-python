@@ -320,9 +320,9 @@ def when_attempt_query(query_context):
 def then_receive_event_book_with_count(query_context, count):
     result = query_context.get("result")
     assert result is not None, "Should have a result"
-    assert len(result.pages) == count, (
-        f"Expected {count} events, got {len(result.pages)}"
-    )
+    assert (
+        len(result.pages) == count
+    ), f"Expected {count} events, got {len(result.pages)}"
 
 
 @then(parsers.parse("the next_sequence should be {seq:d}"))
@@ -338,9 +338,9 @@ def then_events_in_sequence_order(query_context, start, end):
     result = query_context.get("result")
     assert result is not None
     for i, page in enumerate(result.pages):
-        assert page.header.sequence == start + i, (
-            f"Expected sequence {start + i}, got {page.header.sequence}"
-        )
+        assert (
+            page.header.sequence == start + i
+        ), f"Expected sequence {start + i}, got {page.header.sequence}"
 
 
 @then(parsers.parse('the first event should have type "{event_type}"'))

@@ -469,9 +469,9 @@ def then_command_fails_with_status(merge_context, status):
 def then_error_message_contains(merge_context, message):
     result = merge_context.get("result")
     assert result is not None
-    assert message in result.error_message, (
-        f"Expected '{message}' in '{result.error_message}'"
-    )
+    assert (
+        message in result.error_message
+    ), f"Expected '{message}' in '{result.error_message}'"
 
 
 @then("no events are persisted")
