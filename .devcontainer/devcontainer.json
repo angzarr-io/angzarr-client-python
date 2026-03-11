@@ -1,0 +1,38 @@
+{
+  "name": "angzarr-client-python",
+  "build": {
+    "dockerfile": "Containerfile",
+    "context": ".."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-python.black-formatter",
+        "cucumberopen.cucumber-official"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": true,
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter"
+        }
+      }
+    }
+  },
+  "postCreateCommand": "uv sync --dev && just sync-features",
+  "containerEnv": {
+    "DEVCONTAINER": "true"
+  },
+  "mounts": [],
+  "remoteUser": "vscode"
+}

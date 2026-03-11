@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: read
   id-token: write
 
 jobs:
@@ -33,27 +34,19 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     needs: validate
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "0.5.14"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install buf
-        uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Generate protos
         run: |
           buf generate
-          uv run python scripts/generate_protos.py || true
+          python scripts/generate_protos.py || true
 
       - name: Build package
         run: uv build
