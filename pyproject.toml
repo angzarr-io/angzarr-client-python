@@ -71,4 +71,9 @@ exclude = [
 ]
 
 [tool.black]
-exclude = "angzarr_client/proto"
+extend-exclude = '''
+(
+    angzarr_client/proto
+    | \.venv
+)
+'''
