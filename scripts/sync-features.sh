@@ -1,27 +1,15 @@
-#!/usr/bin/env bash
-# Sync feature files from angzarr core repository.
-#
-# This script downloads the client feature files from the angzarr core repo
-# and places them in the features/ directory for testing.
+#!/bin/bash
+# Sync feature files from angzarr core repo
+# Assumes angzarr core is cloned at ../angzarr or ANGZARR_CORE_PATH is set
 
-set -euo pipefail
+CORE=${ANGZARR_CORE_PATH:-"../angzarr"}
 
-REPO="angzarr-io/angzarr"
-BRANCH="${1:-main}"
-FEATURES_DIR="features"
+if [ ! -d "$CORE/features/client" ]; then
+    echo "Error: Cannot find angzarr core at $CORE"
+    echo "Clone it or set ANGZARR_CORE_PATH"
+    exit 1
+fi
 
-echo "Syncing feature files from $REPO ($BRANCH)..."
-
-# Create features directory if it doesn't exist
-mkdir -p "$FEATURES_DIR"
-
-# Download feature files using GitHub API
-curl -sL "https://api.github.com/repos/$REPO/contents/features/client?ref=$BRANCH" | \
-    jq -r '.[] | select(.type == "file") | .download_url' | \
-    while read -r url; do
-        filename=$(basename "$url")
-        echo "  Downloading $filename..."
-        curl -sL "$url" -o "$FEATURES_DIR/$filename"
-    done
-
-echo "Done. Feature files synced to $FEATURES_DIR/"
+mkdir -p features
+cp -r "$CORE/features/client/"*.feature features/ 2>/dev/null || true
+echo "Features synced from $CORE"
