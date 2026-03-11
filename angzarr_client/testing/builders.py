@@ -76,11 +76,9 @@ def make_event_page(
     Returns:
         EventPage proto
     """
-    return EventPage(
-        sequence=sequence,
-        event=event,
-        created_at=_now(),
-    )
+    page = EventPage(event=event, created_at=_now())
+    page.header.sequence = sequence
+    return page
 
 
 def make_event_book(
@@ -116,10 +114,9 @@ def make_command_page(sequence: int, command: ProtoAny) -> CommandPage:
     Returns:
         CommandPage proto
     """
-    return CommandPage(
-        sequence=sequence,
-        command=command,
-    )
+    page = CommandPage(command=command)
+    page.header.sequence = sequence
+    return page
 
 
 def make_command_book(

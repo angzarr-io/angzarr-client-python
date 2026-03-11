@@ -33,15 +33,14 @@ def new_event_book(
     Returns:
         An EventBook containing one page with the event.
     """
+    page = angzarr.EventPage(
+        event=event,
+        created_at=_now_timestamp(),
+    )
+    page.header.sequence = seq
     return angzarr.EventBook(
         cover=command_book.cover,
-        pages=[
-            angzarr.EventPage(
-                sequence=seq,
-                event=event,
-                created_at=_now_timestamp(),
-            ),
-        ],
+        pages=[page],
     )
 
 
@@ -61,14 +60,11 @@ def new_event_book_multi(
         An EventBook containing one page per event with sequential numbering.
     """
     now = _now_timestamp()
-    pages = [
-        angzarr.EventPage(
-            sequence=start_seq + i,
-            event=event,
-            created_at=now,
-        )
-        for i, event in enumerate(events)
-    ]
+    pages = []
+    for i, event in enumerate(events):
+        page = angzarr.EventPage(event=event, created_at=now)
+        page.header.sequence = start_seq + i
+        pages.append(page)
     return angzarr.EventBook(
         cover=command_book.cover,
         pages=pages,

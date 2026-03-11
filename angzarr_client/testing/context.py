@@ -71,13 +71,9 @@ class ScenarioContext:
         """
         pages = []
         for i, event_any in enumerate(self.events):
-            pages.append(
-                EventPage(
-                    sequence=i,
-                    event=event_any,
-                    created_at=now(),
-                )
-            )
+            page = EventPage(event=event_any, created_at=now())
+            page.header.sequence = i
+            pages.append(page)
         return EventBook(
             cover=Cover(
                 domain=self.domain,
