@@ -379,9 +379,9 @@ def _try_build(ctx):
             cover.root.value = ctx["root"].bytes
 
         page = types_pb2.CommandPage(
-            sequence=ctx.get("sequence") or 0,
             merge_strategy=types_pb2.MERGE_COMMUTATIVE,
         )
+        page.header.sequence = ctx.get("sequence") or 0
         type_name = ctx.get("type_name", "TestCommand")
         page.command.CopyFrom(
             Any(

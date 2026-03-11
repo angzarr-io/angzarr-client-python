@@ -30,20 +30,16 @@ def decode_context():
 
 def make_event_page(seq, type_url, data=b""):
     """Create a test EventPage."""
-    page = types_pb2.EventPage(
-        sequence=seq,
-        created_at=Timestamp(),
-    )
+    page = types_pb2.EventPage(created_at=Timestamp())
+    page.header.sequence = seq
     page.event.CopyFrom(Any(type_url=type_url, value=data))
     return page
 
 
 def make_external_page(seq, uri="s3://bucket/key"):
     """Create an EventPage with external payload."""
-    page = types_pb2.EventPage(
-        sequence=seq,
-        created_at=Timestamp(),
-    )
+    page = types_pb2.EventPage(created_at=Timestamp())
+    page.header.sequence = seq
     page.external.CopyFrom(
         types_pb2.PayloadReference(
             storage_type=types_pb2.PAYLOAD_STORAGE_TYPE_S3,
@@ -146,10 +142,8 @@ def given_corrupted_bytes(decode_context):
 
 @given("an EventPage with payload = None")
 def given_none_payload(decode_context):
-    page = types_pb2.EventPage(
-        sequence=0,
-        created_at=Timestamp(),
-    )
+    page = types_pb2.EventPage(created_at=Timestamp())
+    page.header.sequence = 0
     decode_context["event_page"] = page
 
 

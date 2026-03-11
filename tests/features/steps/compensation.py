@@ -102,9 +102,9 @@ def make_command_book(
         cover.root.value = uuid.uuid4().bytes
 
     page = types_pb2.CommandPage(
-        sequence=0,
         merge_strategy=types_pb2.MERGE_COMMUTATIVE,
     )
+    page.header.sequence = 0
     page.command.CopyFrom(Any(type_url=type_url, value=b"test"))
 
     cmd = types_pb2.CommandBook(cover=cover)

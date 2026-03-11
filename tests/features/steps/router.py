@@ -42,10 +42,8 @@ def make_event_page(seq, type_url, data=""):
     from google.protobuf.any_pb2 import Any
     from google.protobuf.timestamp_pb2 import Timestamp
 
-    page = types_pb2.EventPage(
-        sequence=seq,
-        created_at=Timestamp(),
-    )
+    page = types_pb2.EventPage(created_at=Timestamp())
+    page.header.sequence = seq
     page.event.CopyFrom(Any(type_url=type_url, value=data.encode()))
     return page
 
@@ -57,10 +55,8 @@ def make_command_book(domain, type_url, data="", seq=0):
     cover = types_pb2.Cover(domain=domain)
     cover.root.value = uuid.uuid4().bytes
 
-    page = types_pb2.CommandPage(
-        sequence=seq,
-        merge_strategy=types_pb2.MERGE_COMMUTATIVE,
-    )
+    page = types_pb2.CommandPage(merge_strategy=types_pb2.MERGE_COMMUTATIVE)
+    page.header.sequence = seq
     page.command.CopyFrom(Any(type_url=type_url, value=data.encode()))
 
     cmd = types_pb2.CommandBook(cover=cover)
