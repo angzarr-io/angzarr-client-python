@@ -39,6 +39,7 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
     needs: validate
     steps:
       - uses: actions/checkout@v4
