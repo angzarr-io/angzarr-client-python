@@ -63,3 +63,11 @@ testpaths = ["tests"]
 paths_to_mutate = ["angzarr_client/builder.py", "angzarr_client/client.py", "angzarr_client/errors.py", "angzarr_client/helpers.py", "angzarr_client/wrappers.py"]
 pytest_add_cli_args_test_selection = ["tests/"]
 also_copy = ["angzarr_client/proto", "angzarr_client/__init__.py"]
+
+[tool.ruff]
+exclude = [
+    "angzarr_client/proto",
+]
+
+[tool.black]
+exclude = "angzarr_client/proto"

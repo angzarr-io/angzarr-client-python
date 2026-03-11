@@ -327,7 +327,7 @@ class ProcessManager(Generic[StateT], ABC):
             method_name,
             event_type,
             _,
-            output_domain,
+            handler_domain,
         ) in self._dispatch_table.items():
             # Match exact type name (preceded by . or /) to avoid false matches
             if type_url.endswith(f".{suffix}") or type_url.endswith(f"/{suffix}"):
@@ -347,7 +347,7 @@ class ProcessManager(Generic[StateT], ABC):
                     result = method(event)
 
                 # Pack result into CommandBooks
-                return self._pack_commands(result, output_domain, root, correlation_id)
+                return self._pack_commands(result, handler_domain, root, correlation_id)
 
         return []
 

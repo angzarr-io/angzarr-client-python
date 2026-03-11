@@ -7,9 +7,6 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 
-# Type variable for generic message type
-T = TypeVar("T", bound=Message)
-
 from .errors import InvalidTimestampError
 from .proto.angzarr import (
     UUID,
@@ -24,6 +21,9 @@ from .proto.angzarr import (
     SequenceRange,
     TemporalQuery,
 )
+
+# Type variable for generic message type
+T = TypeVar("T", bound=Message)
 
 # Constants matching Rust proto_ext::constants
 UNKNOWN_DOMAIN = "unknown"

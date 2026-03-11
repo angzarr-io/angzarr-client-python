@@ -37,19 +37,18 @@ import inspect
 from abc import ABC
 from typing import Callable, Optional
 
-from google.protobuf.any_pb2 import Any
 from google.protobuf.message import Message
 
-from .helpers import TYPE_URL_PREFIX
 from .proto.angzarr import types_pb2 as types
 from .proto.angzarr.cloudevents_pb2 import CloudEvent, CloudEventsResponse
-from .router import domain
+from .router import domain  # noqa: F401 - re-exported for convenience
 
 __all__ = [
     "CloudEvent",
     "CloudEventsProjector",
     "CloudEventsRouter",
     "CloudEventsResponse",
+    "domain",
 ]
 
 
