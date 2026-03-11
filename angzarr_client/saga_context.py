@@ -18,7 +18,7 @@ Example usage:
 
 from __future__ import annotations
 
-from .helpers import next_sequence, root_id_hex
+from .helpers import next_sequence
 from .proto.angzarr import types_pb2 as types
 
 __all__ = ["SagaContext"]

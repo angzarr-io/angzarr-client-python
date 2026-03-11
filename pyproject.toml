@@ -67,6 +67,7 @@ also_copy = ["angzarr_client/proto", "angzarr_client/__init__.py"]
 [tool.ruff]
 exclude = [
     "angzarr_client/proto",
+    "tests/",
 ]
 
 [tool.black]

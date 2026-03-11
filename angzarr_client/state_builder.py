@@ -14,6 +14,7 @@ from typing import Generic, TypeVar
 from google.protobuf.any_pb2 import Any as AnyProto
 
 from .helpers import TYPE_URL_PREFIX
+from .proto.angzarr import command_handler_pb2 as command_handler
 from .proto.angzarr import types_pb2 as types
 
 S = TypeVar("S")
