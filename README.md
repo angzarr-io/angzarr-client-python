@@ -248,4 +248,4 @@ client.close()
 
 ## License
 
-AGPL-3.0-only
+BSD-3-Clause
