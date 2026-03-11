@@ -175,8 +175,10 @@ class TestCommandBookW:
     def test_pages_returns_wrapped_list(self) -> None:
         """pages returns command pages as wrapped CommandPageW instances."""
         proto = CommandBook()
-        page1 = CommandPage(sequence=1)
-        page2 = CommandPage(sequence=2)
+        page1 = CommandPage()
+        page1.header.sequence = 1
+        page2 = CommandPage()
+        page2.header.sequence = 2
         proto.pages.extend([page1, page2])
         wrapper = CommandBookW(proto)
         result = wrapper.pages()
@@ -383,13 +385,16 @@ class TestCommandPageW:
 
     def test_constructor_accepts_proto(self) -> None:
         """Wrapper accepts CommandPage proto in constructor."""
-        proto = CommandPage(sequence=10)
+        proto = CommandPage()
+        proto.header.sequence = 10
         wrapper = CommandPageW(proto)
         assert wrapper.proto is proto
 
     def test_sequence_returns_value(self) -> None:
         """sequence returns the sequence field."""
-        wrapper = CommandPageW(CommandPage(sequence=42))
+        proto = CommandPage()
+        proto.header.sequence = 42
+        wrapper = CommandPageW(proto)
         assert wrapper.sequence() == 42
 
 

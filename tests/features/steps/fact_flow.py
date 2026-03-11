@@ -49,7 +49,7 @@ class MockAggregate:
 
     def add_event(self, event_type, event_data=None):
         event = types_pb2.EventPage()
-        event.sequence = self.next_sequence
+        event.header.sequence = self.next_sequence
         event.event.Pack(Empty())
         self.events.append(event)
         self.next_sequence += 1

@@ -47,7 +47,9 @@ def make_event_book(domain="test", events=None, snapshot=None):
     if snapshot:
         book.snapshot.CopyFrom(snapshot)
     # Calculate next_sequence from actual sequence numbers
-    max_event_seq = max((e.sequence for e in events), default=-1) if events else -1
+    max_event_seq = (
+        max((e.header.sequence for e in events), default=-1) if events else -1
+    )
     snap_seq = snapshot.sequence if snapshot else -1
     book.next_sequence = max(max_event_seq, snap_seq) + 1
     return book
@@ -55,10 +57,8 @@ def make_event_book(domain="test", events=None, snapshot=None):
 
 def make_event_page(seq, type_url, data=b""):
     """Create a test EventPage."""
-    page = types_pb2.EventPage(
-        sequence=seq,
-        created_at=Timestamp(),
-    )
+    page = types_pb2.EventPage(created_at=Timestamp())
+    page.header.sequence = seq
     page.event.CopyFrom(Any(type_url=type_url, value=data))
     return page
 
@@ -460,7 +460,7 @@ def then_only_events(state_context, events):
 @then(parsers.parse("events at seq {a:d} and {b:d} should NOT be applied"))
 def then_events_not_applied(state_context, a, b):
     applied = state_context.get("events_applied", [])
-    seqs = [e.sequence for e in applied]
+    seqs = [e.header.sequence for e in applied]
     assert a not in seqs
     assert b not in seqs
 
@@ -468,7 +468,7 @@ def then_events_not_applied(state_context, a, b):
 @then(parsers.parse("only events at seq {a:d} and {b:d} should be applied"))
 def then_only_seqs_applied(state_context, a, b):
     applied = state_context.get("events_applied", [])
-    seqs = [e.sequence for e in applied]
+    seqs = [e.header.sequence for e in applied]
     assert a in seqs
     assert b in seqs
 

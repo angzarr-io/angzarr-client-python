@@ -95,15 +95,15 @@ def pack_event(
     event_any = Any()
     event_any.Pack(event, type_url_prefix=type_url_prefix)
 
+    page = angzarr.EventPage(
+        event=event_any,
+        created_at=_now_timestamp(),
+    )
+    page.header.sequence = seq
+
     return angzarr.EventBook(
         cover=cover,
-        pages=[
-            angzarr.EventPage(
-                sequence=seq,
-                event=event_any,
-                created_at=_now_timestamp(),
-            ),
-        ],
+        pages=[page],
     )
 
 
@@ -128,13 +128,12 @@ def pack_events(
     for i, event in enumerate(events):
         event_any = Any()
         event_any.Pack(event, type_url_prefix=type_url_prefix)
-        pages.append(
-            angzarr.EventPage(
-                sequence=start_seq + i,
-                event=event_any,
-                created_at=_now_timestamp(),
-            ),
+        page = angzarr.EventPage(
+            event=event_any,
+            created_at=_now_timestamp(),
         )
+        page.header.sequence = start_seq + i
+        pages.append(page)
 
     return angzarr.EventBook(
         cover=cover,

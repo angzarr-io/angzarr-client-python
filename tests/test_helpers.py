@@ -474,12 +474,14 @@ class TestCommandBookHelpers:
     def test_command_pages_returns_list(self) -> None:
         """command_pages returns pages as list."""
         book = CommandBook()
-        page1 = CommandPage(sequence=1)
-        page2 = CommandPage(sequence=2)
+        page1 = CommandPage()
+        page1.header.sequence = 1
+        page2 = CommandPage()
+        page2.header.sequence = 2
         book.pages.extend([page1, page2])
         result = command_pages(book)
         assert len(result) == 2
-        assert result[0].sequence == 1
+        assert result[0].header.sequence == 1
 
     def test_command_pages_none_returns_empty(self) -> None:
         """command_pages returns empty list for None."""
@@ -676,7 +678,7 @@ class TestConstructionHelpers:
         book = new_command_book(cover, pages)
         assert book.cover.domain == "orders"
         assert len(book.pages) == 1
-        assert book.pages[0].sequence == 0
+        assert book.pages[0].header.sequence == 0
 
     def test_range_selection_lower_only(self) -> None:
         """range_selection with lower bound only."""

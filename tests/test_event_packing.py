@@ -22,7 +22,7 @@ def test_pack_event_preserves_sequence():
     event = Timestamp(seconds=1000)
     book = pack_event(_cover(), event, seq=42)
 
-    assert book.pages[0].sequence == 42
+    assert book.pages[0].header.sequence == 42
 
 
 def test_pack_event_sets_created_at():

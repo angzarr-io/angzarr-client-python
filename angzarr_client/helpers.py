@@ -460,7 +460,8 @@ def new_cover(
 
 def new_command_page(sequence: int, command: ProtoAny) -> CommandPage:
     """Create a command page from a sequence and Any message."""
-    page = CommandPage(sequence=sequence)
+    page = CommandPage()
+    page.header.sequence = sequence
     page.command.CopyFrom(command)
     return page
 

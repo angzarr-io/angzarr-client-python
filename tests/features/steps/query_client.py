@@ -364,7 +364,7 @@ def then_first_event_has_sequence(query_context, seq):
     result = query_context.get("result")
     assert result is not None
     assert len(result.pages) > 0
-    assert result.pages[0].sequence == seq
+    assert result.pages[0].header.sequence == seq
 
 
 @then(parsers.parse("the last event should have sequence {seq:d}"))
@@ -372,7 +372,7 @@ def then_last_event_has_sequence(query_context, seq):
     result = query_context.get("result")
     assert result is not None
     assert len(result.pages) > 0
-    assert result.pages[-1].sequence == seq
+    assert result.pages[-1].header.sequence == seq
 
 
 @then("I should receive events up to that timestamp")

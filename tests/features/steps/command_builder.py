@@ -269,7 +269,7 @@ def then_command_has_correlation_id(command_context, expected):
 def then_command_has_sequence(command_context, expected):
     cmd = command_context["built_command"]
     assert cmd is not None, "command not built"
-    assert cmd.pages[0].sequence == expected
+    assert cmd.pages[0].header.sequence == expected
 
 
 @then("building should fail")
@@ -299,7 +299,7 @@ def then_chained_values_preserved(command_context):
     cmd = command_context["built_command"]
     assert cmd is not None
     assert cmd.cover.correlation_id == "trace-456"
-    assert cmd.pages[0].sequence == 3
+    assert cmd.pages[0].header.sequence == 3
 
 
 @then("the command should be sent to the gateway")
