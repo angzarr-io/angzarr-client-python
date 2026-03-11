@@ -145,13 +145,14 @@ class TestEventBookW:
         assert wrapper.routing_key() == "inventory"
 
     def test_cache_key_returns_domain_and_root(self) -> None:
-        """cache_key returns domain:root_hex format."""
+        """cache_key returns edition:domain:root_hex format."""
         test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
         proto = EventBook()
         proto.cover.domain = "orders"
         proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
         wrapper = EventBookW(proto)
-        assert wrapper.cache_key() == f"orders:{test_uuid.bytes.hex()}"
+        # Default edition is "angzarr"
+        assert wrapper.cache_key() == f"angzarr:orders:{test_uuid.bytes.hex()}"
 
     def test_cover_wrapper_returns_cover_w(self) -> None:
         """cover_wrapper returns a CoverW wrapping the cover."""
@@ -308,12 +309,13 @@ class TestCoverW:
         assert wrapper.routing_key() == "payments"
 
     def test_cache_key_format(self) -> None:
-        """cache_key returns domain:root_hex format."""
+        """cache_key returns edition:domain:root_hex format."""
         test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
         proto = Cover(domain="inventory")
         proto.root.CopyFrom(uuid_to_proto(test_uuid))
         wrapper = CoverW(proto)
-        expected = f"inventory:{test_uuid.bytes.hex()}"
+        # Default edition is "angzarr"
+        expected = f"angzarr:inventory:{test_uuid.bytes.hex()}"
         assert wrapper.cache_key() == expected
 
 
@@ -411,7 +413,8 @@ class TestCommandResponseW:
         """events_book returns EventBookW when present."""
         proto = CommandResponse()
         proto.events.next_sequence = 5
-        proto.events.pages.add(sequence=1)
+        page = proto.events.pages.add()
+        page.header.sequence = 1
         wrapper = CommandResponseW(proto)
         book = wrapper.events_book()
         assert book is not None
@@ -426,8 +429,10 @@ class TestCommandResponseW:
     def test_events_returns_wrapped_pages_when_present(self) -> None:
         """events returns event pages as wrapped EventPageW instances."""
         proto = CommandResponse()
-        proto.events.pages.add(sequence=1)
-        proto.events.pages.add(sequence=2)
+        page1 = proto.events.pages.add()
+        page1.header.sequence = 1
+        page2 = proto.events.pages.add()
+        page2.header.sequence = 2
         wrapper = CommandResponseW(proto)
         result = wrapper.events()
         assert len(result) == 2

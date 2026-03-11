@@ -285,17 +285,19 @@ class TestCacheKey:
     """Tests for cache_key function."""
 
     def test_returns_domain_and_root(self) -> None:
-        """Cache key combines domain and root hex."""
+        """Cache key combines edition, domain and root hex."""
         test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
         cover = Cover(domain="orders")
         cover.root.CopyFrom(uuid_to_proto(test_uuid))
         result = cache_key(cover)
-        assert result == f"orders:{test_uuid.bytes.hex()}"
+        # Default edition is "angzarr"
+        assert result == f"angzarr:orders:{test_uuid.bytes.hex()}"
 
     def test_returns_domain_with_empty_root(self) -> None:
         """Cache key with no root has empty suffix."""
         cover = Cover(domain="orders")
-        assert cache_key(cover) == "orders:"
+        # Default edition is "angzarr"
+        assert cache_key(cover) == "angzarr:orders:"
 
 
 class TestUuidConversion:
@@ -507,8 +509,10 @@ class TestEventsFromResponse:
         from angzarr_client.proto.angzarr import CommandResponse
 
         resp = CommandResponse()
-        resp.events.pages.add(sequence=1)
-        resp.events.pages.add(sequence=2)
+        page1 = resp.events.pages.add()
+        page1.header.sequence = 1
+        page2 = resp.events.pages.add()
+        page2.header.sequence = 2
         result = events_from_response(resp)
         assert len(result) == 2
 

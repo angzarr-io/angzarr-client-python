@@ -60,9 +60,7 @@ def make_event_book(type_url, correlation_id, root_bytes):
         pages=[
             types.EventPage(
                 header=types.PageHeader(sequence=0),
-                payload=types.EventPage.Event(
-                    event=any_pb2.Any(type_url=type_url, value=b"\x01\x02\x03"),
-                ),
+                event=any_pb2.Any(type_url=type_url, value=b"\x01\x02\x03"),
             ),
         ],
     )

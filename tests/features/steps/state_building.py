@@ -127,7 +127,7 @@ def given_event_book_with_snapshot(state_context, seq):
 @given("no events in the EventBook")
 def given_no_events(state_context):
     if state_context.get("event_book"):
-        state_context["event_book"].pages.clear()
+        del state_context["event_book"].pages[:]
 
 
 @given("an EventBook with:")

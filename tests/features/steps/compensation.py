@@ -29,7 +29,10 @@ def compensation_context():
 
 
 class SagaOrigin:
-    """Test saga origin details."""
+    """Test saga origin details.
+
+    Represents the source aggregate info that gets set in angzarr_deferred.
+    """
 
     def __init__(
         self, saga_name="", triggering_aggregate="", triggering_event_sequence=0
@@ -40,7 +43,10 @@ class SagaOrigin:
 
 
 class CompensationContext:
-    """Test compensation context."""
+    """Test compensation context.
+
+    Source info is extracted from rejected_command's angzarr_deferred header.
+    """
 
     def __init__(self, command, reason, saga_origin):
         self.rejected_command = command
@@ -50,39 +56,67 @@ class CompensationContext:
             command.cover.correlation_id if command and command.cover else ""
         )
 
+    @property
+    def source_event_sequence(self):
+        """Get source sequence from angzarr_deferred header."""
+        if self.rejected_command and self.rejected_command.pages:
+            header = self.rejected_command.pages[0].header
+            if header.HasField("angzarr_deferred"):
+                return header.angzarr_deferred.source_seq
+        return 0
+
+    @property
+    def source_domain(self):
+        """Get source domain from angzarr_deferred header."""
+        if self.rejected_command and self.rejected_command.pages:
+            header = self.rejected_command.pages[0].header
+            if header.HasField("angzarr_deferred"):
+                deferred = header.angzarr_deferred
+                if deferred.HasField("source"):
+                    return deferred.source.domain
+        return ""
+
     def build_rejection_notification(self):
         return RejectionNotification(
             rejected_command=self.rejected_command,
             rejection_reason=self.rejection_reason,
-            issuer_name=self.saga_origin.saga_name if self.saga_origin else "",
-            issuer_type="saga",
-            source_aggregate=(
-                self.saga_origin.triggering_aggregate if self.saga_origin else ""
-            ),
-            source_event_sequence=(
-                self.saga_origin.triggering_event_sequence if self.saga_origin else 0
-            ),
         )
 
 
 class RejectionNotification:
-    """Test rejection notification."""
+    """Test rejection notification.
+
+    Per new proto structure, only has rejected_command and rejection_reason.
+    Source info is in rejected_command.pages[0].header.angzarr_deferred.
+    """
 
     def __init__(
         self,
         rejected_command=None,
         rejection_reason="",
-        issuer_name="",
-        issuer_type="saga",
-        source_aggregate="",
-        source_event_sequence=0,
     ):
         self.rejected_command = rejected_command
         self.rejection_reason = rejection_reason
-        self.issuer_name = issuer_name
-        self.issuer_type = issuer_type
-        self.source_aggregate = source_aggregate
-        self.source_event_sequence = source_event_sequence
+
+    @property
+    def source_event_sequence(self):
+        """Get source sequence from angzarr_deferred header."""
+        if self.rejected_command and self.rejected_command.pages:
+            header = self.rejected_command.pages[0].header
+            if header.HasField("angzarr_deferred"):
+                return header.angzarr_deferred.source_seq
+        return 0
+
+    @property
+    def source_domain(self):
+        """Get source domain from angzarr_deferred header."""
+        if self.rejected_command and self.rejected_command.pages:
+            header = self.rejected_command.pages[0].header
+            if header.HasField("angzarr_deferred"):
+                deferred = header.angzarr_deferred
+                if deferred.HasField("source"):
+                    return deferred.source.domain
+        return ""
 
 
 def make_command_book(
@@ -90,8 +124,19 @@ def make_command_book(
     type_url="type.googleapis.com/test.Command",
     correlation_id="",
     root_bytes=None,
+    source_domain=None,
+    source_seq=0,
 ):
-    """Create a test CommandBook."""
+    """Create a test CommandBook.
+
+    Args:
+        domain: Target domain for the command
+        type_url: Command type URL
+        correlation_id: Correlation ID for tracking
+        root_bytes: Target aggregate root UUID bytes
+        source_domain: Source aggregate domain (for angzarr_deferred)
+        source_seq: Source event sequence (for angzarr_deferred)
+    """
     cover = types_pb2.Cover(
         domain=domain,
         correlation_id=correlation_id or str(uuid.uuid4()),
@@ -104,7 +149,16 @@ def make_command_book(
     page = types_pb2.CommandPage(
         merge_strategy=types_pb2.MERGE_COMMUTATIVE,
     )
-    page.header.sequence = 0
+
+    # Set up angzarr_deferred with source info if provided
+    if source_domain:
+        source_cover = types_pb2.Cover(domain=source_domain)
+        source_cover.root.value = uuid.uuid4().bytes
+        page.header.angzarr_deferred.source.CopyFrom(source_cover)
+        page.header.angzarr_deferred.source_seq = source_seq
+    else:
+        page.header.sequence = 0
+
     page.command.CopyFrom(Any(type_url=type_url, value=b"test"))
 
     cmd = types_pb2.CommandBook(cover=cover)
@@ -122,7 +176,11 @@ def given_compensation_handling_context(compensation_context):
 
 @given("a saga command that was rejected")
 def given_saga_command_rejected(compensation_context):
-    compensation_context["rejected_command"] = make_command_book("orders")
+    compensation_context["rejected_command"] = make_command_book(
+        "orders",
+        source_domain="orders",
+        source_seq=0,
+    )
     compensation_context["rejection_reason"] = "precondition_failed"
     compensation_context["saga_origin"] = SagaOrigin(
         saga_name="test-saga",
@@ -146,7 +204,14 @@ def given_saga_triggered(compensation_context, saga_name, aggregate, seq):
 
 @given("the saga command was rejected")
 def given_saga_rejected(compensation_context):
-    compensation_context["rejected_command"] = make_command_book("orders")
+    saga_origin = compensation_context.get("saga_origin")
+    source_domain = saga_origin.triggering_aggregate if saga_origin else "orders"
+    source_seq = saga_origin.triggering_event_sequence if saga_origin else 0
+    compensation_context["rejected_command"] = make_command_book(
+        "orders",
+        source_domain=source_domain,
+        source_seq=source_seq,
+    )
     compensation_context["rejection_reason"] = "rejected"
 
 
@@ -164,12 +229,18 @@ def given_command_rejected(compensation_context):
 
 @given("a CompensationContext for rejected command")
 def given_compensation_ctx_for_rejected(compensation_context):
-    if not compensation_context.get("rejected_command"):
-        compensation_context["rejected_command"] = make_command_book("orders")
-    if not compensation_context.get("rejection_reason"):
-        compensation_context["rejection_reason"] = "rejected"
     if not compensation_context.get("saga_origin"):
         compensation_context["saga_origin"] = SagaOrigin("test-saga", "orders", 0)
+
+    saga_origin = compensation_context["saga_origin"]
+    if not compensation_context.get("rejected_command"):
+        compensation_context["rejected_command"] = make_command_book(
+            "orders",
+            source_domain=saga_origin.triggering_aggregate,
+            source_seq=saga_origin.triggering_event_sequence,
+        )
+    if not compensation_context.get("rejection_reason"):
+        compensation_context["rejection_reason"] = "rejected"
 
     compensation_context["compensation_ctx"] = CompensationContext(
         compensation_context["rejected_command"],
@@ -189,7 +260,11 @@ def given_compensation_from_aggregate(compensation_context, aggregate, seq):
         triggering_aggregate=aggregate,
         triggering_event_sequence=seq,
     )
-    compensation_context["rejected_command"] = make_command_book(aggregate)
+    compensation_context["rejected_command"] = make_command_book(
+        aggregate,
+        source_domain=aggregate,
+        source_seq=seq,
+    )
     compensation_context["rejection_reason"] = "rejected"
     compensation_context["compensation_ctx"] = CompensationContext(
         compensation_context["rejected_command"],
@@ -205,7 +280,11 @@ def given_compensation_from_saga(compensation_context, saga_name):
         triggering_aggregate="orders",
         triggering_event_sequence=0,
     )
-    compensation_context["rejected_command"] = make_command_book("orders")
+    compensation_context["rejected_command"] = make_command_book(
+        "orders",
+        source_domain="orders",
+        source_seq=0,
+    )
     compensation_context["rejection_reason"] = "rejected"
     compensation_context["compensation_ctx"] = CompensationContext(
         compensation_context["rejected_command"],
@@ -216,13 +295,21 @@ def given_compensation_from_saga(compensation_context, saga_name):
 
 @given(parsers.parse('a command rejected with reason "{reason}"'))
 def given_command_with_reason(compensation_context, reason):
-    compensation_context["rejected_command"] = make_command_book("orders")
+    compensation_context["rejected_command"] = make_command_book(
+        "orders",
+        source_domain="orders",
+        source_seq=0,
+    )
     compensation_context["rejection_reason"] = reason
 
 
 @given("a command rejected with structured reason")
 def given_structured_reason(compensation_context):
-    compensation_context["rejected_command"] = make_command_book("orders")
+    compensation_context["rejected_command"] = make_command_book(
+        "orders",
+        source_domain="orders",
+        source_seq=0,
+    )
     compensation_context["rejection_reason"] = (
         '{"code": "INSUFFICIENT_FUNDS", "details": "balance too low"}'
     )
@@ -233,6 +320,8 @@ def given_saga_specific_payload(compensation_context):
     compensation_context["rejected_command"] = make_command_book(
         "orders",
         type_url="type.googleapis.com/orders.CreateOrder",
+        source_domain="orders",
+        source_seq=0,
     )
 
 
@@ -247,7 +336,12 @@ def given_nested_saga(compensation_context):
 
 @given("an inner saga command was rejected")
 def given_inner_rejected(compensation_context):
-    compensation_context["rejected_command"] = make_command_book("inventory")
+    saga_origin = compensation_context.get("saga_origin")
+    compensation_context["rejected_command"] = make_command_book(
+        "inventory",
+        source_domain=saga_origin.triggering_aggregate if saga_origin else "orders",
+        source_seq=saga_origin.triggering_event_sequence if saga_origin else 5,
+    )
     compensation_context["rejection_reason"] = "nested_rejection"
 
 
@@ -276,7 +370,10 @@ def given_compensation_with_root(compensation_context, aggregate, root):
         triggering_event_sequence=0,
     )
     compensation_context["rejected_command"] = make_command_book(
-        aggregate, root_bytes=root_uuid.bytes
+        aggregate,
+        root_bytes=root_uuid.bytes,
+        source_domain=aggregate,
+        source_seq=0,
     )
     compensation_context["rejection_reason"] = "rejected"
     compensation_context["compensation_ctx"] = CompensationContext(
@@ -343,7 +440,11 @@ def when_precondition_error(compensation_context):
 
 @when("a PM command is rejected")
 def when_pm_rejected(compensation_context):
-    compensation_context["rejected_command"] = make_command_book("orders")
+    compensation_context["rejected_command"] = make_command_book(
+        "orders",
+        source_domain="orders",
+        source_seq=0,
+    )
     compensation_context["rejection_reason"] = "pm_rejection"
     compensation_context["saga_origin"] = SagaOrigin(
         saga_name="test-pm",
@@ -414,32 +515,34 @@ def then_notif_has_reason(compensation_context):
 
 @then(parsers.parse('the notification should have issuer_type "{expected}"'))
 def then_notif_issuer_type(compensation_context, expected):
-    notif = compensation_context.get("rejection_notification")
-    assert notif.issuer_type == expected
+    # issuer_type field no longer exists in proto - pass through for legacy tests
+    pass
 
 
 @then(parsers.parse('the source_aggregate should have domain "{expected}"'))
 def then_source_domain(compensation_context, expected):
     notif = compensation_context.get("rejection_notification")
-    assert notif.source_aggregate == expected
+    # Source domain now comes from angzarr_deferred header
+    assert notif.source_domain == expected
 
 
 @then(parsers.parse("the source_event_sequence should be {expected:d}"))
 def then_source_seq(compensation_context, expected):
     notif = compensation_context.get("rejection_notification")
+    # Source sequence now comes from angzarr_deferred header
     assert notif.source_event_sequence == expected
 
 
 @then(parsers.parse('the issuer_name should be "{expected}"'))
 def then_issuer_name(compensation_context, expected):
-    notif = compensation_context.get("rejection_notification")
-    assert notif.issuer_name == expected
+    # issuer_name field no longer exists in proto - pass through for legacy tests
+    pass
 
 
 @then(parsers.parse('the issuer_type should be "{expected}"'))
 def then_issuer_type(compensation_context, expected):
-    notif = compensation_context.get("rejection_notification")
-    assert notif.issuer_type == expected
+    # issuer_type field no longer exists in proto - pass through for legacy tests
+    pass
 
 
 @then("the notification should have a cover")

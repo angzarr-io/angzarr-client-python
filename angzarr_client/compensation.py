@@ -15,8 +15,8 @@ Usage in Aggregate:
         def handle_revocation(self, notification):
             ctx = CompensationContext.from_notification(notification)
 
-            # Option 1: Emit compensation events
-            if ctx.issuer_name == "saga-order-fulfillment":
+            # Option 1: Emit compensation events based on rejected command type
+            if ctx.rejected_command_type == "type.googleapis.com/orders.FulfillOrder":
                 event = OrderCancelled(
                     order_id=self.order_id,
                     reason=f"Fulfillment failed: {ctx.rejection_reason}",
@@ -26,7 +26,7 @@ Usage in Aggregate:
 
             # Option 2: Delegate to framework
             return delegate_to_framework(
-                reason=f"No custom compensation for {ctx.issuer_name}"
+                reason=f"No custom compensation for {ctx.rejected_command_type}"
             )
 
 Usage in ProcessManager:
@@ -43,7 +43,7 @@ Usage in ProcessManager:
 
             # Record failure in PM state
             event = WorkflowStepFailed(
-                issuer_name=ctx.issuer_name,
+                source_domain=ctx.source_domain,
                 reason=ctx.rejection_reason,
             )
             self._apply_and_record(event)
@@ -65,14 +65,9 @@ from .proto.angzarr import types_pb2 as types
 class CompensationContext:
     """Extracted context from a rejection Notification.
 
-    Provides easy access to compensation-relevant fields.
+    Provides easy access to compensation-relevant fields. Source aggregate info
+    is extracted from the rejected command's angzarr_deferred header.
     """
-
-    issuer_name: str
-    """Name of the saga/PM that issued the rejected command."""
-
-    issuer_type: str
-    """Type of issuer: 'saga' or 'process_manager'."""
 
     source_event_sequence: int
     """Sequence of the event that triggered the saga/PM flow."""
@@ -92,6 +87,10 @@ class CompensationContext:
     ) -> "CompensationContext":
         """Extract compensation context from a Notification.
 
+        Source aggregate info is extracted from the rejected command's
+        angzarr_deferred header, which is always set by the framework
+        for saga/PM-produced commands.
+
         Args:
             notification: The notification containing RejectionNotification payload.
 
@@ -102,21 +101,29 @@ class CompensationContext:
         if notification.HasField("payload"):
             notification.payload.Unpack(rejection)
 
+        # Extract source info from angzarr_deferred header
+        source_aggregate = None
+        source_event_sequence = 0
+
+        if rejection.HasField("rejected_command"):
+            cmd = rejection.rejected_command
+            if cmd.pages:
+                header = cmd.pages[0].header
+                if header.HasField("angzarr_deferred"):
+                    deferred = header.angzarr_deferred
+                    source_event_sequence = deferred.source_seq
+                    if deferred.HasField("source"):
+                        source_aggregate = deferred.source
+
         return cls(
-            issuer_name=rejection.issuer_name,
-            issuer_type=rejection.issuer_type,
-            source_event_sequence=rejection.source_event_sequence,
+            source_event_sequence=source_event_sequence,
             rejection_reason=rejection.rejection_reason,
             rejected_command=(
                 rejection.rejected_command
                 if rejection.HasField("rejected_command")
                 else None
             ),
-            source_aggregate=(
-                rejection.source_aggregate
-                if rejection.HasField("source_aggregate")
-                else None
-            ),
+            source_aggregate=source_aggregate,
         )
 
     @property
@@ -126,6 +133,20 @@ class CompensationContext:
             page = self.rejected_command.pages[0]
             if page.HasField("command"):
                 return page.command.type_url
+        return None
+
+    @property
+    def source_domain(self) -> str | None:
+        """Get the domain of the source aggregate, if available."""
+        if self.source_aggregate:
+            return self.source_aggregate.domain
+        return None
+
+    @property
+    def source_root(self) -> bytes | None:
+        """Get the root UUID bytes of the source aggregate, if available."""
+        if self.source_aggregate and self.source_aggregate.HasField("root"):
+            return self.source_aggregate.root.value
         return None
 
 

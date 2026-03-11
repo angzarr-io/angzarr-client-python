@@ -24,13 +24,17 @@ def make_notification(
         type_url=f"type.googleapis.com/test.{command_type}",
         value=b"",
     )
+    # Build CommandPage with proper header
+    page = types.CommandPage(command=cmd_any)
+    page.header.angzarr_deferred.source.domain = "source"
+    page.header.angzarr_deferred.source_seq = 0
+
     rejected_cmd = types.CommandBook(
         cover=types.Cover(domain=domain),
-        pages=[types.CommandPage(command=cmd_any)],
+        pages=[page],
     )
+    # RejectionNotification now only has rejected_command and rejection_reason
     rejection = types.RejectionNotification(
-        issuer_name="test-saga",
-        issuer_type="saga",
         rejection_reason=reason,
         rejected_command=rejected_cmd,
     )
