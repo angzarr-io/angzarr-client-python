@@ -52,6 +52,10 @@ dev = [
 path = "VERSION"
 pattern = "(?P<version>.+)"
 
+[tool.hatch.build]
+# Include generated proto files even though they're not in git
+artifacts = ["angzarr_client/proto/**/*.py"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["angzarr_client"]
 
