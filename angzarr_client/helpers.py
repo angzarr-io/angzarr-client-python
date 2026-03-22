@@ -30,7 +30,8 @@ UNKNOWN_DOMAIN = "unknown"
 WILDCARD_DOMAIN = "*"
 DEFAULT_EDITION = "angzarr"
 META_ANGZARR_DOMAIN = "_angzarr"
-PROJECTION_DOMAIN_PREFIX = "projection:"
+PROJECTION_DOMAIN_PREFIX = "_projection"
+PROJECTION_TYPE_URL = "angzarr.Projection"
 CORRELATION_ID_HEADER = "x-correlation-id"
 TYPE_URL_PREFIX = "type.googleapis.com/"
 
@@ -145,6 +146,13 @@ def proto_uuid_to_text(u: UUID | None) -> str:
     return bytes_to_uuid_text(u.value)
 
 
+def proto_uuid_to_hex(u: UUID | None) -> str:
+    """Convert a proto UUID to hex string format."""
+    if u is None:
+        return ""
+    return u.value.hex()
+
+
 def root_id_text(obj: CoverBearer) -> str:
     """Return the root UUID as standard text format (8-4-4-4-12), or empty string if missing."""
     c = cover_of(obj)
@@ -174,6 +182,18 @@ def explicit_edition(name: str, divergences: list[DomainDivergence]) -> Edition:
 def is_main_timeline(e: Edition | None) -> bool:
     """Check if an edition represents the main timeline."""
     return e is None or not e.name or e.name == DEFAULT_EDITION
+
+
+def edition_is_empty(e: Edition | None) -> bool:
+    """Check if an edition is empty (no name set)."""
+    return e is None or not e.name
+
+
+def edition_name_or_default(e: Edition | None) -> str:
+    """Return the edition name, or DEFAULT_EDITION if not set."""
+    if e is None or not e.name:
+        return DEFAULT_EDITION
+    return e.name
 
 
 def divergence_for(e: Edition | None, domain_name: str) -> int:
@@ -292,6 +312,10 @@ def type_url_matches(type_url_str: str, type_name: str) -> bool:
     return type_url_str == TYPE_URL_PREFIX + type_name
 
 
+# Alias for Rust API consistency
+type_url_matches_exact = type_url_matches
+
+
 # Type-safe reflection helpers
 
 
@@ -390,6 +414,10 @@ def full_type_url_for(msg_class: type[Message]) -> str:
         The full type URL (e.g., "type.googleapis.com/examples.PlayerRegistered")
     """
     return TYPE_URL_PREFIX + full_type_name(msg_class)
+
+
+# Alias for Rust API consistency
+full_type_url = full_type_url_for
 
 
 # Timestamp helpers

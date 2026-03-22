@@ -39,6 +39,17 @@ def require_not_empty(items: Sequence[Any], error_msg: str) -> None:
         raise CommandRejectedError(error_msg)
 
 
+def require_not_empty_str(value: str, field_name: str) -> None:
+    """Require that a string is not empty.
+
+    Args:
+        value: The string value to check
+        field_name: The name of the field for the error message
+    """
+    if not value:
+        raise CommandRejectedError(f"{field_name} must not be empty")
+
+
 def require_status(actual: str, expected: str, error_msg: str) -> None:
     """Require that the current status matches the expected value."""
     if actual != expected:

@@ -17,6 +17,7 @@ from .proto.angzarr import (
     Cover,
     EventBook,
     EventPage,
+    MergeStrategy,
     PageHeader,
     Query,
     SequenceRange,
@@ -39,6 +40,7 @@ class CommandBuilder:
         self._root = root
         self._correlation_id: str | None = None
         self._sequence: int = 0
+        self._merge_strategy: MergeStrategy = MergeStrategy.MERGE_COMMUTATIVE
         self._type_url: str | None = None
         self._payload: bytes | None = None
         self._err: Exception | None = None
@@ -51,6 +53,15 @@ class CommandBuilder:
     def with_sequence(self, seq: int) -> "CommandBuilder":
         """Set the expected sequence number for optimistic locking."""
         self._sequence = seq
+        return self
+
+    def with_merge_strategy(self, strategy: MergeStrategy) -> "CommandBuilder":
+        """Set the merge strategy for conflict resolution.
+
+        Args:
+            strategy: MERGE_COMMUTATIVE (default) or MERGE_STRICT.
+        """
+        self._merge_strategy = strategy
         return self
 
     def with_command(self, type_url: str, message: Message) -> "CommandBuilder":
@@ -79,7 +90,7 @@ class CommandBuilder:
 
         command_any = ProtoAny(type_url=self._type_url, value=self._payload)
         header = PageHeader(sequence=self._sequence)
-        page = CommandPage(header=header)
+        page = CommandPage(header=header, merge_strategy=self._merge_strategy)
         page.command.CopyFrom(command_any)
 
         book = CommandBook()
@@ -125,10 +136,13 @@ class QueryBuilder:
         self._root = None
         return self
 
-    def with_edition(self, edition: str) -> "QueryBuilder":
+    def edition(self, edition: str) -> "QueryBuilder":
         """Query events from a specific edition."""
         self._edition = edition
         return self
+
+    # Alias for backwards compatibility
+    with_edition = edition
 
     def range(self, lower: int) -> "QueryBuilder":
         """Query a range of sequences from lower (inclusive)."""

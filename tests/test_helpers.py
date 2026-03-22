@@ -95,7 +95,7 @@ class TestConstants:
         assert META_ANGZARR_DOMAIN == "_angzarr"
 
     def test_projection_prefix(self) -> None:
-        assert PROJECTION_DOMAIN_PREFIX == "projection:"
+        assert PROJECTION_DOMAIN_PREFIX == "_projection"
 
     def test_correlation_header(self) -> None:
         assert CORRELATION_ID_HEADER == "x-correlation-id"

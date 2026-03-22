@@ -19,6 +19,8 @@ from .proto.angzarr import (
     Cover,
     EventBook,
     EventPage,
+    MergeStrategy,
+    PageHeader,
     Query,
 )
 
@@ -91,9 +93,25 @@ class EventBookW:
         """Return the next sequence number."""
         return self.proto.next_sequence
 
+    def is_empty(self) -> bool:
+        """Check if the event book has no pages."""
+        return len(self.proto.pages) == 0
+
     def pages(self) -> list["EventPageW"]:
         """Return the event pages as wrapped EventPageW instances."""
         return [EventPageW(p) for p in self.proto.pages]
+
+    def last_page(self) -> "EventPageW | None":
+        """Get the last event page, if any."""
+        if not self.proto.pages:
+            return None
+        return EventPageW(self.proto.pages[-1])
+
+    def first_page(self) -> "EventPageW | None":
+        """Get the first event page, if any."""
+        if not self.proto.pages:
+            return None
+        return EventPageW(self.proto.pages[0])
 
     def _cover(self) -> Cover | None:
         """Get the cover, or None if not set."""
@@ -168,6 +186,27 @@ class CommandBookW:
     def pages(self) -> list["CommandPageW"]:
         """Return the command pages as wrapped CommandPageW instances."""
         return [CommandPageW(p) for p in self.proto.pages]
+
+    def command_sequence(self) -> int:
+        """Get the sequence number of the first command page."""
+        if not self.proto.pages:
+            return 0
+        page = self.proto.pages[0]
+        if not page.HasField("header"):
+            return 0
+        return page.header.sequence
+
+    def first_command(self) -> "CommandPageW | None":
+        """Get the first command page, if any."""
+        if not self.proto.pages:
+            return None
+        return CommandPageW(self.proto.pages[0])
+
+    def merge_strategy(self) -> MergeStrategy:
+        """Get the merge strategy of the first command page."""
+        if not self.proto.pages:
+            return MergeStrategy.MERGE_COMMUTATIVE
+        return MergeStrategy(self.proto.pages[0].merge_strategy)
 
     def _cover(self) -> Cover | None:
         """Get the cover, or None if not set."""
@@ -287,6 +326,57 @@ class EventPageW:
     def __init__(self, proto: EventPage) -> None:
         self.proto = proto
 
+    def sequence_num(self) -> int:
+        """Return the sequence number of this event page."""
+        if not self.proto.HasField("header"):
+            return 0
+        return self.proto.header.sequence
+
+    def header(self) -> PageHeader | None:
+        """Return the page header, if present."""
+        if not self.proto.HasField("header"):
+            return None
+        return self.proto.header
+
+    def is_deferred(self) -> bool:
+        """Check if this event is deferred (external or angzarr deferred)."""
+        if not self.proto.HasField("header"):
+            return False
+        header = self.proto.header
+        return header.HasField("external_deferred") or header.HasField("angzarr_deferred")
+
+    def type_url(self) -> str | None:
+        """Return the type URL of the event payload."""
+        if not self.proto.HasField("event"):
+            return None
+        return self.proto.event.type_url
+
+    def payload(self) -> bytes | None:
+        """Return the raw payload bytes of the event."""
+        if not self.proto.HasField("event"):
+            return None
+        return self.proto.event.value
+
+    def decode_typed(self, msg_class: type[T]) -> T | None:
+        """Decode the event payload to the given message type.
+
+        Type-safe decoding that checks the type URL matches the expected type.
+
+        Args:
+            msg_class: The protobuf message class to decode into
+
+        Returns:
+            The decoded message if decoding succeeds, None otherwise
+        """
+        if not self.proto.HasField("event"):
+            return None
+        try:
+            msg = msg_class()
+            self.proto.event.Unpack(msg)
+            return msg
+        except Exception:
+            return None
+
     def decode_event(self, type_suffix: str, msg_class: type[T]) -> T | None:
         """Attempt to decode an event payload if the type URL matches.
 
@@ -318,6 +408,38 @@ class CommandPageW:
     def sequence(self) -> int:
         """Return the sequence number."""
         return self.proto.header.sequence if self.proto.HasField("header") else 0
+
+    # Alias for Rust API consistency
+    sequence_num = sequence
+
+    def header(self) -> PageHeader | None:
+        """Return the page header, if present."""
+        if not self.proto.HasField("header"):
+            return None
+        return self.proto.header
+
+    def is_deferred(self) -> bool:
+        """Check if this command is deferred."""
+        if not self.proto.HasField("header"):
+            return False
+        header = self.proto.header
+        return header.HasField("external_deferred") or header.HasField("angzarr_deferred")
+
+    def type_url(self) -> str | None:
+        """Return the type URL of the command payload."""
+        if not self.proto.HasField("command"):
+            return None
+        return self.proto.command.type_url
+
+    def payload(self) -> bytes | None:
+        """Return the raw payload bytes of the command."""
+        if not self.proto.HasField("command"):
+            return None
+        return self.proto.command.value
+
+    def merge_strategy(self) -> MergeStrategy:
+        """Return the merge strategy for this command."""
+        return MergeStrategy(self.proto.merge_strategy)
 
 
 class CommandResponseW:

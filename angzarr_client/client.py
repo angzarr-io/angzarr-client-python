@@ -164,6 +164,18 @@ class CommandHandlerClient:
         endpoint = os.environ.get(env_var, default)
         return cls.connect(endpoint)
 
+    def handle(self, command: CommandBook) -> CommandResponse:
+        """Execute a command with default async mode.
+
+        This is a convenience method that wraps the command in a CommandRequest
+        with SYNC_MODE_ASYNC (fire-and-forget).
+        """
+        request = CommandRequest(
+            command=command,
+            sync_mode=SyncMode.SYNC_MODE_ASYNC,
+        )
+        return self.handle_command(request)
+
     def handle_command(self, request: CommandRequest) -> CommandResponse:
         """Execute a command with the specified sync mode."""
         try:
@@ -249,11 +261,12 @@ class SpeculativeClient:
 
 
 class DomainClient:
-    """Combined client for command handler and query operations on a single domain."""
+    """Combined client for command handler, query, and speculative operations on a single domain."""
 
     def __init__(self, channel: grpc.Channel):
         self.command_handler = CommandHandlerClient(channel)
         self.query = QueryClient(channel)
+        self.speculative = SpeculativeClient(channel)
         self._channel = channel
 
     @classmethod
@@ -297,20 +310,27 @@ class DomainClient:
         endpoint = os.environ.get(env_var, default)
         return cls.connect(endpoint)
 
-    def execute(
+    def execute(self, command: CommandBook) -> CommandResponse:
+        """Execute a command with default async mode (fire-and-forget)."""
+        return self.execute_with_mode(command, SyncMode.SYNC_MODE_ASYNC)
+
+    def execute_with_mode(
         self,
         command: CommandBook,
-        sync_mode: SyncMode = SyncMode.SYNC_MODE_ASYNC,
+        sync_mode: SyncMode,
     ) -> CommandResponse:
         """Execute a command with the specified sync mode.
 
         Args:
             command: The command to execute.
             sync_mode: Execution mode (ASYNC, SIMPLE, or CASCADE).
-                      Defaults to ASYNC for fire-and-forget behavior.
         """
         request = CommandRequest(command=command, sync_mode=sync_mode)
         return self.command_handler.handle_command(request)
+
+    def get_events(self, query: Query) -> EventBook:
+        """Retrieve events for the query (delegates to query client)."""
+        return self.query.get_event_book(query)
 
     def close(self) -> None:
         """Close the underlying channel."""

@@ -215,7 +215,7 @@ class TestSagaSubclassValidation:
             name = "bad-saga"
 
             @handles(OrderCompleted)
-            def handle(self, event: OrderCompleted):
+            def handle_completed(self, event: OrderCompleted):
                 pass
 
         # Error raised at first use (execute)
@@ -230,7 +230,7 @@ class TestSagaSubclassValidation:
             name = "bad-saga"
 
             @handles(OrderCompleted)
-            def handle(self, event: OrderCompleted):
+            def handle_completed(self, event: OrderCompleted):
                 pass
 
         # Error raised at first use (execute)

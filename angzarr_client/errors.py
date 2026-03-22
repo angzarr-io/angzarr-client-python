@@ -16,6 +16,10 @@ class ClientError(Exception):
             return f"{self.message}: {self.cause}"
         return self.message
 
+    def is_connection_error(self) -> bool:
+        """Return True if this is a connection error."""
+        return isinstance(self, ConnectionError)
+
 
 class ConnectionError(ClientError):
     """Failed to establish connection to the server."""
@@ -47,6 +51,10 @@ class GRPCError(ClientError):
     def details(self) -> str:
         """Return the error details."""
         return self._rpc_error.details()
+
+    def status(self) -> grpc.RpcError:
+        """Return the underlying gRPC RpcError (status)."""
+        return self._rpc_error
 
     def is_not_found(self) -> bool:
         """Return True if this is a NOT_FOUND error."""

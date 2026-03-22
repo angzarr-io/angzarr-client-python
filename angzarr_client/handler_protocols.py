@@ -217,6 +217,72 @@ class ProcessManagerDomainHandler(Protocol, Generic[S]):
 
 
 @runtime_checkable
+class SagaDomainHandler(Protocol):
+    """Protocol for saga domain handlers.
+
+    Implementations translate events from a source domain into commands
+    for other domains. Sagas are stateless - each event is processed independently.
+
+    Example:
+        class OrderSagaHandler(SagaDomainHandler):
+            def event_types(self) -> list[str]:
+                return ["OrderCreated", "OrderCompleted"]
+
+            def handle(self, source, event) -> SagaHandlerResponse:
+                if type_matches(event, OrderCreated):
+                    cmd = ReserveInventory(...)
+                    return SagaHandlerResponse(
+                        commands=[make_command_book("inventory", cmd)]
+                    )
+                return SagaHandlerResponse()
+
+            def on_rejected(self, notification, target_domain, target_command):
+                return RejectionHandlerResponse()
+    """
+
+    def event_types(self) -> list[str]:
+        """Return list of event type suffixes this handler processes."""
+        ...
+
+    def handle(
+        self,
+        source: types.EventBook,
+        event: Any,
+    ) -> SagaHandlerResponse:
+        """Handle an event and produce commands.
+
+        Args:
+            source: EventBook containing the triggering event
+            event: The specific event being processed
+
+        Returns:
+            SagaHandlerResponse with commands to send and/or facts to inject
+        """
+        ...
+
+    def on_rejected(
+        self,
+        notification: types.Notification,
+        target_domain: str,
+        target_command: str,
+    ) -> RejectionHandlerResponse:
+        """Handle rejection notification for compensation.
+
+        Called when a saga-issued command was rejected. Override to provide
+        custom compensation logic.
+
+        Args:
+            notification: Notification containing RejectionNotification payload
+            target_domain: Domain of rejected command
+            target_command: Type of rejected command
+
+        Returns:
+            RejectionHandlerResponse with compensation events or delegation flags
+        """
+        ...
+
+
+@runtime_checkable
 class ProjectorDomainHandler(Protocol):
     """Protocol for projector domain handlers.
 
@@ -254,6 +320,21 @@ class ProjectorDomainHandler(Protocol):
 # ============================================================================
 # Response types
 # ============================================================================
+
+
+class SagaHandlerResponse:
+    """Response from a saga handler.
+
+    Contains commands to send and/or facts (events) to inject.
+    """
+
+    def __init__(
+        self,
+        commands: list[types.CommandBook] | None = None,
+        events: list[types.EventBook] | None = None,
+    ):
+        self.commands = commands or []
+        self.events = events or []
 
 
 class ProcessManagerResponse:
