@@ -335,16 +335,20 @@ class ProcessManager(Generic[StateT], ABC):
                 event = event_type()
                 event_any.Unpack(event)
 
-                # Check if handler accepts destinations parameter
+                # Check which parameters handler accepts
                 method = getattr(self, method_name)
                 sig = inspect.signature(method)
                 params = list(sig.parameters.keys())
 
-                # Call handler with or without destinations
+                # Build kwargs based on what handler accepts
+                kwargs = {}
                 if "destinations" in params:
-                    result = method(event, destinations=destinations or [])
-                else:
-                    result = method(event)
+                    kwargs["destinations"] = destinations or []
+                if "root" in params:
+                    kwargs["root"] = root
+
+                # Call handler with appropriate parameters
+                result = method(event, **kwargs)
 
                 # Pack result into CommandBooks
                 return self._pack_commands(result, handler_domain, root, correlation_id)

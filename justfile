@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Generate proto code from buf registry
-proto:
+gen:
     buf generate
     python scripts/generate_protos.py
 
@@ -35,7 +35,7 @@ mutate-html:
     uv run --extra dev mutmut html
 
 # Build package
-build: proto
+build: gen
     uv build
 
 # Publish to TestPyPI

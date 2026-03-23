@@ -47,10 +47,11 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Generate protos
-        run: |
-          buf generate
-          python scripts/generate_protos.py || true
+        run: just gen
 
       - name: Sync feature files
         run: bash scripts/sync-features.sh
@@ -73,10 +74,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Generate protos
-        run: |
-          buf generate
-          python scripts/generate_protos.py || true
+        run: just gen
 
       - name: Build package
         run: uv build

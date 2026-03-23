@@ -1,7 +1,7 @@
 version: v2
 inputs:
-  - module: buf.build/angzarr/angzarr
-  - module: buf.build/angzarr/examples
+  - module: buf.build/angzarr/angzarr:0.2.0
+  - module: buf.build/angzarr/examples:0.1.2
 plugins:
   # Pin to v28.3 which generates protobuf 5.x compatible code
   - remote: buf.build/protocolbuffers/python:v28.3
