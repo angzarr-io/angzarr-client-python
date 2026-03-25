@@ -58,7 +58,7 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from google.protobuf.any_pb2 import Any
 
@@ -67,6 +67,9 @@ from .compensation import RejectionHandlerResponse
 from .proto.angzarr import process_manager_pb2 as pm_pb2
 from .proto.angzarr import types_pb2 as types
 from .router import _pack_any, domain, handles, output_domain, prepares, rejected
+
+if TYPE_CHECKING:
+    from .state_builder import StateRouter
 
 # Re-export decorators
 __all__ = [
@@ -147,6 +150,9 @@ class ProcessManager(Generic[StateT], ABC):
     _applier_table: dict[str, tuple[str, type]] = (
         {}
     )  # suffix -> (method_name, event_type)
+    _destination_routers: dict[str, "StateRouter"] = (
+        {}
+    )  # domain -> StateRouter for rebuilding destination state
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -164,6 +170,8 @@ class ProcessManager(Generic[StateT], ABC):
         cls._input_domains = {}
         cls._rejection_table = {}
         cls._applier_table = {}
+        # Inherit destination routers from parent, allow override
+        cls._destination_routers = dict(getattr(cls, "_destination_routers", {}) or {})
         cls._build_dispatch_table()
         cls._build_prepare_table()
         cls._build_rejection_table()
@@ -240,6 +248,35 @@ class ProcessManager(Generic[StateT], ABC):
                 if suffix in cls._applier_table:
                     raise TypeError(f"{cls.__name__}: duplicate applier for {suffix}")
                 cls._applier_table[suffix] = (attr_name, event_type)
+
+    def _rebuild_destinations(
+        self,
+        destinations: list[types.EventBook],
+    ) -> dict[str, object]:
+        """Rebuild destination states using registered StateRouters.
+
+        For each destination EventBook, looks up a registered StateRouter
+        by domain name. If found, rebuilds state using the router.
+        If not found, keeps the raw EventBook for backward compatibility.
+
+        Args:
+            destinations: List of destination EventBooks from prepare phase.
+
+        Returns:
+            Dict mapping domain name to rebuilt state (or raw EventBook).
+        """
+        result: dict[str, object] = {}
+        for dest in destinations:
+            domain_name = dest.cover.domain if dest.HasField("cover") else ""
+            if not domain_name:
+                continue
+            if domain_name in self._destination_routers:
+                router = self._destination_routers[domain_name]
+                result[domain_name] = router.with_event_book(dest)
+            else:
+                # No router registered - keep raw EventBook
+                result[domain_name] = dest
+        return result
 
     def __init__(self, process_state: types.EventBook = None):
         """Initialize process manager with optional prior state.
@@ -343,7 +380,10 @@ class ProcessManager(Generic[StateT], ABC):
                 # Build kwargs based on what handler accepts
                 kwargs = {}
                 if "destinations" in params:
-                    kwargs["destinations"] = destinations or []
+                    # Always rebuild destinations using registered StateRouters
+                    kwargs["destinations"] = self._rebuild_destinations(
+                        destinations or []
+                    )
                 if "root" in params:
                     kwargs["root"] = root
 
@@ -412,6 +452,27 @@ class ProcessManager(Generic[StateT], ABC):
         """Return new process events for persistence."""
         pages = [types.EventPage(event=e) for e in self._new_events]
         return types.EventBook(pages=pages)
+
+    @classmethod
+    def replay_state(cls, process_state: types.EventBook) -> Any:
+        """Replay events to rebuild typed state packed in Any.
+
+        Called by framework before Prepare/Handle to convert EventBook to typed state.
+        This matches the aggregate pattern where framework handles state reconstruction.
+
+        Default implementation returns empty Any. Subclasses that need to pass
+        typed state to handlers should override this method to pack their state
+        into a protobuf Any.
+
+        Args:
+            process_state: PM events to replay.
+
+        Returns:
+            Typed PM state packed in google.protobuf.Any.
+        """
+        # Default: return empty Any
+        # Subclasses can override to pack their state into a protobuf message
+        return Any()
 
     @classmethod
     def prepare_destinations(

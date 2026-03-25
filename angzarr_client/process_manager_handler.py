@@ -1,11 +1,12 @@
 """ProcessManagerHandler: gRPC ProcessManager servicer.
 
-Two-phase protocol for stateful workflow coordinators:
+Three-phase protocol for stateful workflow coordinators:
+  Replay  → rebuild typed state from PM events (called by framework)
   Prepare → declare additional destinations needed beyond the trigger
   Handle  → produce commands and process events given full context
 
 Supports two patterns:
-1. Functional: ProcessManagerHandler(name).with_prepare(...).with_handle(...)
+1. Functional: ProcessManagerHandler(name).with_replay(...).with_prepare(...).with_handle(...)
 2. OO class: ProcessManagerHandler(OrderWorkflowPM)
 """
 
@@ -15,6 +16,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import grpc
+from google.protobuf.any_pb2 import Any
 
 from .process_manager import ProcessManager
 from .proto.angzarr import process_manager_pb2 as pm
@@ -25,6 +27,8 @@ from .server import run_server
 if TYPE_CHECKING:
     import structlog
 
+# PMReplayFunc returns typed state packed in Any
+PMReplayFunc = Callable[[types.EventBook], Any]
 PMPrepareFunc = Callable[
     [types.EventBook, types.EventBook],
     list[types.Cover],
@@ -44,7 +48,7 @@ class ProcessManagerHandler(process_manager_pb2_grpc.ProcessManagerServiceServic
     and react to events from multiple domains.
 
     Two patterns:
-        ProcessManagerHandler(name).with_prepare(...).with_handle(...)  # functional
+        ProcessManagerHandler(name).with_replay(...).with_prepare(...).with_handle(...)  # functional
         ProcessManagerHandler(OrderWorkflowPM)  # OO class
     """
 
@@ -55,14 +59,21 @@ class ProcessManagerHandler(process_manager_pb2_grpc.ProcessManagerServiceServic
             # OO pattern: ProcessManager class
             self._pm_class = name_or_class
             self._name = name_or_class.name
+            self._replay_fn: PMReplayFunc | None = None
             self._prepare_fn: PMPrepareFunc | None = None
             self._handle_fn: PMHandleFunc | None = None
         else:
             # Functional pattern: name string
             self._pm_class = None
             self._name = name_or_class
+            self._replay_fn = None
             self._prepare_fn = None
             self._handle_fn = None
+
+    def with_replay(self, fn: PMReplayFunc) -> ProcessManagerHandler:
+        """Set the replay callback for state reconstruction."""
+        self._replay_fn = fn
+        return self
 
     def with_prepare(self, fn: PMPrepareFunc) -> ProcessManagerHandler:
         """Set the prepare callback."""
@@ -73,6 +84,28 @@ class ProcessManagerHandler(process_manager_pb2_grpc.ProcessManagerServiceServic
         """Set the handle callback."""
         self._handle_fn = fn
         return self
+
+    def Replay(
+        self,
+        request: pm.ProcessManagerReplayRequest,
+        context: grpc.ServicerContext,
+    ) -> pm.ProcessManagerReplayResponse:
+        """Replay PM events to rebuild typed state.
+
+        Called by framework before Prepare/Handle to convert EventBook to typed state.
+        This matches the aggregate pattern where framework handles state reconstruction.
+        """
+        # Custom replay takes precedence
+        if self._replay_fn is not None:
+            state = self._replay_fn(request.events)
+            return pm.ProcessManagerReplayResponse(state=state)
+
+        # OO pattern: use ProcessManager class's replay_state method
+        if self._pm_class is not None:
+            state = self._pm_class.replay_state(request.events)
+            return pm.ProcessManagerReplayResponse(state=state)
+
+        return pm.ProcessManagerReplayResponse()
 
     def Prepare(
         self,
