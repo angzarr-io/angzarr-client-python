@@ -43,7 +43,7 @@ class TestHandle:
         assert len(resp.commands) == 0
 
     def test_custom_returns_commands_and_events(self):
-        def handle_fn(trigger, process_state, destinations):
+        def handle_fn(trigger, process_state, destination_sequences):
             # Now returns ProcessManagerHandleResponse (proto-generated type)
             return pm.ProcessManagerHandleResponse(
                 process_events=types.EventBook(
@@ -63,21 +63,19 @@ class TestHandle:
         assert resp.commands[0].cover.domain == "target"
         assert len(resp.process_events.pages) == 1
 
-    def test_handle_receives_destinations(self):
+    def test_handle_receives_destination_sequences(self):
         received = {}
 
-        def handle_fn(trigger, process_state, destinations):
-            received["destinations"] = destinations
+        def handle_fn(trigger, process_state, destination_sequences):
+            received["sequences"] = destination_sequences
             return pm.ProcessManagerHandleResponse()
 
         h = ProcessManagerHandler("test").with_handle(handle_fn)
-        dest = types.EventBook(pages=[types.EventPage(), types.EventPage()])
         req = pm.ProcessManagerHandleRequest(
             trigger=_trigger(),
-            destinations=[dest],
+            destination_sequences={"inventory": 5, "payment": 3},
         )
 
         h.Handle(req, None)
 
-        assert len(received["destinations"]) == 1
-        assert len(received["destinations"][0].pages) == 2
+        assert received["sequences"] == {"inventory": 5, "payment": 3}

@@ -1,95 +1,125 @@
-"""SagaContext for splitter pattern support.
+"""SagaContext for saga handlers with destination sequence support.
 
-SagaContext provides convenient access to destination aggregate state
-in the splitter pattern, where one event triggers commands to multiple aggregates.
+SagaContext provides type-safe access to destination sequences for command
+stamping in saga handlers.
+
+Design Philosophy:
+    Sagas are stateless domain translators. They should NOT rebuild destination
+    state to make decisions. The framework provides only destination sequences
+    for command stamping. Business logic belongs in aggregates.
 
 Example usage:
-    def handle_table_settled(event: TableSettled, destinations: list[EventBook]) -> list[CommandBook]:
-        ctx = SagaContext(destinations)
-        commands = []
-
-        for payout in event.payouts:
-            seq = ctx.get_sequence("player", payout.player_root)
-            cmd = TransferFunds(player_root=payout.player_root, amount=payout.amount)
-            commands.append(new_command_book("player", cmd, sequence=seq))
-
-        return commands
+    @handles(OrderCreated)
+    def handle_order(self, event: OrderCreated, ctx: SagaContext):
+        cmd = ReserveInventory(order_id=event.order_id, quantity=event.quantity)
+        ctx.stamp_command(cmd, "inventory")
+        return cmd
 """
 
 from __future__ import annotations
 
-from .helpers import next_sequence
+from .destinations import Destinations
 from .proto.angzarr import types_pb2 as types
 
 __all__ = ["SagaContext"]
 
 
 class SagaContext:
-    """Context for saga handlers providing access to destination aggregate state.
+    """Context for saga handlers providing source events and destination sequences.
 
-    Used in the splitter pattern where one event triggers commands to multiple
-    aggregates. Provides sequence number lookup for optimistic concurrency control.
+    Sagas receive source events and destination sequences (not full EventBooks)
+    from the framework. This class provides access to the source and a
+    `stamp_command()` helper for setting correct sequence numbers.
+
+    Why sequences only?
+    -------------------
+    Sagas are stateless translators - they should NOT make business decisions
+    based on destination state. If you need external information:
+    1. Inject it as a fact
+    2. Let aggregates decide (they validate commands)
+    3. Use sync mode for immediate feedback on command results
+
+    Anti-pattern example (DON'T do this):
+        # BAD: Saga rebuilds state and makes decisions
+        def handle_order(self, event, destinations):
+            inventory = rebuild_state(destinations["inventory"])
+            if inventory.stock < event.quantity:  # Decision in saga!
+                return RejectCommand(...)
+            return CreateReservation(...)
+
+    Correct pattern:
+        # GOOD: Saga translates, aggregate decides
+        def handle_order(self, event, ctx):
+            cmd = CreateReservation(order_id=event.order_id, quantity=event.quantity)
+            ctx.stamp_command(cmd, "inventory")
+            return cmd
+            # Inventory aggregate will reject if insufficient stock
+            # Saga handles rejection via @rejected decorator
     """
 
-    def __init__(self, destinations: list[types.EventBook]) -> None:
-        """Create a context from a list of destination EventBooks.
+    def __init__(
+        self,
+        source: types.EventBook,
+        destination_sequences: dict[str, int],
+    ) -> None:
+        """Create a SagaContext from source events and destination sequences.
 
         Args:
-            destinations: List of EventBooks fetched during prepare phase.
+            source: EventBook containing source events to process.
+            destination_sequences: Dict mapping domain name to next sequence number.
         """
-        self._destinations: dict[str, types.EventBook] = {}
-        for book in destinations:
-            if book.HasField("cover") and book.cover.domain:
-                key = self._make_key(book.cover.domain, book.cover.root.value)
-                self._destinations[key] = book
+        self._source = source
+        self._destinations = Destinations(destination_sequences)
 
-    def get_sequence(self, domain: str, aggregate_root: bytes) -> int:
-        """Get the next sequence number for a destination aggregate.
+    @property
+    def source(self) -> types.EventBook:
+        """Get the source EventBook."""
+        return self._source
 
-        Returns 1 if the aggregate doesn't exist yet.
+    @property
+    def destinations(self) -> Destinations:
+        """Get the Destinations context for command stamping."""
+        return self._destinations
+
+    def sequence_for(self, domain: str) -> int | None:
+        """Get the next sequence number for a destination domain.
 
         Args:
-            domain: The domain of the target aggregate.
-            aggregate_root: The root identifier (as bytes).
+            domain: The target domain name.
 
         Returns:
-            The next sequence number for the aggregate.
+            The next sequence number, or None if domain not found.
         """
-        key = self._make_key(domain, aggregate_root)
-        book = self._destinations.get(key)
-        if book is None:
-            return 1
-        return next_sequence(book)
+        return self._destinations.sequence_for(domain)
 
-    def get_destination(
-        self, domain: str, aggregate_root: bytes
-    ) -> types.EventBook | None:
-        """Get the EventBook for a destination aggregate.
+    def stamp_command(
+        self,
+        cmd: types.CommandBook,
+        domain: str,
+    ) -> types.CommandBook:
+        """Stamp a command with the correct sequence for its destination domain.
+
+        Convenience method that delegates to destinations.stamp_command().
 
         Args:
-            domain: The domain of the target aggregate.
-            aggregate_root: The root identifier (as bytes).
+            cmd: The CommandBook to stamp.
+            domain: The target domain (must be in destination_sequences).
 
         Returns:
-            The EventBook if found, None otherwise.
-        """
-        key = self._make_key(domain, aggregate_root)
-        return self._destinations.get(key)
+            The same CommandBook (for chaining).
 
-    def has_destination(self, domain: str, aggregate_root: bytes) -> bool:
-        """Check if a destination exists.
+        Raises:
+            ValueError: If domain is not in destination_sequences.
+        """
+        return self._destinations.stamp_command(cmd, domain)
+
+    def has_destination(self, domain: str) -> bool:
+        """Check if a destination domain is available.
 
         Args:
-            domain: The domain of the target aggregate.
-            aggregate_root: The root identifier (as bytes).
+            domain: The domain name to check.
 
         Returns:
-            True if the destination exists.
+            True if the domain has a sequence entry.
         """
-        key = self._make_key(domain, aggregate_root)
-        return key in self._destinations
-
-    @staticmethod
-    def _make_key(domain: str, root: bytes) -> str:
-        """Create a lookup key from domain and root."""
-        return f"{domain}:{root.hex()}"
+        return self._destinations.has_domain(domain)

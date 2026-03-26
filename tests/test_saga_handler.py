@@ -124,8 +124,9 @@ class TestSagaHandlerCustomMode:
     def test_custom_handle(self):
         router = build_test_router()
 
-        def custom_handle(source):
+        def custom_handle(source, destination_sequences):
             # Now returns SagaResponse (proto-generated type)
+            # destination_sequences is dict[str, int] for command stamping
             return saga.SagaResponse(
                 commands=[
                     types.CommandBook(

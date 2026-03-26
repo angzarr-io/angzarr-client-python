@@ -34,8 +34,9 @@ PMPrepareFunc = Callable[
     list[types.Cover],
 ]
 # PMHandleFunc returns ProcessManagerHandleResponse (proto-generated type)
+# Third arg is destination_sequences: dict[str, int] (domain -> next sequence)
 PMHandleFunc = Callable[
-    [types.EventBook, types.EventBook, list[types.EventBook]],
+    [types.EventBook, types.EventBook, dict[str, int]],
     pm.ProcessManagerHandleResponse,
 ]
 
@@ -133,12 +134,15 @@ class ProcessManagerHandler(process_manager_pb2_grpc.ProcessManagerServiceServic
         context: grpc.ServicerContext,
     ) -> pm.ProcessManagerHandleResponse:
         """Phase 2: Produce process_events, commands, and facts."""
+        # Extract destination sequences from proto map
+        destination_sequences = dict(request.destination_sequences)
+
         # Custom handle takes precedence
         if self._handle_fn is not None:
             return self._handle_fn(
                 request.trigger,
                 request.process_state,
-                list(request.destinations),
+                destination_sequences,
             )
 
         # OO pattern: use ProcessManager class (returns ProcessManagerHandleResponse)
@@ -146,7 +150,7 @@ class ProcessManagerHandler(process_manager_pb2_grpc.ProcessManagerServiceServic
             return self._pm_class.handle(
                 request.trigger,
                 request.process_state,
-                list(request.destinations),
+                destination_sequences,
             )
 
         return pm.ProcessManagerHandleResponse()

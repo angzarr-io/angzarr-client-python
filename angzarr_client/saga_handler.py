@@ -26,7 +26,8 @@ if TYPE_CHECKING:
     import structlog
 
 # HandleFunc returns SagaResponse (proto-generated type)
-HandleFunc = Callable[[types.EventBook], saga.SagaResponse]
+# Second arg is destination_sequences: dict[str, int] (domain -> next sequence)
+HandleFunc = Callable[[types.EventBook, dict[str, int]], saga.SagaResponse]
 
 
 class SagaHandler(saga_pb2_grpc.SagaServiceServicer):
@@ -64,24 +65,26 @@ class SagaHandler(saga_pb2_grpc.SagaServiceServicer):
         context: grpc.ServicerContext,
     ) -> saga.SagaResponse:
         """Handle source events and produce commands for target domains."""
-        return self._handle_saga(request.source)
+        destination_sequences = dict(request.destination_sequences)
+        return self._handle_saga(request.source, destination_sequences)
 
     def _handle_saga(
         self,
         source: types.EventBook,
+        destination_sequences: dict[str, int],
     ) -> saga.SagaResponse:
         """Dispatch through custom handle, Saga class, or SingleFluentRouter."""
         # Custom handle takes precedence
         if self._handle is not None:
-            return self._handle(source)
+            return self._handle(source, destination_sequences)
 
         # OO pattern: use Saga class's handle (returns SagaResponse)
         if self._saga_class is not None:
-            return self._saga_class.handle(source)
+            return self._saga_class.handle(source, destination_sequences)
 
         # Fluent pattern: use SingleFluentRouter's dispatch (returns SagaResponse)
         if self._event_router is not None:
-            return self._event_router.dispatch(source)
+            return self._event_router.dispatch(source, destination_sequences)
 
         return saga.SagaResponse()
 

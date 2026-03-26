@@ -3,17 +3,18 @@
 Sagas translate events from one domain into commands for another domain.
 They are stateless - each event is processed independently.
 
+Design Philosophy:
+    Sagas are translators, NOT decision makers. They should NOT rebuild destination
+    state to make business decisions. The framework provides only destination
+    sequences for command stamping. Business logic belongs in aggregates.
+
 Router Pattern: Saga follows the SINGLE-DOMAIN OO pattern.
 - One input domain: use @domain class decorator
 - One output_domain: use @output_domain class decorator
 - Uses @handles decorator for handler registration
 - Uses @prepares decorator for prepare phase handlers
 
-Two-phase protocol support:
-    1. Prepare: Declare destination aggregates needed (via @prepares(EventType))
-    2. Execute: Produce commands given source + destination state (via @handles(EventType))
-
-Example usage (simple saga without destinations):
+Example usage (simple saga):
     from angzarr_client.saga import Saga, domain, output_domain, handles
 
     @domain("order")
@@ -25,24 +26,22 @@ Example usage (simple saga without destinations):
         def handle_completed(self, event: OrderCompleted) -> CreateShipment:
             return CreateShipment(order_id=event.order_id)
 
-Example usage (saga with destinations):
-    from angzarr_client.saga import Saga, domain, output_domain, handles, prepares
+Example usage (saga with destination sequences):
+    from angzarr_client.saga import Saga, domain, output_domain, handles
+    from angzarr_client.destinations import Destinations
 
     @domain("table")
     @output_domain("hand")
     class TableHandSaga(Saga):
         name = "saga-table-hand"
 
-        @prepares(HandStarted)
-        def prepare_hand(self, event: HandStarted) -> list[Cover]:
-            return [Cover(domain="hand", root=UUID(value=event.hand_root))]
-
         @handles(HandStarted)
         def handle_hand_started(
-            self, event: HandStarted, destinations: list[EventBook]
+            self, event: HandStarted, destinations: Destinations
         ) -> DealCards:
-            dest_seq = next_sequence(destinations[0]) if destinations else 0
-            return DealCards(table_root=event.hand_root, ...)
+            cmd = DealCards(table_root=event.hand_root, ...)
+            destinations.stamp_command(cmd, "hand")
+            return cmd
 
 """
 
@@ -53,6 +52,7 @@ from abc import ABC
 
 from google.protobuf.any_pb2 import Any
 
+from .destinations import Destinations
 from .helpers import TYPE_URL_PREFIX
 from .proto.angzarr import saga_pb2
 from .proto.angzarr import types_pb2 as types
@@ -100,22 +100,19 @@ class Saga(ABC):
             def handle_completed(self, event: OrderCompleted) -> CreateShipment:
                 return CreateShipment(order_id=event.order_id)
 
-    Usage (with destinations):
+    Usage (with destination sequences):
         @domain("table")
         @output_domain("hand")
         class TableHandSaga(Saga):
             name = "saga-table-hand"
 
-            @prepares(HandStarted)
-            def prepare_hand(self, event: HandStarted) -> list[Cover]:
-                return [Cover(domain="hand", root=UUID(value=event.hand_root))]
-
             @handles(HandStarted)
             def handle_hand_started(
-                self, event: HandStarted, destinations: list[EventBook]
+                self, event: HandStarted, destinations: Destinations
             ) -> DealCards:
-                dest_seq = next_sequence(destinations[0]) if destinations else 0
-                return DealCards(...)
+                cmd = DealCards(table_root=event.hand_root, ...)
+                destinations.stamp_command(cmd, "hand")
+                return cmd
 
     """
 
@@ -241,6 +238,7 @@ class Saga(ABC):
         event_any: Any,
         root: bytes = None,
         correlation_id: str = "",
+        destination_sequences: dict[str, int] = None,
     ) -> list[types.CommandBook]:
         """Dispatch event to matching @handles method.
 
@@ -248,11 +246,13 @@ class Saga(ABC):
             event_any: Packed event as google.protobuf.Any
             root: Source aggregate root (passed to command cover)
             correlation_id: Correlation ID for the workflow
+            destination_sequences: Map of domain to next sequence number
 
         Returns:
             List of CommandBooks to send.
         """
         type_url = event_any.type_url
+        destinations = Destinations(destination_sequences or {})
 
         for full_name, (method_name, event_type) in self._dispatch_table.items():
             if type_url == TYPE_URL_PREFIX + full_name:
@@ -260,8 +260,16 @@ class Saga(ABC):
                 event = event_type()
                 event_any.Unpack(event)
 
-                # Call handler
-                result = getattr(self, method_name)(event)
+                # Check if handler accepts destinations parameter
+                method = getattr(self, method_name)
+                sig = inspect.signature(method)
+                params = list(sig.parameters.keys())
+
+                # Call handler with appropriate parameters
+                if "destinations" in params:
+                    result = method(event, destinations=destinations)
+                else:
+                    result = method(event)
 
                 # Pack result into CommandBooks
                 return self._pack_commands(result, root, correlation_id)
@@ -333,6 +341,7 @@ class Saga(ABC):
     def handle(
         cls,
         source: types.EventBook,
+        destination_sequences: dict[str, int] = None,
     ) -> saga_pb2.SagaResponse:
         """Handle source events and produce commands.
 
@@ -341,6 +350,7 @@ class Saga(ABC):
 
         Args:
             source: EventBook containing events to process.
+            destination_sequences: Map of domain to next sequence number for stamping.
 
         Returns:
             SagaResponse containing commands and events.
@@ -364,7 +374,9 @@ class Saga(ABC):
                 elif hasattr(page, "GetEvent"):
                     event_any = page.GetEvent()
             if event_any:
-                commands.extend(saga.dispatch(event_any, root, correlation_id))
+                commands.extend(
+                    saga.dispatch(event_any, root, correlation_id, destination_sequences)
+                )
 
         return saga_pb2.SagaResponse(commands=commands, events=saga._events)
 
@@ -372,10 +384,10 @@ class Saga(ABC):
     def execute(
         cls,
         source: types.EventBook,
-        destinations: list[types.EventBook] = None,
+        destination_sequences: dict[str, int] = None,
     ) -> saga_pb2.SagaResponse:
         """Deprecated: Use handle() instead.
 
         Kept for backwards compatibility.
         """
-        return cls.handle(source)
+        return cls.handle(source, destination_sequences)

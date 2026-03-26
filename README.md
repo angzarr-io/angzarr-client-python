@@ -248,6 +248,68 @@ client.close()
 | `InvalidArgumentError` | Invalid input |
 | `InvalidTimestampError` | Timestamp parse failure |
 
+## Saga/PM Implementation
+
+### Sagas
+
+Stateless event translators (events → commands):
+
+```python
+from angzarr_client import SagaRouter, SagaDomainHandler
+
+class OrderFulfillmentHandler(SagaDomainHandler):
+    def event_types(self) -> list[str]:
+        return ["OrderCreated"]
+
+    def handle(self, source: EventBook, event: Any, destinations: Destinations):
+        # Translate event to command
+        cmd = CreateReservation(order_id=event.order_id)
+        seq = destinations.sequence_for("inventory")
+        return SagaHandlerResponse(commands=[stamp(cmd, seq)])
+
+router = SagaRouter("saga-order-inventory", "order", handler)
+```
+
+### Process Managers
+
+Stateful multi-domain orchestrators:
+
+```python
+from angzarr_client import ProcessManagerRouter
+
+class BuyInPmHandler(ProcessManagerDomainHandler):
+    def event_types(self) -> list[str]:
+        return ["BuyInRequested", "PlayerSeated", "SeatingRejected"]
+
+    def prepare(self, trigger, state, event) -> list[Cover]:
+        # Declare destinations needed
+        return [Cover(domain="table", root=event.table_root)]
+
+    def handle(self, trigger, state, event, destinations: Destinations):
+        # Emit commands or facts
+        seq = destinations.sequence_for("table")
+        return ProcessManagerResponse(commands=[cmd], facts=[])
+
+router = ProcessManagerRouter("pmg-buy-in", "pmg-buy-in", rebuild_state)
+    .domain("player", BuyInPmHandler())
+    .domain("table", BuyInPmHandler())
+```
+
+### Saga/PM Design Philosophy
+
+**Sagas and PMs are coordinators, NOT decision makers.**
+
+| Output | When to Use |
+|--------|-------------|
+| **Commands** (preferred) | Normal flow - aggregate validates and decides |
+| **Facts** | Inject external data aggregate can't derive |
+
+**Key Principles:**
+1. **Don't rebuild destination state** - Use `Destinations` for sequences only
+2. **Let aggregates decide** - Business logic in aggregates, not coordinators
+3. **Prefer commands with sync mode** - Use `SyncMode.SIMPLE` for immediate feedback
+4. **Use facts sparingly** - Only for external data injection
+
 ## License
 
 BSD-3-Clause

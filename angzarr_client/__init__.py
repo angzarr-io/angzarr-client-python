@@ -28,6 +28,7 @@ from .compensation import (
     pm_delegate_to_framework,
     pm_emit_compensation_events,
 )
+from .destinations import Destinations
 from .errors import (
     ClientError,
     CommandRejectedError,
@@ -328,4 +329,6 @@ __all__ = [
     "CloudEventsResponse",
     # Saga Context
     "SagaContext",
+    # Destinations (for sagas/PMs)
+    "Destinations",
 ]

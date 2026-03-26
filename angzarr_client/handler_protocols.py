@@ -35,6 +35,7 @@ from .proto.angzarr import types_pb2 as types
 
 if TYPE_CHECKING:
     from .compensation import RejectionHandlerResponse
+    from .destinations import Destinations
     from .state_builder import StateRouter
 
 S = TypeVar("S")
@@ -174,7 +175,7 @@ class ProcessManagerDomainHandler(Protocol, Generic[S]):
         trigger: types.EventBook,
         state: S,
         event: Any,
-        destinations: list[types.EventBook],
+        destinations: Destinations,
     ) -> ProcessManagerResponse:
         """Handle event and produce commands/events.
 
@@ -182,7 +183,7 @@ class ProcessManagerDomainHandler(Protocol, Generic[S]):
             trigger: Source EventBook with triggering events
             state: Current PM state
             event: The specific event being processed
-            destinations: EventBooks for destinations declared in prepare()
+            destinations: Destinations context for command stamping
 
         Returns:
             ProcessManagerResponse with commands and/or PM events
@@ -223,17 +224,21 @@ class SagaDomainHandler(Protocol):
     Implementations translate events from a source domain into commands
     for other domains. Sagas are stateless - each event is processed independently.
 
+    Design Philosophy:
+        Sagas are translators, NOT decision makers. They should NOT rebuild
+        destination state to make decisions. They receive only destination
+        sequences for command stamping. Business logic belongs in aggregates.
+
     Example:
         class OrderSagaHandler(SagaDomainHandler):
             def event_types(self) -> list[str]:
                 return ["OrderCreated", "OrderCompleted"]
 
-            def handle(self, source, event) -> SagaHandlerResponse:
+            def handle(self, source, event, destinations) -> SagaHandlerResponse:
                 if type_matches(event, OrderCreated):
-                    cmd = ReserveInventory(...)
-                    return SagaHandlerResponse(
-                        commands=[make_command_book("inventory", cmd)]
-                    )
+                    cmd = make_command_book("inventory", ReserveInventory(...))
+                    destinations.stamp_command(cmd, "inventory")
+                    return SagaHandlerResponse(commands=[cmd])
                 return SagaHandlerResponse()
 
             def on_rejected(self, notification, target_domain, target_command):
@@ -248,12 +253,14 @@ class SagaDomainHandler(Protocol):
         self,
         source: types.EventBook,
         event: Any,
+        destinations: Destinations,
     ) -> SagaHandlerResponse:
         """Handle an event and produce commands.
 
         Args:
             source: EventBook containing the triggering event
             event: The specific event being processed
+            destinations: Destinations context for command stamping
 
         Returns:
             SagaHandlerResponse with commands to send and/or facts to inject

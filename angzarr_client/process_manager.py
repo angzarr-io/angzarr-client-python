@@ -15,10 +15,16 @@ Two-phase protocol support:
     1. Prepare: Declare additional destinations needed (via @prepares(E))
     2. Handle: Produce commands and process events (via @handles(E, input_domain="x"))
 
+Design Philosophy:
+    PMs coordinate, aggregates decide. PMs should NOT rebuild destination
+    state to make decisions. They receive only destination sequences for
+    command stamping. Use sync mode for immediate feedback on command results.
+
 Example usage:
     from angzarr_client.process_manager import (
         ProcessManager, applies, handles, output_domain, prepares, rejected
     )
+    from angzarr_client.destinations import Destinations
 
     @dataclass
     class OrderWorkflowState:
@@ -43,9 +49,11 @@ Example usage:
         @output_domain("inventory")
         @handles(OrderCreated, input_domain="order")
         def on_order_created(
-            self, event: OrderCreated, destinations: list[EventBook]
+            self, event: OrderCreated, destinations: Destinations
         ) -> ReserveInventory:
-            return ReserveInventory(...)
+            cmd = ReserveInventory(order_id=event.order_id, quantity=event.quantity)
+            # Use destinations.stamp_command() to set correct sequence
+            return cmd
 
         @output_domain("payment")
         @handles(InventoryReserved, input_domain="inventory")
@@ -64,6 +72,7 @@ from google.protobuf.any_pb2 import Any
 
 from .aggregate import applies
 from .compensation import RejectionHandlerResponse
+from .destinations import Destinations
 from .proto.angzarr import process_manager_pb2 as pm_pb2
 from .proto.angzarr import types_pb2 as types
 from .router import _pack_any, domain, handles, output_domain, prepares, rejected
@@ -150,9 +159,6 @@ class ProcessManager(Generic[StateT], ABC):
     _applier_table: dict[str, tuple[str, type]] = (
         {}
     )  # suffix -> (method_name, event_type)
-    _destination_routers: dict[str, "StateRouter"] = (
-        {}
-    )  # domain -> StateRouter for rebuilding destination state
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -170,8 +176,6 @@ class ProcessManager(Generic[StateT], ABC):
         cls._input_domains = {}
         cls._rejection_table = {}
         cls._applier_table = {}
-        # Inherit destination routers from parent, allow override
-        cls._destination_routers = dict(getattr(cls, "_destination_routers", {}) or {})
         cls._build_dispatch_table()
         cls._build_prepare_table()
         cls._build_rejection_table()
@@ -249,34 +253,19 @@ class ProcessManager(Generic[StateT], ABC):
                     raise TypeError(f"{cls.__name__}: duplicate applier for {suffix}")
                 cls._applier_table[suffix] = (attr_name, event_type)
 
-    def _rebuild_destinations(
+    def _create_destinations(
         self,
-        destinations: list[types.EventBook],
-    ) -> dict[str, object]:
-        """Rebuild destination states using registered StateRouters.
-
-        For each destination EventBook, looks up a registered StateRouter
-        by domain name. If found, rebuilds state using the router.
-        If not found, keeps the raw EventBook for backward compatibility.
+        destination_sequences: dict[str, int],
+    ) -> Destinations:
+        """Create Destinations context from sequence map.
 
         Args:
-            destinations: List of destination EventBooks from prepare phase.
+            destination_sequences: Dict mapping domain name to next sequence.
 
         Returns:
-            Dict mapping domain name to rebuilt state (or raw EventBook).
+            Destinations object for command stamping.
         """
-        result: dict[str, object] = {}
-        for dest in destinations:
-            domain_name = dest.cover.domain if dest.HasField("cover") else ""
-            if not domain_name:
-                continue
-            if domain_name in self._destination_routers:
-                router = self._destination_routers[domain_name]
-                result[domain_name] = router.with_event_book(dest)
-            else:
-                # No router registered - keep raw EventBook
-                result[domain_name] = dest
-        return result
+        return Destinations(destination_sequences)
 
     def __init__(self, process_state: types.EventBook = None):
         """Initialize process manager with optional prior state.
@@ -345,7 +334,7 @@ class ProcessManager(Generic[StateT], ABC):
         event_any: Any,
         root: bytes = None,
         correlation_id: str = "",
-        destinations: list[types.EventBook] = None,
+        destination_sequences: dict[str, int] = None,
     ) -> list[types.CommandBook]:
         """Dispatch event to matching handler.
 
@@ -353,7 +342,7 @@ class ProcessManager(Generic[StateT], ABC):
             event_any: Packed event as google.protobuf.Any
             root: Source aggregate root
             correlation_id: Correlation ID for the workflow
-            destinations: Optional list of destination EventBooks
+            destination_sequences: Map of domain to next sequence number
 
         Returns:
             List of CommandBooks to send.
@@ -380,9 +369,9 @@ class ProcessManager(Generic[StateT], ABC):
                 # Build kwargs based on what handler accepts
                 kwargs = {}
                 if "destinations" in params:
-                    # Always rebuild destinations using registered StateRouters
-                    kwargs["destinations"] = self._rebuild_destinations(
-                        destinations or []
+                    # Pass Destinations object for command stamping
+                    kwargs["destinations"] = self._create_destinations(
+                        destination_sequences or {}
                     )
                 if "root" in params:
                     kwargs["root"] = root
@@ -503,14 +492,14 @@ class ProcessManager(Generic[StateT], ABC):
         cls,
         trigger: types.EventBook,
         process_state: types.EventBook,
-        destinations: list[types.EventBook] = None,
+        destination_sequences: dict[str, int] = None,
     ) -> pm_pb2.ProcessManagerHandleResponse:
         """Phase 2: Handle a trigger event with current process state.
 
         Args:
             trigger: The triggering event book.
             process_state: Current process manager state.
-            destinations: Additional destination states (from prepare phase).
+            destination_sequences: Map of domain to next sequence number for stamping.
 
         Returns:
             ProcessManagerHandleResponse with process_events, commands, and facts.
@@ -525,7 +514,7 @@ class ProcessManager(Generic[StateT], ABC):
         for page in trigger.pages:
             if page.HasField("event"):
                 commands.extend(
-                    pm.dispatch(page.event, root, correlation_id, destinations)
+                    pm.dispatch(page.event, root, correlation_id, destination_sequences)
                 )
 
         return pm_pb2.ProcessManagerHandleResponse(

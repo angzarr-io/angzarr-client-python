@@ -801,9 +801,15 @@ class _FluentRouterBase:
         return result if result is not None else []
 
     def dispatch(
-        self, source: types.EventBook, destinations: list[types.EventBook] | None = None
+        self,
+        source: types.EventBook,
+        destination_sequences: dict[str, int] | None = None,
     ) -> saga_pb2.SagaResponse:
         """Handle source events and produce commands.
+
+        Args:
+            source: EventBook containing events to process.
+            destination_sequences: Map of domain to next sequence number.
 
         Returns:
             SagaResponse containing commands and events.
@@ -818,7 +824,7 @@ class _FluentRouterBase:
 
         # Check if this is a Notification (rejection)
         if event_any.type_url.endswith("Notification"):
-            commands = self.dispatch_rejection(source, destinations or [])
+            commands = self.dispatch_rejection(source, destination_sequences or {})
             return saga_pb2.SagaResponse(commands=commands)
 
         root = source.cover.root if source.HasField("cover") else None
@@ -826,7 +832,7 @@ class _FluentRouterBase:
         domain = self._get_dispatch_domain(source)
 
         result = self._router.dispatch(
-            domain, event_any, root, correlation_id, destinations or []
+            domain, event_any, root, correlation_id, destination_sequences or {}
         )
         commands = result if result is not None else []
         return saga_pb2.SagaResponse(commands=commands)
@@ -847,13 +853,15 @@ class _FluentRouterBase:
         return None
 
     def dispatch_rejection(
-        self, source: types.EventBook, destinations: list[types.EventBook]
+        self,
+        source: types.EventBook,
+        destination_sequences: dict[str, int],
     ) -> list[types.CommandBook]:
         """Dispatch rejection notification to handler.
 
         Args:
             source: The source EventBook containing the Notification.
-            destinations: EventBooks for destinations (for compensating commands).
+            destination_sequences: Map of domain to next sequence number.
 
         Returns:
             List of CommandBooks (compensating commands), or empty list if no handler.
@@ -876,7 +884,7 @@ class _FluentRouterBase:
         correlation_id = source.cover.correlation_id if source.HasField("cover") else ""
 
         result = self._router.dispatch_rejection(
-            notification, root, correlation_id, destinations
+            notification, root, correlation_id, destination_sequences
         )
         return result if result is not None else []
 
@@ -1299,9 +1307,13 @@ class OORouter:
     def dispatch(
         self,
         source: types.EventBook,
-        destinations: list[types.EventBook] | None = None,
+        destination_sequences: dict[str, int] | None = None,
     ) -> saga_pb2.SagaResponse:
         """Handle source events and produce commands.
+
+        Args:
+            source: EventBook containing events to process.
+            destination_sequences: Map of domain to next sequence number.
 
         Returns:
             SagaResponse containing commands and events.
@@ -1317,14 +1329,14 @@ class OORouter:
 
         # Check if this is a Notification (rejection)
         if event_any.type_url.endswith("Notification"):
-            commands = self.dispatch_rejection(source, destinations or [])
+            commands = self.dispatch_rejection(source, destination_sequences or {})
             return saga_pb2.SagaResponse(commands=commands)
 
         root = source.cover.root if source.HasField("cover") else None
         correlation_id = source.cover.correlation_id if source.HasField("cover") else ""
 
         result = self._router.dispatch(
-            domain, event_any, root, correlation_id, destinations or []
+            domain, event_any, root, correlation_id, destination_sequences or {}
         )
         commands = result if result is not None else []
         return saga_pb2.SagaResponse(commands=commands)
@@ -1345,13 +1357,15 @@ class OORouter:
         return None
 
     def dispatch_rejection(
-        self, source: types.EventBook, destinations: list[types.EventBook]
+        self,
+        source: types.EventBook,
+        destination_sequences: dict[str, int],
     ) -> list[types.CommandBook]:
         """Dispatch rejection notification to handler.
 
         Args:
             source: The source EventBook containing the Notification.
-            destinations: EventBooks for destinations (for compensating commands).
+            destination_sequences: Map of domain to next sequence number.
 
         Returns:
             List of CommandBooks (compensating commands), or empty list if no handler.
@@ -1374,7 +1388,7 @@ class OORouter:
         correlation_id = source.cover.correlation_id if source.HasField("cover") else ""
 
         result = self._router.dispatch_rejection(
-            notification, root, correlation_id, destinations
+            notification, root, correlation_id, destination_sequences
         )
         return result if result is not None else []
 
@@ -1685,14 +1699,14 @@ class ProcessManagerRouter(Generic[S]):
         self,
         trigger: types.EventBook,
         process_state: types.EventBook,
-        destinations: list[types.EventBook] | None = None,
+        destination_sequences: dict[str, int] | None = None,
     ) -> pm.ProcessManagerHandleResponse:
         """Dispatch a trigger event to the appropriate handler.
 
         Args:
             trigger: Trigger EventBook with source event.
             process_state: Current PM state EventBook.
-            destinations: EventBooks for destinations declared in prepare() (optional).
+            destination_sequences: Map of domain to next sequence number (optional).
 
         Returns:
             HandleResponse with commands and process events.
@@ -1700,6 +1714,8 @@ class ProcessManagerRouter(Generic[S]):
         Raises:
             ValueError: If trigger has no events or no handler for domain.
         """
+        from .destinations import Destinations
+
         trigger_domain = trigger.cover.domain if trigger.HasField("cover") else ""
 
         handler = self._domains.get(trigger_domain)
@@ -1720,7 +1736,8 @@ class ProcessManagerRouter(Generic[S]):
         if event_any.type_url.endswith("Notification"):
             return self._dispatch_notification(handler, event_any, state)
 
-        response = handler.handle(trigger, state, event_any, destinations or [])
+        destinations = Destinations(destination_sequences or {})
+        response = handler.handle(trigger, state, event_any, destinations)
 
         return pm.ProcessManagerHandleResponse(
             process_events=response.events,

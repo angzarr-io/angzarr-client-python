@@ -1,6 +1,7 @@
 version: v2
 inputs:
-  - module: buf.build/angzarr/angzarr:0.2.0
+  # Use local proto from core during development
+  - directory: /home/babbitt/workspace/angzarr/core/main/proto
   - module: buf.build/angzarr/examples:0.1.2
 plugins:
   # Pin to v28.3 which generates protobuf 5.x compatible code
