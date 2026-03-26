@@ -8,7 +8,7 @@ default:
 # Generate proto code from buf registry
 gen:
     buf generate
-    python scripts/generate_protos.py
+    uv run python scripts/generate_protos.py
 
 # Sync feature files from angzarr core
 sync-features:
