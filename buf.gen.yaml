@@ -1,6 +1,6 @@
 version: v2
 inputs:
-  - module: buf.build/angzarr/angzarr:0.3.0
+  - module: buf.build/angzarr/angzarr:0.5.0
   - module: buf.build/angzarr/examples:0.1.2
 plugins:
   # Pin to v28.3 which generates protobuf 5.x compatible code
