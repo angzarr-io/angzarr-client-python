@@ -66,7 +66,7 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from google.protobuf.any_pb2 import Any
 
@@ -76,9 +76,6 @@ from .destinations import Destinations
 from .proto.angzarr import process_manager_pb2 as pm_pb2
 from .proto.angzarr import types_pb2 as types
 from .router import _pack_any, domain, handles, output_domain, prepares, rejected
-
-if TYPE_CHECKING:
-    from .state_builder import StateRouter
 
 # Re-export decorators
 __all__ = [
