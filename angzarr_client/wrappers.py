@@ -343,7 +343,9 @@ class EventPageW:
         if not self.proto.HasField("header"):
             return False
         header = self.proto.header
-        return header.HasField("external_deferred") or header.HasField("angzarr_deferred")
+        return header.HasField("external_deferred") or header.HasField(
+            "angzarr_deferred"
+        )
 
     def type_url(self) -> str | None:
         """Return the type URL of the event payload."""
@@ -423,7 +425,9 @@ class CommandPageW:
         if not self.proto.HasField("header"):
             return False
         header = self.proto.header
-        return header.HasField("external_deferred") or header.HasField("angzarr_deferred")
+        return header.HasField("external_deferred") or header.HasField(
+            "angzarr_deferred"
+        )
 
     def type_url(self) -> str | None:
         """Return the type URL of the command payload."""

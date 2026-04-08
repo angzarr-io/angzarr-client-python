@@ -375,7 +375,9 @@ class Saga(ABC):
                     event_any = page.GetEvent()
             if event_any:
                 commands.extend(
-                    saga.dispatch(event_any, root, correlation_id, destination_sequences)
+                    saga.dispatch(
+                        event_any, root, correlation_id, destination_sequences
+                    )
                 )
 
         return saga_pb2.SagaResponse(commands=commands, events=saga._events)
