@@ -85,3 +85,18 @@ class InvalidTimestampError(ClientError):
 
 class CommandRejectedError(Exception):
     """Command was rejected due to business rule violation."""
+
+    def __init__(self, message: str, status_code: str = "FAILED_PRECONDITION"):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+    @staticmethod
+    def precondition_failed(message: str) -> "CommandRejectedError":
+        """Create a FAILED_PRECONDITION error for guard failures."""
+        return CommandRejectedError(message, "FAILED_PRECONDITION")
+
+    @staticmethod
+    def invalid_argument(message: str) -> "CommandRejectedError":
+        """Create an INVALID_ARGUMENT error for input validation failures."""
+        return CommandRejectedError(message, "INVALID_ARGUMENT")

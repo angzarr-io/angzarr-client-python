@@ -24,19 +24,19 @@ def require_not_exists(field: str, error_msg: str) -> None:
 def require_positive(value: int, error_msg: str) -> None:
     """Require that a value is greater than zero."""
     if value <= 0:
-        raise CommandRejectedError(error_msg)
+        raise CommandRejectedError.invalid_argument(error_msg)
 
 
 def require_non_negative(value: int, error_msg: str) -> None:
     """Require that a value is zero or greater."""
     if value < 0:
-        raise CommandRejectedError(error_msg)
+        raise CommandRejectedError.invalid_argument(error_msg)
 
 
 def require_not_empty(items: Sequence[Any], error_msg: str) -> None:
     """Require that a sequence has at least one element."""
     if not items:
-        raise CommandRejectedError(error_msg)
+        raise CommandRejectedError.invalid_argument(error_msg)
 
 
 def require_not_empty_str(value: str, field_name: str) -> None:
@@ -47,7 +47,7 @@ def require_not_empty_str(value: str, field_name: str) -> None:
         field_name: The name of the field for the error message
     """
     if not value:
-        raise CommandRejectedError(f"{field_name} must not be empty")
+        raise CommandRejectedError.invalid_argument(f"{field_name} must not be empty")
 
 
 def require_status(actual: str, expected: str, error_msg: str) -> None:
