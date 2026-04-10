@@ -50,8 +50,6 @@ Thumbs.db
 .uv/
 uv.lock
 
-# Features (synced from core repo)
-features/*.feature
 
 # Generated proto code (regenerated from buf registry during build)
 angzarr_client/proto/**/*_pb2.py
