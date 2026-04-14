@@ -52,10 +52,10 @@ clean:
 
 # Check formatting
 fmt:
-    uv run ruff check . --exclude angzarr-core
+    uv run ruff check . --exclude angzarr-project
     uv run black --check .
 
 # Auto-format code
 fmt-fix:
-    uv run ruff check --fix . --exclude angzarr-core
+    uv run ruff check --fix . --exclude angzarr-project
     uv run black .

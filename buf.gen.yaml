@@ -1,6 +1,6 @@
 version: v2
 inputs:
-  - directory: angzarr-core/proto
+  - directory: angzarr-project/proto
 plugins:
   # Pin to v28.3 which generates protobuf 5.x compatible code
   - remote: buf.build/protocolbuffers/python:v28.3
