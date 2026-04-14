@@ -525,13 +525,13 @@ class TestTypeUrlHelpers:
         result = type_url("com.example", "MyMessage")
         assert result == "type.googleapis.com/com.example.MyMessage"
 
-    def test_type_name_from_url_with_dot(self) -> None:
-        """type_name_from_url extracts name after last dot."""
+    def test_type_name_from_url_fully_qualified(self) -> None:
+        """type_name_from_url extracts fully qualified name after last slash."""
         result = type_name_from_url("type.googleapis.com/com.example.MyMessage")
-        assert result == "MyMessage"
+        assert result == "com.example.MyMessage"
 
     def test_type_name_from_url_with_slash(self) -> None:
-        """type_name_from_url extracts name after slash if no dot."""
+        """type_name_from_url extracts name after last slash."""
         result = type_name_from_url("prefix/MyMessage")
         assert result == "MyMessage"
 

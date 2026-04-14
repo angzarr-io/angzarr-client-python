@@ -106,6 +106,25 @@ class CommandHandlerDomainHandler(Protocol[S_co]):
         """
         ...
 
+    def handle_fact(
+        self,
+        facts: types.EventBook,
+        state: S_co,
+    ) -> types.EventBook:
+        """Handle injected facts and return the resulting EventBook.
+
+        Facts are always accepted (cannot be rejected). Override to emit
+        additional events or augment facts. Default: pass-through.
+
+        Args:
+            facts: The injected facts EventBook
+            state: Current aggregate state
+
+        Returns:
+            EventBook with original facts plus any additional events
+        """
+        return facts
+
     def on_rejected(
         self,
         notification: types.Notification,

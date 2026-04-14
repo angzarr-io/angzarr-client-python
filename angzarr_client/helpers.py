@@ -291,9 +291,10 @@ def type_url(package_name: str, type_name: str) -> str:
 
 
 def type_name_from_url(type_url_str: str) -> str:
-    """Extract the type name from a type URL."""
-    if "." in type_url_str:
-        return type_url_str.rsplit(".", 1)[1]
+    """Extract the fully qualified type name from a type URL.
+
+    For "type.googleapis.com/examples.CardsDealt", returns "examples.CardsDealt".
+    """
     if "/" in type_url_str:
         return type_url_str.rsplit("/", 1)[1]
     return type_url_str
