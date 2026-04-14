@@ -1,5 +1,6 @@
 #!/bin/bash
 # Sync feature files from angzarr-project submodule
+# Features are available via symlink, this script ensures they're accessible
 
 FEATURES="angzarr-project/features/client"
 
@@ -9,6 +10,7 @@ if [ ! -d "$FEATURES" ]; then
     exit 1
 fi
 
-mkdir -p features
-cp -r "$FEATURES/"*.feature features/ 2>/dev/null || true
-echo "Features synced from $FEATURES"
+# Remove stale symlink or directory, replace with symlink
+rm -rf features
+ln -s "$FEATURES" features
+echo "Features linked from $FEATURES"
