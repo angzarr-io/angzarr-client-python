@@ -22,6 +22,8 @@ jobs:
       options: --user root
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: uv sync --extra dev
@@ -45,6 +47,8 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -75,6 +79,8 @@ jobs:
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install just
         uses: extractions/setup-just@v2
