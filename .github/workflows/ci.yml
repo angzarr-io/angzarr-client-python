@@ -53,7 +53,7 @@ jobs:
         uses: extractions/setup-just@v2
 
       - name: Generate protos
-        run: just gen
+        run: just proto
 
       - name: Sync feature files
         run: bash scripts/sync-features.sh
@@ -80,7 +80,7 @@ jobs:
         uses: extractions/setup-just@v2
 
       - name: Generate protos
-        run: just gen
+        run: just proto
 
       - name: Build package
         run: uv build

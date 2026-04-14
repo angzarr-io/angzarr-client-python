@@ -420,7 +420,11 @@ class TestHandleFact:
     def test_default_handle_fact_is_pass_through(self):
         """Default handle_fact returns facts unchanged."""
         from angzarr_client.handler_protocols import CommandHandlerDomainHandler
-        from angzarr_client.proto.angzarr.types_pb2 import EventBook, EventPage, PageHeader
+        from angzarr_client.proto.angzarr.types_pb2 import (
+            EventBook,
+            EventPage,
+            PageHeader,
+        )
         from google.protobuf.any_pb2 import Any
         from google.protobuf.empty_pb2 import Empty
 
@@ -428,14 +432,19 @@ class TestHandleFact:
         class MinimalHandler:
             def command_types(self):
                 return ["Test"]
+
             def state_router(self):
                 return None
+
             def handle(self, cmd_book, payload, state, seq):
                 return EventBook()
+
             def handle_fact(self, facts, state):
                 return facts  # Default pass-through
+
             def on_rejected(self, notification, state, target_domain, target_command):
                 from angzarr_client.compensation import RejectionHandlerResponse
+
                 return RejectionHandlerResponse()
 
         handler = MinimalHandler()
