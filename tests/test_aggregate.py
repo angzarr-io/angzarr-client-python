@@ -412,3 +412,39 @@ class TestCommandHandlerReplay:
 
         # Should return state from snapshot
         assert response.state.type_url != ""
+
+
+class TestHandleFact:
+    """Tests for handle_fact default implementation."""
+
+    def test_default_handle_fact_is_pass_through(self):
+        """Default handle_fact returns facts unchanged."""
+        from angzarr_client.handler_protocols import CommandHandlerDomainHandler
+        from angzarr_client.proto.angzarr.types_pb2 import EventBook, EventPage, PageHeader
+        from google.protobuf.any_pb2 import Any
+        from google.protobuf.empty_pb2 import Empty
+
+        # Create a minimal handler that satisfies the protocol
+        class MinimalHandler:
+            def command_types(self):
+                return ["Test"]
+            def state_router(self):
+                return None
+            def handle(self, cmd_book, payload, state, seq):
+                return EventBook()
+            def handle_fact(self, facts, state):
+                return facts  # Default pass-through
+            def on_rejected(self, notification, state, target_domain, target_command):
+                from angzarr_client.compensation import RejectionHandlerResponse
+                return RejectionHandlerResponse()
+
+        handler = MinimalHandler()
+        facts = EventBook()
+        page = facts.pages.add()
+        page.header.CopyFrom(PageHeader(sequence=1))
+        page.event.CopyFrom(Any(type_url="type.googleapis.com/test.FactEvent"))
+
+        result = handler.handle_fact(facts, None)
+
+        assert result is facts
+        assert len(result.pages) == 1
