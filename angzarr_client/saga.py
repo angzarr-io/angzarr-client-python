@@ -12,7 +12,6 @@ Router Pattern: Saga follows the SINGLE-DOMAIN OO pattern.
 - One input domain: use @domain class decorator
 - One output_domain: use @output_domain class decorator
 - Uses @handles decorator for handler registration
-- Uses @prepares decorator for prepare phase handlers
 
 Example usage (simple saga):
     from angzarr_client.saga import Saga, domain, output_domain, handles
@@ -61,11 +60,10 @@ from .router import (
     domain,
     handles,
     output_domain,
-    prepares,
 )
 
 # Re-export decorators
-__all__ = ["Saga", "domain", "output_domain", "handles", "prepares"]
+__all__ = ["Saga", "domain", "output_domain", "handles"]
 
 
 class Saga(ABC):
@@ -78,7 +76,6 @@ class Saga(ABC):
     - Auto-packing: returned commands are automatically packed into CommandBooks
 
     Provides:
-    - Two-phase protocol: @prepares(E) for destinations, @handles(E) for execution
     - Event dispatch via @handles decorated methods
     - Command packing into CommandBook
     - Descriptor generation for topology discovery
@@ -88,7 +85,6 @@ class Saga(ABC):
     - Use @output_domain class decorator for output domain
     - Set `name` class attribute (e.g., "saga-order-fulfillment")
     - Decorate event handlers with `@handles(EventType)`
-    - Optionally decorate prepare handlers with `@prepares(EventType)`
 
     Usage (simple):
         @domain("order")
@@ -120,7 +116,6 @@ class Saga(ABC):
     _domain: str = None  # Set by @domain decorator
     _output_domain: str = None  # Set by @output_domain decorator
     _dispatch_table: dict[str, tuple[str, type]] = {}
-    _prepare_table: dict[str, tuple[str, type]] = {}
     _validated: bool = False
 
     def __init__(self) -> None:
@@ -173,7 +168,6 @@ class Saga(ABC):
 
         # Build dispatch tables (decorators have run by now)
         cls._dispatch_table = cls._build_dispatch_table()
-        cls._prepare_table = cls._build_prepare_table()
         cls._validated = False
 
     @classmethod
@@ -191,47 +185,6 @@ class Saga(ABC):
                     )
                 table[full_name] = (attr_name, event_type)
         return table
-
-    @classmethod
-    def _build_prepare_table(cls) -> dict[str, tuple[str, type]]:
-        """Scan for @prepares methods and build prepare table."""
-        table = {}
-        for attr_name in dir(cls):
-            attr = getattr(cls, attr_name, None)
-            if callable(attr) and getattr(attr, "_is_prepare_handler", False):
-                event_type = attr._event_type
-                full_name = event_type.DESCRIPTOR.full_name
-                if full_name in table:
-                    raise TypeError(
-                        f"{cls.__name__}: duplicate prepare handler for {full_name}"
-                    )
-                table[full_name] = (attr_name, event_type)
-        return table
-
-    def prepare(self, event_any: Any) -> list[types.Cover]:
-        """Prepare destinations for an event.
-
-        Dispatches to @prepares decorated method if one exists.
-
-        Args:
-            event_any: Packed event as google.protobuf.Any
-
-        Returns:
-            List of Covers identifying destination aggregates.
-        """
-        type_url = event_any.type_url
-
-        for full_name, (method_name, event_type) in self._prepare_table.items():
-            if type_url == TYPE_URL_PREFIX + full_name:
-                # Unpack event
-                event = event_type()
-                event_any.Unpack(event)
-
-                # Call prepare handler
-                result = getattr(self, method_name)(event)
-                return result if result else []
-
-        return []
 
     def dispatch(
         self,
@@ -316,26 +269,6 @@ class Saga(ABC):
             books.append(book)
 
         return books
-
-    @classmethod
-    def prepare_destinations(cls, source: types.EventBook) -> list[types.Cover]:
-        """Phase 1: Declare destination aggregates needed.
-
-        Args:
-            source: EventBook containing events to process.
-
-        Returns:
-            List of Covers identifying destination aggregates to fetch.
-        """
-        cls._ensure_configured()
-        saga = cls()
-        destinations: list[types.Cover] = []
-
-        for page in source.pages:
-            if page.HasField("event"):
-                destinations.extend(saga.prepare(page.event))
-
-        return destinations
 
     @classmethod
     def handle(
