@@ -30,7 +30,6 @@ from angzarr_client.helpers import (
     divergence_for,
     domain,
     edition,
-    edition_opt,
     event_pages,
     # CommandResponse helpers
     events_from_response,
@@ -245,31 +244,18 @@ class TestEdition:
         cover.edition.name = "v2"
         assert edition(cover) == "v2"
 
-    def test_returns_default_when_not_set(self) -> None:
-        """Returns DEFAULT_EDITION when not set."""
+    def test_returns_none_when_not_set(self) -> None:
+        """Returns None when not set."""
         cover = Cover(domain="test")
-        assert edition(cover) == DEFAULT_EDITION
+        assert edition(cover) is None
 
-    def test_returns_default_for_empty_name(self) -> None:
-        """Returns DEFAULT_EDITION for empty name."""
+    def test_returns_none_for_empty_name(self) -> None:
+        """Returns None for empty name."""
         cover = Cover(domain="test")
         cover.edition.name = ""
-        assert edition(cover) == DEFAULT_EDITION
+        assert edition(cover) is None
 
 
-class TestEditionOpt:
-    """Tests for edition_opt function."""
-
-    def test_returns_edition_name(self) -> None:
-        """Returns edition name when set."""
-        cover = Cover(domain="test")
-        cover.edition.name = "speculative"
-        assert edition_opt(cover) == "speculative"
-
-    def test_returns_none_when_not_set(self) -> None:
-        """Returns None when edition not set."""
-        cover = Cover(domain="test")
-        assert edition_opt(cover) is None
 
 
 class TestRoutingKey:
@@ -290,14 +276,14 @@ class TestCacheKey:
         cover = Cover(domain="orders")
         cover.root.CopyFrom(uuid_to_proto(test_uuid))
         result = cache_key(cover)
-        # Default edition is "angzarr"
-        assert result == f"angzarr:orders:{test_uuid.bytes.hex()}"
+        # No edition set → empty prefix
+        assert result == f":orders:{test_uuid.bytes.hex()}"
 
     def test_returns_domain_with_empty_root(self) -> None:
         """Cache key with no root has empty suffix."""
         cover = Cover(domain="orders")
-        # Default edition is "angzarr"
-        assert cache_key(cover) == "angzarr:orders:"
+        # No edition set → empty prefix
+        assert cache_key(cover) == ":orders:"
 
 
 class TestUuidConversion:

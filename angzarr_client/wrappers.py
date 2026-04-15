@@ -8,7 +8,6 @@ from typing import Optional, TypeVar
 from uuid import UUID as PyUUID
 
 from .helpers import (
-    DEFAULT_EDITION,
     UNKNOWN_DOMAIN,
     type_url_matches,
 )

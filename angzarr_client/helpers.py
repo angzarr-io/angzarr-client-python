@@ -89,16 +89,8 @@ def root_id_hex(obj: CoverBearer) -> str:
     return c.root.value.hex()
 
 
-def edition(obj: CoverBearer) -> str:
-    """Return the edition name from a Cover-bearing type, defaulting to DEFAULT_EDITION."""
-    c = cover_of(obj)
-    if c is None or not c.HasField("edition") or not c.edition.name:
-        return DEFAULT_EDITION
-    return c.edition.name
-
-
-def edition_opt(obj: CoverBearer) -> str | None:
-    """Return the edition name as Optional, None if not set."""
+def edition(obj: CoverBearer) -> str | None:
+    """Return the edition name from a Cover-bearing type, or None if not set."""
     c = cover_of(obj)
     if c is None or not c.HasField("edition") or not c.edition.name:
         return None
@@ -112,7 +104,7 @@ def routing_key(obj: CoverBearer) -> str:
 
 def cache_key(obj: CoverBearer) -> str:
     """Generate a cache key based on edition + domain + root."""
-    return f"{edition(obj)}:{domain(obj)}:{root_id_hex(obj)}"
+    return f"{edition(obj) or ''}:{domain(obj)}:{root_id_hex(obj)}"
 
 
 # UUID conversion
