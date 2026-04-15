@@ -117,9 +117,7 @@ class QueryClient:
         self._channel = channel
 
     @classmethod
-    def connect(
-        cls, endpoint: str, retry: RetryPolicy | None = None
-    ) -> "QueryClient":
+    def connect(cls, endpoint: str, retry: RetryPolicy | None = None) -> "QueryClient":
         """Connect to an event query service at the given endpoint.
 
         Args:

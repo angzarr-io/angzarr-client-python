@@ -156,7 +156,11 @@ class TestCommandBuilder:
         client.handle_command.return_value = expected_response
 
         msg = StringValue(value="test")
-        builder = CommandBuilder(client, "orders").with_sequence(0).with_command("type/Cmd", msg)
+        builder = (
+            CommandBuilder(client, "orders")
+            .with_sequence(0)
+            .with_command("type/Cmd", msg)
+        )
         response = builder.execute()
 
         client.handle_command.assert_called_once()

@@ -256,8 +256,6 @@ class TestEdition:
         assert edition(cover) is None
 
 
-
-
 class TestRoutingKey:
     """Tests for routing_key function."""
 
