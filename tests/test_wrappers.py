@@ -132,10 +132,10 @@ class TestEventBookW:
         wrapper = EventBookW(proto)
         assert wrapper.edition() == "v2"
 
-    def test_edition_returns_default_when_not_set(self) -> None:
-        """edition returns DEFAULT_EDITION when not set."""
+    def test_edition_returns_none_when_not_set(self) -> None:
+        """edition returns None when not set."""
         wrapper = EventBookW(EventBook())
-        assert wrapper.edition() == DEFAULT_EDITION
+        assert wrapper.edition() is None
 
     def test_routing_key_returns_domain(self) -> None:
         """routing_key returns the domain."""
@@ -145,14 +145,13 @@ class TestEventBookW:
         assert wrapper.routing_key() == "inventory"
 
     def test_cache_key_returns_domain_and_root(self) -> None:
-        """cache_key returns edition:domain:root_hex format."""
+        """cache_key returns domain:root_hex format when no edition."""
         test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
         proto = EventBook()
         proto.cover.domain = "orders"
         proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
         wrapper = EventBookW(proto)
-        # Default edition is "angzarr"
-        assert wrapper.cache_key() == f"angzarr:orders:{test_uuid.bytes.hex()}"
+        assert wrapper.cache_key() == f":orders:{test_uuid.bytes.hex()}"
 
     def test_cover_wrapper_returns_cover_w(self) -> None:
         """cover_wrapper returns a CoverW wrapping the cover."""
@@ -286,22 +285,10 @@ class TestCoverW:
         wrapper = CoverW(proto)
         assert wrapper.edition() == "speculative"
 
-    def test_edition_returns_default_when_not_set(self) -> None:
-        """edition returns DEFAULT_EDITION when not set."""
+    def test_edition_returns_none_when_not_set(self) -> None:
+        """edition returns None when not set."""
         wrapper = CoverW(Cover())
-        assert wrapper.edition() == DEFAULT_EDITION
-
-    def test_edition_opt_returns_name(self) -> None:
-        """edition_opt returns edition name when set."""
-        proto = Cover()
-        proto.edition.name = "branch-a"
-        wrapper = CoverW(proto)
-        assert wrapper.edition_opt() == "branch-a"
-
-    def test_edition_opt_returns_none_when_not_set(self) -> None:
-        """edition_opt returns None when not set."""
-        wrapper = CoverW(Cover())
-        assert wrapper.edition_opt() is None
+        assert wrapper.edition() is None
 
     def test_routing_key_returns_domain(self) -> None:
         """routing_key returns the domain."""
@@ -314,8 +301,8 @@ class TestCoverW:
         proto = Cover(domain="inventory")
         proto.root.CopyFrom(uuid_to_proto(test_uuid))
         wrapper = CoverW(proto)
-        # Default edition is "angzarr"
-        expected = f"angzarr:inventory:{test_uuid.bytes.hex()}"
+        # No edition set → empty prefix
+        expected = f":inventory:{test_uuid.bytes.hex()}"
         assert wrapper.cache_key() == expected
 
 

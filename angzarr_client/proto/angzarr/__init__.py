@@ -20,6 +20,7 @@ from .saga_pb2 import (
 from .saga_pb2_grpc import SagaCoordinatorServiceStub
 from .types_pb2 import (
     UUID,
+    CascadeErrorMode,
     CommandBook,
     CommandPage,
     CommandRequest,

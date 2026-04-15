@@ -43,6 +43,7 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = CommandBuilder(client, "orders", root)
+        builder.with_sequence(0)
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
         book = builder.build()
 
@@ -59,11 +60,35 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = CommandBuilder(client, "orders")
+        builder.with_sequence(0)
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
         book = builder.build()
 
         assert book.cover.domain == "orders"
         assert not book.cover.HasField("root")
+
+    def test_build_missing_sequence_raises(self) -> None:
+        """Build without with_sequence() should raise."""
+        client = self._mock_aggregate_client()
+        msg = StringValue(value="test")
+
+        builder = CommandBuilder(client, "orders")
+        builder.with_command("type.googleapis.com/test.CreateOrder", msg)
+
+        with pytest.raises(InvalidArgumentError):
+            builder.build()
+
+    def test_build_sequence_zero_valid(self) -> None:
+        """with_sequence(0) is valid for new aggregates."""
+        client = self._mock_aggregate_client()
+        msg = StringValue(value="test")
+
+        builder = CommandBuilder(client, "orders")
+        builder.with_sequence(0)
+        builder.with_command("type.googleapis.com/test.CreateOrder", msg)
+        book = builder.build()
+
+        assert book.pages[0].header.sequence == 0
 
     def test_with_correlation_id(self) -> None:
         """Build with explicit correlation ID."""
@@ -73,6 +98,7 @@ class TestCommandBuilder:
         builder = (
             CommandBuilder(client, "orders")
             .with_correlation_id("my-corr-123")
+            .with_sequence(0)
             .with_command("type/Cmd", msg)
         )
         book = builder.build()
@@ -130,7 +156,7 @@ class TestCommandBuilder:
         client.handle_command.return_value = expected_response
 
         msg = StringValue(value="test")
-        builder = CommandBuilder(client, "orders").with_command("type/Cmd", msg)
+        builder = CommandBuilder(client, "orders").with_sequence(0).with_command("type/Cmd", msg)
         response = builder.execute()
 
         client.handle_command.assert_called_once()

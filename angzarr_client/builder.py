@@ -40,6 +40,7 @@ class CommandBuilder:
         self._root = root
         self._correlation_id: str | None = None
         self._sequence: int = 0
+        self._sequence_set: bool = False
         self._merge_strategy: MergeStrategy = MergeStrategy.MERGE_COMMUTATIVE
         self._type_url: str | None = None
         self._payload: bytes | None = None
@@ -53,6 +54,7 @@ class CommandBuilder:
     def with_sequence(self, seq: int) -> "CommandBuilder":
         """Set the expected sequence number for optimistic locking."""
         self._sequence = seq
+        self._sequence_set = True
         return self
 
     def with_merge_strategy(self, strategy: MergeStrategy) -> "CommandBuilder":
@@ -78,6 +80,8 @@ class CommandBuilder:
             raise InvalidArgumentError("command type_url not set")
         if self._payload is None:
             raise InvalidArgumentError("command payload not set")
+        if not self._sequence_set:
+            raise InvalidArgumentError("sequence not set (call with_sequence)")
 
         correlation_id = self._correlation_id or str(uuid4())
 

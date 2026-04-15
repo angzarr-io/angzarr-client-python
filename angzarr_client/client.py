@@ -6,7 +6,9 @@ from enum import Enum
 import grpc
 
 from .errors import GRPCError
+from .retry import RetryPolicy, default_retry_policy
 from .proto.angzarr import (
+    CascadeErrorMode,
     CommandBook,
     CommandHandlerCoordinatorServiceStub,
     CommandRequest,
@@ -115,9 +117,17 @@ class QueryClient:
         self._channel = channel
 
     @classmethod
-    def connect(cls, endpoint: str) -> "QueryClient":
-        """Connect to an event query service at the given endpoint."""
-        channel = _create_channel(endpoint)
+    def connect(
+        cls, endpoint: str, retry: RetryPolicy | None = None
+    ) -> "QueryClient":
+        """Connect to an event query service at the given endpoint.
+
+        Args:
+            endpoint: The gRPC endpoint (host:port or UDS path).
+            retry: Optional retry policy. Defaults to exponential backoff.
+        """
+        policy = retry or default_retry_policy()
+        channel = policy.execute(lambda: _create_channel(endpoint))
         return cls(channel)
 
     @classmethod
@@ -153,9 +163,17 @@ class CommandHandlerClient:
         self._channel = channel
 
     @classmethod
-    def connect(cls, endpoint: str) -> "CommandHandlerClient":
-        """Connect to a command handler coordinator at the given endpoint."""
-        channel = _create_channel(endpoint)
+    def connect(
+        cls, endpoint: str, retry: RetryPolicy | None = None
+    ) -> "CommandHandlerClient":
+        """Connect to a command handler coordinator at the given endpoint.
+
+        Args:
+            endpoint: The gRPC endpoint (host:port or UDS path).
+            retry: Optional retry policy. Defaults to exponential backoff.
+        """
+        policy = retry or default_retry_policy()
+        channel = policy.execute(lambda: _create_channel(endpoint))
         return cls(channel)
 
     @classmethod
@@ -168,11 +186,12 @@ class CommandHandlerClient:
         """Execute a command with default async mode.
 
         This is a convenience method that wraps the command in a CommandRequest
-        with SYNC_MODE_ASYNC (fire-and-forget).
+        with SYNC_MODE_ASYNC (fire-and-forget) and CASCADE_ERROR_FAIL_FAST.
         """
         request = CommandRequest(
             command=command,
             sync_mode=SyncMode.SYNC_MODE_ASYNC,
+            cascade_error_mode=CascadeErrorMode.CASCADE_ERROR_FAIL_FAST,
         )
         return self.handle_command(request)
 
