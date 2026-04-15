@@ -7,9 +7,7 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from angzarr_client.helpers import (
-    DEFAULT_EDITION,
     UNKNOWN_DOMAIN,
-    proto_to_uuid,
     uuid_to_proto,
 )
 from angzarr_client.proto.angzarr import (
