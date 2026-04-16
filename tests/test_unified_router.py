@@ -538,7 +538,7 @@ class TestExtractRejectionKey:
         domain, cmd_type = _extract_rejection_key(rejection)
 
         assert domain == "inventory"
-        assert cmd_type == "test.ReserveStock"
+        assert cmd_type == "ReserveStock"
 
     def test_returns_empty_for_missing_command(self):
         rejection = types.RejectionNotification()

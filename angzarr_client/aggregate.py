@@ -392,7 +392,10 @@ class CommandHandler(Generic[StateT], ABC):
         # Dispatch to @rejected handler if found (use suffix matching like regular dispatch)
         for key, method_name in self._rejection_table.items():
             expected_domain, expected_command = key.split("/", 1)
-            if domain == expected_domain and command_suffix == expected_command:
+            if domain == expected_domain and (
+                command_suffix == expected_command
+                or command_suffix.endswith("." + expected_command)
+            ):
                 # Ensure state is built before calling handler
                 _ = self._get_state()
                 # Call the handler (wrapper will auto-apply events)

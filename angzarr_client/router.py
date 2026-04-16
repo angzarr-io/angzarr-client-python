@@ -159,7 +159,11 @@ def _pack_events(result, start_seq: int = 0) -> types.EventBook:
 def _extract_rejection_key(
     rejection: types.RejectionNotification,
 ) -> tuple[str, str]:
-    """Extract domain and command type name from a RejectionNotification."""
+    """Extract domain and command simple type name from a RejectionNotification.
+
+    Returns the simple name (after last dot) because @rejected decorators
+    register with simple names like "ProcessPayment", not full proto names.
+    """
     domain = ""
     command_type_name = ""
 
@@ -169,11 +173,14 @@ def _extract_rejection_key(
             domain = rejected_cmd.cover.domain
         if rejected_cmd.pages[0].HasField("command"):
             cmd_type_url = rejected_cmd.pages[0].command.type_url
-            # Extract type name after the prefix
+            # Extract full name after prefix, then get simple name (after last dot)
             if cmd_type_url.startswith(TYPE_URL_PREFIX):
-                command_type_name = cmd_type_url[len(TYPE_URL_PREFIX) :]
+                full_name = cmd_type_url[len(TYPE_URL_PREFIX) :]
             else:
-                command_type_name = cmd_type_url
+                full_name = cmd_type_url
+            # Simple name: "payment.ProcessPayment" -> "ProcessPayment"
+            dot_idx = full_name.rfind(".")
+            command_type_name = full_name[dot_idx + 1 :] if dot_idx >= 0 else full_name
 
     return domain, command_type_name
 
@@ -683,7 +690,10 @@ class Router:
             expected_domain,
             expected_command,
         ) in self._rejection_handlers.items():
-            if domain == expected_domain and command_suffix == expected_command:
+            if domain == expected_domain and (
+                command_suffix == expected_command
+                or command_suffix.endswith("." + expected_command)
+            ):
                 return handler(notification, *args, **kwargs)
         return None
 
