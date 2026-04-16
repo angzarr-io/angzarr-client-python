@@ -62,6 +62,7 @@ packages = ["angzarr_client"]
 [tool.pytest.ini_options]
 bdd_features_base_dir = "features"
 testpaths = ["tests"]
+norecursedirs = ["mutants"]
 
 [tool.mutmut]
 paths_to_mutate = ["angzarr_client/builder.py", "angzarr_client/client.py", "angzarr_client/errors.py", "angzarr_client/helpers.py", "angzarr_client/wrappers.py"]
