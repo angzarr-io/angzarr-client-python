@@ -27,15 +27,21 @@ mutation-test:
     #!/usr/bin/env bash
     set -euo pipefail
     uv run --extra dev mutmut run || true
-    result=$(uv run --extra dev mutmut results 2>&1)
-    total=$(echo "$result" | grep -oP 'Mutants tested: \K[0-9]+' || echo "0")
-    killed=$(echo "$result" | grep -oP 'Killed: \K[0-9]+' || echo "0")
+    # mutmut v3.5 final line: ⠧ 709/709  🎉 390 🫥 226  ⏰ 2  🤔 0  🙁 91  🔇 0  🧙 0
+    result=$(uv run --extra dev mutmut results 2>&1 || true)
+    killed=$(echo "$result" | grep -oP '🎉\s*\K[0-9]+' | tail -1 || echo "")
+    survived=$(echo "$result" | grep -oP '🙁\s*\K[0-9]+' | tail -1 || echo "")
+    if [ -z "$killed" ] || [ "$killed" = "0" ]; then
+        killed=$(echo "$result" | grep -oP 'Killed: \K[0-9]+' || echo "0")
+        survived=$(echo "$result" | grep -oP 'Survived: \K[0-9]+' || echo "0")
+    fi
+    total=$((killed + survived))
     if [ "$total" -eq 0 ]; then
         echo "ERROR: No mutants were tested"
         exit 1
     fi
     rate=$((killed * 100 / total))
-    echo "Mutation kill rate: ${rate}% (${killed}/${total})"
+    echo "Mutation kill rate: ${rate}% (${killed}/${total}, ${survived} survived)"
     if [ "$rate" -lt 70 ]; then
         echo "FAIL: Kill rate ${rate}% is below 70% threshold"
         exit 1
