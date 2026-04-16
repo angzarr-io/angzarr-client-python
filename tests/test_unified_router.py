@@ -260,7 +260,7 @@ def make_event_book(
     domain: str, event_type: str, correlation_id: str = ""
 ) -> types.EventBook:
     """Create an EventBook for testing."""
-    event_any = any_pb2.Any(type_url=f"type.googleapis.com/test.{event_type}")
+    event_any = any_pb2.Any(type_url=f"type.googleapis.com/{domain}.{event_type}")
     return types.EventBook(
         cover=types.Cover(
             domain=domain,
@@ -506,8 +506,9 @@ class TestNextSequence:
         eb = types.EventBook()
         assert _next_sequence(eb) == 0
 
-    def test_returns_page_count(self):
+    def test_returns_next_sequence_from_proto(self):
         eb = types.EventBook(
+            next_sequence=3,
             pages=[
                 types.EventPage(),
                 types.EventPage(),

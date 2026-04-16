@@ -285,8 +285,8 @@ class CommandHandler(Generic[StateT], ABC):
             event_book = types.EventBook()
         self._event_book = event_book
         self._state: StateT = None
-        # Track next sequence number from prior events
-        self._next_seq: int = len(event_book.pages)
+        # Track next sequence number from prior events (use proto field, not page count)
+        self._next_seq: int = event_book.next_sequence
 
     def dispatch(self, command_any: Any) -> None:
         """Dispatch command to matching @handles method.

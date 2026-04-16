@@ -23,6 +23,9 @@ class FakeCommand:
     def SerializeToString(self, deterministic=None):
         return self.value.encode()
 
+    def ParseFromString(self, data: bytes):
+        self.value = data.decode()
+
 
 class AnotherCommand:
     """Another fake command for testing."""
@@ -34,6 +37,9 @@ class AnotherCommand:
 
     def SerializeToString(self, deterministic=None):
         return self.name.encode()
+
+    def ParseFromString(self, data: bytes):
+        self.name = data.decode()
 
 
 class FakeEvent:
@@ -185,7 +191,7 @@ class TestCommandHandlerDispatch:
 
     def test_dispatch_finds_handler(self):
         agg = SampleCommandHandler()
-        cmd_any = any_pb2.Any(type_url="test.FakeCommand", value=b"hello")
+        cmd_any = any_pb2.Any(type_url="type.googleapis.com/test.FakeCommand", value=b"hello")
         agg.dispatch(cmd_any)
 
         # Event should be recorded
@@ -193,7 +199,7 @@ class TestCommandHandlerDispatch:
 
     def test_dispatch_unknown_command(self):
         agg = SampleCommandHandler()
-        cmd_any = any_pb2.Any(type_url="test.UnknownCommand", value=b"")
+        cmd_any = any_pb2.Any(type_url="type.googleapis.com/test.UnknownCommand", value=b"")
 
         with pytest.raises(ValueError, match="Unknown command"):
             agg.dispatch(cmd_any)
@@ -201,7 +207,7 @@ class TestCommandHandlerDispatch:
     def test_handler_can_reject(self):
         # First call succeeds
         agg = SampleCommandHandler()
-        cmd_any = any_pb2.Any(type_url="test.FakeCommand", value=b"first")
+        cmd_any = any_pb2.Any(type_url="type.googleapis.com/test.FakeCommand", value=b"first")
         agg.dispatch(cmd_any)
 
         # Second call should be rejected
@@ -214,7 +220,7 @@ class TestCommandHandlerMultiEvent:
 
     def test_multi_event_records_all(self):
         agg = MultiEventCommandHandler()
-        cmd_any = any_pb2.Any(type_url="test.FakeCommand", value=b"")
+        cmd_any = any_pb2.Any(type_url="type.googleapis.com/test.FakeCommand", value=b"")
         agg.dispatch(cmd_any)
 
         eb = agg.event_book()
@@ -230,7 +236,7 @@ class TestCommandHandlerHandle:
                 pages=[
                     types.CommandPage(
                         command=any_pb2.Any(
-                            type_url="test.FakeCommand",
+                            type_url="type.googleapis.com/test.FakeCommand",
                             value=b"test_value",
                         ),
                     ),
@@ -253,7 +259,7 @@ class TestCommandHandlerHandle:
                 pages=[
                     types.CommandPage(
                         command=any_pb2.Any(
-                            type_url="test.FakeCommand",
+                            type_url="type.googleapis.com/test.FakeCommand",
                             value=b"",
                         ),
                     ),

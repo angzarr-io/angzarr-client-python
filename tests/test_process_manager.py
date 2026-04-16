@@ -600,8 +600,8 @@ class TestProcessManagerAppliesDecorator:
 
     def test_applier_table_populated(self):
         """Verify @applies methods are discovered."""
-        assert "OrderCreated" in PMWithApplies._applier_table
-        assert "StockReserved" in PMWithApplies._applier_table
+        assert "order.OrderCreated" in PMWithApplies._applier_table
+        assert "inventory.StockReserved" in PMWithApplies._applier_table
         assert len(PMWithApplies._applier_table) == 2
 
     def test_apply_event_dispatches_to_applier(self):

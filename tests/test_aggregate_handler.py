@@ -195,6 +195,7 @@ class TestCommandHandlerGrpcDispatch:
 
     def test_with_prior_events(self):
         prior = angzarr.EventBook(
+            next_sequence=3,
             pages=[angzarr.EventPage(), angzarr.EventPage(), angzarr.EventPage()],
         )
 
@@ -223,6 +224,9 @@ class TestCommandHandlerGrpcWithCommandHandlerClass:
 
             def SerializeToString(self, deterministic=None):
                 return self.value.encode()
+
+            def ParseFromString(self, data: bytes):
+                self.value = data.decode()
 
         class FakeEvent:
             DESCRIPTOR = type("Descriptor", (), {"full_name": "test.FakeEvent"})()
@@ -258,7 +262,7 @@ class TestCommandHandlerGrpcWithCommandHandlerClass:
             command=angzarr.CommandBook(
                 pages=[
                     angzarr.CommandPage(
-                        command=any_pb2.Any(type_url="test.FakeCommand", value=b""),
+                        command=any_pb2.Any(type_url="type.googleapis.com/test.FakeCommand", value=b""),
                     ),
                 ],
             ),
