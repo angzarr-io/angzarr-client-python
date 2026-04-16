@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import os
 from enum import Enum
+from typing import TYPE_CHECKING
 from uuid import UUID as PyUUID
 
 import grpc
 
 from .errors import GRPCError
 from .retry import RetryPolicy, default_retry_policy
+
+if TYPE_CHECKING:
+    from .builder import CommandBuilder, QueryBuilder
 from .proto.angzarr import (
     CascadeErrorMode,
     CommandBook,
@@ -151,13 +155,13 @@ class QueryClient:
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
-    def query(self, domain: str, root: PyUUID) -> "QueryBuilder":
+    def query(self, domain: str, root: PyUUID) -> QueryBuilder:
         """Start building a query for a specific aggregate."""
         from .builder import QueryBuilder
 
         return QueryBuilder(self, domain, root)
 
-    def query_domain(self, domain: str) -> "QueryBuilder":
+    def query_domain(self, domain: str) -> QueryBuilder:
         """Start building a query by domain only (use with by_correlation_id)."""
         from .builder import QueryBuilder
 
@@ -224,13 +228,13 @@ class CommandHandlerClient:
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
-    def command(self, domain: str, root: PyUUID) -> "CommandBuilder":
+    def command(self, domain: str, root: PyUUID) -> CommandBuilder:
         """Start building a command for an existing aggregate."""
         from .builder import CommandBuilder
 
         return CommandBuilder(self, domain, root)
 
-    def command_new(self, domain: str) -> "CommandBuilder":
+    def command_new(self, domain: str) -> CommandBuilder:
         """Start building a command for a new aggregate."""
         from .builder import CommandBuilder
 
