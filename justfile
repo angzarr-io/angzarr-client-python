@@ -26,15 +26,14 @@ coverage: sync-features
 mutation-test:
     #!/usr/bin/env bash
     set -euo pipefail
-    uv run --extra dev mutmut run || true
-    # mutmut v3.5 final line: ⠧ 709/709  🎉 390 🫥 226  ⏰ 2  🤔 0  🙁 91  🔇 0  🧙 0
-    result=$(uv run --extra dev mutmut results 2>&1 || true)
-    killed=$(echo "$result" | grep -oP '🎉\s*\K[0-9]+' | tail -1 || echo "")
-    survived=$(echo "$result" | grep -oP '🙁\s*\K[0-9]+' | tail -1 || echo "")
-    if [ -z "$killed" ] || [ "$killed" = "0" ]; then
-        killed=$(echo "$result" | grep -oP 'Killed: \K[0-9]+' || echo "0")
-        survived=$(echo "$result" | grep -oP 'Survived: \K[0-9]+' || echo "0")
-    fi
+    # Capture mutmut run output to parse the final progress line
+    uv run --extra dev mutmut run 2>&1 | tee /tmp/mutmut_output.txt || true
+    # Final line format: ⠧ 709/709  🎉 390 🫥 226  ⏰ 2  🤔 0  🙁 91  🔇 0  🧙 0
+    final_line=$(grep '🎉' /tmp/mutmut_output.txt | tail -1)
+    killed=$(echo "$final_line" | sed -n 's/.*🎉 *\([0-9]*\).*/\1/p')
+    survived=$(echo "$final_line" | sed -n 's/.*🙁 *\([0-9]*\).*/\1/p')
+    killed=${killed:-0}
+    survived=${survived:-0}
     total=$((killed + survived))
     if [ "$total" -eq 0 ]; then
         echo "ERROR: No mutants were tested"
