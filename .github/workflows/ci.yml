@@ -68,6 +68,33 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v
 
+  mutation-test:
+    name: Mutation Test
+    needs: test
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Generate protos
+        run: just proto
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Mutation test
+        run: just mutation-test
+
   build:
     runs-on: ubuntu-latest
     container:
