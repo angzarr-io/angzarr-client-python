@@ -32,6 +32,7 @@ from collections.abc import Callable
 
 from google.protobuf import any_pb2
 
+from .helpers import TYPE_URL_PREFIX
 from .proto.angzarr import types_pb2 as types
 
 __all__ = ["Upcaster", "upcasts"]
@@ -156,7 +157,7 @@ class Upcaster(ABC):
             if callable(attr) and getattr(attr, "_is_upcaster", False):
                 from_type = attr._from_type
                 to_type = attr._to_type
-                suffix = from_type.__name__
+                suffix = from_type.DESCRIPTOR.full_name
                 if suffix in table:
                     raise TypeError(f"{cls.__name__}: duplicate upcaster for {suffix}")
                 table[suffix] = (attr_name, from_type, to_type)
@@ -174,7 +175,7 @@ class Upcaster(ABC):
         type_url = event_any.type_url
 
         for suffix, (method_name, from_type, to_type) in self._dispatch_table.items():
-            if type_url.endswith(suffix):
+            if type_url == TYPE_URL_PREFIX + suffix:
                 # Unpack old event
                 old_event = from_type()
                 event_any.Unpack(old_event)

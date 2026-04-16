@@ -73,6 +73,7 @@ from google.protobuf.any_pb2 import Any
 from .aggregate import applies
 from .compensation import RejectionHandlerResponse
 from .destinations import Destinations
+from .helpers import TYPE_URL_PREFIX
 from .proto.angzarr import process_manager_pb2 as pm_pb2
 from .proto.angzarr import types_pb2 as types
 from .router import _pack_any, domain, handles, output_domain, prepares, rejected
@@ -187,7 +188,7 @@ class ProcessManager(Generic[StateT], ABC):
                 event_type = attr._event_type
                 input_domain = attr._input_domain
                 output_domain = attr._output_domain
-                suffix = event_type.__name__
+                suffix = event_type.DESCRIPTOR.full_name
 
                 if suffix in cls._dispatch_table:
                     raise TypeError(f"{cls.__name__}: duplicate handler for {suffix}")
@@ -212,7 +213,7 @@ class ProcessManager(Generic[StateT], ABC):
             attr = getattr(cls, attr_name, None)
             if callable(attr) and getattr(attr, "_is_prepare_handler", False):
                 event_type = attr._event_type
-                suffix = event_type.__name__
+                suffix = event_type.DESCRIPTOR.full_name
                 if suffix in cls._prepare_table:
                     raise TypeError(
                         f"{cls.__name__}: duplicate prepare handler for {suffix}"
@@ -245,7 +246,7 @@ class ProcessManager(Generic[StateT], ABC):
             attr = getattr(cls, attr_name, None)
             if callable(attr) and getattr(attr, "_is_applier", False):
                 event_type = attr._event_type
-                suffix = event_type.__name__
+                suffix = event_type.DESCRIPTOR.full_name
                 if suffix in cls._applier_table:
                     raise TypeError(f"{cls.__name__}: duplicate applier for {suffix}")
                 cls._applier_table[suffix] = (attr_name, event_type)
@@ -314,8 +315,7 @@ class ProcessManager(Generic[StateT], ABC):
         type_url = event_any.type_url
 
         for suffix, (method_name, event_type) in self._prepare_table.items():
-            # Match exact type name (preceded by . or /) to avoid false matches
-            if type_url.endswith(f".{suffix}") or type_url.endswith(f"/{suffix}"):
+            if type_url == TYPE_URL_PREFIX + suffix:
                 # Unpack event
                 event = event_type()
                 event_any.Unpack(event)
@@ -352,8 +352,7 @@ class ProcessManager(Generic[StateT], ABC):
             _,
             handler_domain,
         ) in self._dispatch_table.items():
-            # Match exact type name (preceded by . or /) to avoid false matches
-            if type_url.endswith(f".{suffix}") or type_url.endswith(f"/{suffix}"):
+            if type_url == TYPE_URL_PREFIX + suffix:
                 # Unpack event
                 event = event_type()
                 event_any.Unpack(event)
@@ -570,7 +569,7 @@ class ProcessManager(Generic[StateT], ABC):
         # Dispatch to @rejected handler if found (use suffix matching like regular dispatch)
         for key, method_name in self._rejection_table.items():
             expected_domain, expected_command = key.split("/", 1)
-            if domain == expected_domain and command_suffix.endswith(expected_command):
+            if domain == expected_domain and command_suffix == expected_command:
                 # Ensure state is built before calling handler
                 _ = self._get_state()
                 # Call the handler
@@ -617,8 +616,7 @@ class ProcessManager(Generic[StateT], ABC):
 
         type_url = event_any.type_url
         for suffix, (method_name, event_type) in self._applier_table.items():
-            # Match exact type name (preceded by . or /) to avoid false matches
-            if type_url.endswith(f".{suffix}") or type_url.endswith(f"/{suffix}"):
+            if type_url == TYPE_URL_PREFIX + suffix:
                 event = event_type()
                 event_any.Unpack(event)
                 getattr(self, method_name)(state, event)

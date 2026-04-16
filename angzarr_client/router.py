@@ -102,10 +102,15 @@ ERRMSG_NO_COMMAND_PAGES = "No command pages"
 
 
 def next_sequence(events: types.EventBook | None) -> int:
-    """Compute the next event sequence number from prior events."""
-    if events is None or not events.pages:
+    """Compute the next event sequence number from prior events.
+
+    Uses the proto's pre-computed next_sequence field which accounts for
+    snapshots. Do NOT use len(pages) — it gives wrong results when
+    snapshots are involved.
+    """
+    if events is None:
         return 0
-    return len(events.pages)
+    return events.next_sequence
 
 
 # Alias for internal use
@@ -589,11 +594,11 @@ class Router:
         Returns:
             Handler result, or None if no handler matched.
         """
-        type_suffix = self._extract_type_suffix(msg_any.type_url)
+        type_url = msg_any.type_url
         domain_handlers = self._handlers.get(domain, {})
 
         for full_name, (msg_type, handler) in domain_handlers.items():
-            if full_name.endswith(type_suffix) or type_suffix in full_name:
+            if type_url == TYPE_URL_PREFIX + full_name:
                 return handler(msg_any, *args, **kwargs)
         return None
 
@@ -614,11 +619,11 @@ class Router:
         Returns:
             Handler result (typically list[Cover]), or None if no handler matched.
         """
-        type_suffix = self._extract_type_suffix(msg_any.type_url)
+        type_url = msg_any.type_url
         domain_handlers = self._prepare_handlers.get(domain, {})
 
         for full_name, (msg_type, handler) in domain_handlers.items():
-            if full_name.endswith(type_suffix) or type_suffix in full_name:
+            if type_url == TYPE_URL_PREFIX + full_name:
                 return handler(msg_any, *args, **kwargs)
         return None
 
@@ -678,7 +683,7 @@ class Router:
             expected_domain,
             expected_command,
         ) in self._rejection_handlers.items():
-            if domain == expected_domain and command_suffix.endswith(expected_command):
+            if domain == expected_domain and command_suffix == expected_command:
                 return handler(notification, *args, **kwargs)
         return None
 
@@ -823,7 +828,7 @@ class _FluentRouterBase:
             return saga_pb2.SagaResponse()
 
         # Check if this is a Notification (rejection)
-        if event_any.type_url.endswith("Notification"):
+        if event_any.type_url == NOTIFICATION_TYPE_URL:
             commands = self.dispatch_rejection(source, destination_sequences or {})
             return saga_pb2.SagaResponse(commands=commands)
 
@@ -874,7 +879,7 @@ class _FluentRouterBase:
             return []
 
         event_any = event_page.event
-        if not event_any.type_url.endswith("Notification"):
+        if event_any.type_url != NOTIFICATION_TYPE_URL:
             return []
 
         notification = types.Notification()
@@ -1328,7 +1333,7 @@ class OORouter:
             return saga_pb2.SagaResponse()
 
         # Check if this is a Notification (rejection)
-        if event_any.type_url.endswith("Notification"):
+        if event_any.type_url == NOTIFICATION_TYPE_URL:
             commands = self.dispatch_rejection(source, destination_sequences or {})
             return saga_pb2.SagaResponse(commands=commands)
 
@@ -1378,7 +1383,7 @@ class OORouter:
             return []
 
         event_any = event_page.event
-        if not event_any.type_url.endswith("Notification"):
+        if event_any.type_url != NOTIFICATION_TYPE_URL:
             return []
 
         notification = types.Notification()
@@ -1733,16 +1738,16 @@ class ProcessManagerRouter(Generic[S]):
         state = self.rebuild_state(process_state)
 
         # Check for Notification
-        if event_any.type_url.endswith("Notification"):
+        if event_any.type_url == NOTIFICATION_TYPE_URL:
             return self._dispatch_notification(handler, event_any, state)
 
         destinations = Destinations(destination_sequences or {})
         response = handler.handle(trigger, state, event_any, destinations)
 
         return pm.ProcessManagerHandleResponse(
-            process_events=response.events,
+            process_events=response.process_events,
             commands=response.commands,
-            facts=response.facts if hasattr(response, "facts") else [],
+            facts=response.facts,
         )
 
     def _dispatch_notification(

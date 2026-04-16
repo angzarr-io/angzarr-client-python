@@ -191,7 +191,7 @@ class Saga(ABC):
         event_any: Any,
         root: bytes = None,
         correlation_id: str = "",
-        destination_sequences: dict[str, int] = None,
+        destinations: Destinations | None = None,
     ) -> list[types.CommandBook]:
         """Dispatch event to matching @handles method.
 
@@ -199,13 +199,14 @@ class Saga(ABC):
             event_any: Packed event as google.protobuf.Any
             root: Source aggregate root (passed to command cover)
             correlation_id: Correlation ID for the workflow
-            destination_sequences: Map of domain to next sequence number
+            destinations: Destinations context for command stamping
 
         Returns:
             List of CommandBooks to send.
         """
         type_url = event_any.type_url
-        destinations = Destinations(destination_sequences or {})
+        if destinations is None:
+            destinations = Destinations({})
 
         for full_name, (method_name, event_type) in self._dispatch_table.items():
             if type_url == TYPE_URL_PREFIX + full_name:
@@ -274,7 +275,7 @@ class Saga(ABC):
     def handle(
         cls,
         source: types.EventBook,
-        destination_sequences: dict[str, int] = None,
+        destination_sequences: dict[str, int] | None = None,
     ) -> saga_pb2.SagaResponse:
         """Handle source events and produce commands.
 
@@ -292,6 +293,7 @@ class Saga(ABC):
         saga = cls()
         root = source.cover.root.value if source.HasField("cover") else None
         correlation_id = source.cover.correlation_id if source.HasField("cover") else ""
+        destinations = Destinations(destination_sequences or {})
 
         commands = []
         for page in source.pages:
@@ -309,7 +311,7 @@ class Saga(ABC):
             if event_any:
                 commands.extend(
                     saga.dispatch(
-                        event_any, root, correlation_id, destination_sequences
+                        event_any, root, correlation_id, destinations
                     )
                 )
 
@@ -319,7 +321,7 @@ class Saga(ABC):
     def execute(
         cls,
         source: types.EventBook,
-        destination_sequences: dict[str, int] = None,
+        destination_sequences: dict[str, int] | None = None,
     ) -> saga_pb2.SagaResponse:
         """Deprecated: Use handle() instead.
 

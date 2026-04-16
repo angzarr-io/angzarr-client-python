@@ -14,7 +14,7 @@ Usage:
             return self._state_router
 
         def handle(self, cmd_book, payload, state, seq) -> EventBook:
-            if payload.type_url.endswith("RegisterPlayer"):
+            if payload.type_url == TYPE_URL_PREFIX + "examples.player.RegisterPlayer":
                 # Handle command...
                 pass
             raise ValueError(f"Unknown command: {payload.type_url}")
@@ -366,13 +366,16 @@ class SagaHandlerResponse:
 class ProcessManagerResponse:
     """Response from a process manager handler.
 
-    Contains commands to send and/or events to record in PM's own event stream.
+    Contains commands to send, events to record in PM's own event stream,
+    and facts to inject into other aggregates.
     """
 
     def __init__(
         self,
         commands: list[types.CommandBook] | None = None,
-        events: types.EventBook | None = None,
+        process_events: types.EventBook | None = None,
+        facts: list[types.EventBook] | None = None,
     ):
         self.commands = commands or []
-        self.events = events
+        self.process_events = process_events
+        self.facts = facts or []

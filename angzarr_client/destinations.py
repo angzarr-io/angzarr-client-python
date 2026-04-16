@@ -93,12 +93,14 @@ class Destinations:
             The same CommandBook (for chaining).
 
         Raises:
-            ValueError: If domain is not in destination_sequences.
+            InvalidArgumentError: If domain is not in destination_sequences.
                         Check your output_domains config if you get this error.
         """
+        from .errors import InvalidArgumentError
+
         seq = self._sequences.get(domain)
         if seq is None:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"No sequence for domain '{domain}' - check output_domains config"
             )
         for page in cmd.pages:

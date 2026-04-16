@@ -1,7 +1,10 @@
 """Client implementations for Angzarr gRPC services."""
 
+from __future__ import annotations
+
 import os
 from enum import Enum
+from uuid import UUID as PyUUID
 
 import grpc
 
@@ -148,6 +151,18 @@ class QueryClient:
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
+    def query(self, domain: str, root: PyUUID) -> "QueryBuilder":
+        """Start building a query for a specific aggregate."""
+        from .builder import QueryBuilder
+
+        return QueryBuilder(self, domain, root)
+
+    def query_domain(self, domain: str) -> "QueryBuilder":
+        """Start building a query by domain only (use with by_correlation_id)."""
+        from .builder import QueryBuilder
+
+        return QueryBuilder(self, domain)
+
     def close(self) -> None:
         """Close the underlying channel."""
         self._channel.close()
@@ -208,6 +223,18 @@ class CommandHandlerClient:
             return self._stub.HandleSyncSpeculative(request)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
+
+    def command(self, domain: str, root: PyUUID) -> "CommandBuilder":
+        """Start building a command for an existing aggregate."""
+        from .builder import CommandBuilder
+
+        return CommandBuilder(self, domain, root)
+
+    def command_new(self, domain: str) -> "CommandBuilder":
+        """Start building a command for a new aggregate."""
+        from .builder import CommandBuilder
+
+        return CommandBuilder(self, domain)
 
     def close(self) -> None:
         """Close the underlying channel."""
@@ -355,7 +382,12 @@ class DomainClient:
 
 
 class Client:
-    """Combined client for command handler, query, and speculative operations."""
+    """Combined client for command handler, query, and speculative operations.
+
+    .. deprecated::
+        Use :class:`DomainClient` instead, which now includes all sub-clients.
+        Client will be removed in a future release.
+    """
 
     def __init__(self, channel: grpc.Channel):
         self.command_handler = CommandHandlerClient(channel)

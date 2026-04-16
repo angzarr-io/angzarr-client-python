@@ -53,6 +53,7 @@ from typing import Generic, TypeVar
 
 from google.protobuf.any_pb2 import Any
 
+from .helpers import TYPE_URL_PREFIX
 from .proto.angzarr import command_handler_pb2 as command_handler
 from .proto.angzarr import types_pb2 as types
 from .router import validate_command_handler
@@ -228,7 +229,7 @@ class CommandHandler(Generic[StateT], ABC):
             attr = getattr(cls, name, None)
             if callable(attr) and getattr(attr, "_is_handler", False):
                 cmd_type = attr._command_type
-                suffix = cmd_type.__name__
+                suffix = cmd_type.DESCRIPTOR.full_name
                 if suffix in table:
                     raise TypeError(f"{cls.__name__}: duplicate handler for {suffix}")
                 table[suffix] = (name, cmd_type)
@@ -267,7 +268,7 @@ class CommandHandler(Generic[StateT], ABC):
             attr = getattr(cls, name, None)
             if callable(attr) and getattr(attr, "_is_applier", False):
                 event_type = attr._event_type
-                suffix = event_type.__name__
+                suffix = event_type.DESCRIPTOR.full_name
                 if suffix in table:
                     raise TypeError(f"{cls.__name__}: duplicate applier for {suffix}")
                 table[suffix] = (name, event_type)
@@ -299,8 +300,7 @@ class CommandHandler(Generic[StateT], ABC):
         type_url = command_any.type_url
 
         for suffix, (method_name, cmd_type) in self._dispatch_table.items():
-            # Match exact type name (preceded by . or /) to avoid false matches
-            if type_url.endswith(f".{suffix}") or type_url.endswith(f"/{suffix}"):
+            if type_url == TYPE_URL_PREFIX + suffix:
                 cmd = cmd_type()
                 command_any.Unpack(cmd)
                 getattr(self, method_name)(cmd)
@@ -335,7 +335,7 @@ class CommandHandler(Generic[StateT], ABC):
         command_any = request.command.pages[0].command
 
         # Check for Notification (rejection/compensation)
-        if command_any.type_url.endswith("Notification"):
+        if command_any.type_url == TYPE_URL_PREFIX + "angzarr.Notification":
             notification = types.Notification()
             command_any.Unpack(notification)
             return agg.handle_revocation(notification)
@@ -392,7 +392,7 @@ class CommandHandler(Generic[StateT], ABC):
         # Dispatch to @rejected handler if found (use suffix matching like regular dispatch)
         for key, method_name in self._rejection_table.items():
             expected_domain, expected_command = key.split("/", 1)
-            if domain == expected_domain and command_suffix.endswith(expected_command):
+            if domain == expected_domain and command_suffix == expected_command:
                 # Ensure state is built before calling handler
                 _ = self._get_state()
                 # Call the handler (wrapper will auto-apply events)
@@ -522,8 +522,7 @@ class CommandHandler(Generic[StateT], ABC):
 
         type_url = event_any.type_url
         for suffix, (method_name, event_type) in self._applier_table.items():
-            # Match exact type name (preceded by . or /) to avoid CardsDealt matching CommunityCardsDealt
-            if type_url.endswith(f".{suffix}") or type_url.endswith(f"/{suffix}"):
+            if type_url == TYPE_URL_PREFIX + suffix:
                 event = event_type()
                 event_any.Unpack(event)
                 getattr(self, method_name)(state, event)
