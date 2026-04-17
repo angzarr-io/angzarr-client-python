@@ -89,39 +89,36 @@ def _create_channel(endpoint: str) -> grpc.Channel:
     """Create a gRPC channel for the given endpoint.
 
     Supports both TCP (host:port) and Unix Domain Sockets (file paths).
-    UDS paths are detected by leading '/' or './' and converted to unix: URIs.
-    Note: grpc-python uses unix:path for relative, unix:///path for absolute.
+    UDS paths are detected by leading '/' or './' and converted to unix: URIs
+    following the gRPC name-resolution spec:
+      - absolute paths -> ``unix:///abs/path`` (empty authority)
+      - relative paths -> ``unix:relative/path`` (no authority component)
 
-    KNOWN LIMITATION: grpc-python 1.57+ has a cross-language interoperability
-    issue with tonic (Rust) servers over Unix Domain Sockets. Connections fail
-    with "RST_STREAM with error code 1" (PROTOCOL_ERROR). This is tracked in:
-    - https://github.com/hyperium/tonic/issues/826
-    - https://github.com/hyperium/tonic/issues/742
-    - https://github.com/grpc/grpc/issues/34760
+    The Go/Java/C++ clients emit the same forms. Rust uses a custom connector
+    with the raw path. C# uses ``SocketsHttpHandler`` with ``UnixDomainSocketEndPoint``.
 
-    Workaround: Use TCP instead of UDS when Python clients connect to Rust
-    (tonic) servers. UDS works fine for same-language communication.
+    Cross-language interop note: grpc-python 1.57+ has a UDS interop issue with
+    tonic (Rust) servers — "RST_STREAM with error code 1" (PROTOCOL_ERROR).
+    See hyperium/tonic#826, #742 and grpc/grpc#34760. Use TCP when crossing
+    grpc-python <-> tonic.
     """
     if endpoint.startswith("./"):
-        # Relative Unix domain socket path - use unix:path format
         return grpc.insecure_channel(f"unix:{endpoint}")
     elif endpoint.startswith("/"):
-        # Absolute Unix domain socket path - use unix:///path format
         return grpc.insecure_channel(f"unix://{endpoint}")
     elif endpoint.startswith("unix:"):
-        # Already in URI format
         return grpc.insecure_channel(endpoint)
     else:
-        # TCP endpoint (host:port)
         return grpc.insecure_channel(endpoint)
 
 
 class QueryClient:
     """Client for the EventQueryService."""
 
-    def __init__(self, channel: grpc.Channel):
+    def __init__(self, channel: grpc.Channel, owns_channel: bool = True):
         self._stub = EventQueryServiceStub(channel)
         self._channel = channel
+        self._owns_channel = owns_channel
 
     @classmethod
     def connect(cls, endpoint: str, retry: RetryPolicy | None = None) -> "QueryClient":
@@ -133,7 +130,16 @@ class QueryClient:
         """
         policy = retry or default_retry_policy()
         channel = policy.execute(lambda: _create_channel(endpoint))
-        return cls(channel)
+        return cls(channel, owns_channel=True)
+
+    @classmethod
+    def from_channel(cls, channel: grpc.Channel) -> "QueryClient":
+        """Create a client from a caller-managed channel.
+
+        The returned client will not close the channel when `close()` is called;
+        the caller retains ownership.
+        """
+        return cls(channel, owns_channel=False)
 
     @classmethod
     def from_env(cls, env_var: str, default: str) -> "QueryClient":
@@ -141,17 +147,27 @@ class QueryClient:
         endpoint = os.environ.get(env_var, default)
         return cls.connect(endpoint)
 
-    def get_event_book(self, query: Query) -> EventBook:
-        """Retrieve a single EventBook for the query."""
+    def get_event_book(self, query: Query, timeout: float | None = None) -> EventBook:
+        """Retrieve a single EventBook for the query.
+
+        Args:
+            query: The query specification.
+            timeout: Optional per-call deadline in seconds.
+        """
         try:
-            return self._stub.GetEventBook(query)
+            return self._stub.GetEventBook(query, timeout=timeout)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
-    def get_events(self, query: Query) -> list[EventBook]:
-        """Retrieve all EventBooks matching the query."""
+    def get_events(self, query: Query, timeout: float | None = None) -> list[EventBook]:
+        """Retrieve all EventBooks matching the query.
+
+        Args:
+            query: The query specification.
+            timeout: Optional per-call deadline in seconds.
+        """
         try:
-            return list(self._stub.GetEvents(query))
+            return list(self._stub.GetEvents(query, timeout=timeout))
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
@@ -168,16 +184,24 @@ class QueryClient:
         return QueryBuilder(self, domain)
 
     def close(self) -> None:
-        """Close the underlying channel."""
-        self._channel.close()
+        """Close the underlying channel if this client owns it."""
+        if self._owns_channel:
+            self._channel.close()
+
+    def __enter__(self) -> "QueryClient":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
 
 class CommandHandlerClient:
     """Client for the CommandHandlerCoordinatorService."""
 
-    def __init__(self, channel: grpc.Channel):
+    def __init__(self, channel: grpc.Channel, owns_channel: bool = True):
         self._stub = CommandHandlerCoordinatorServiceStub(channel)
         self._channel = channel
+        self._owns_channel = owns_channel
 
     @classmethod
     def connect(
@@ -191,7 +215,16 @@ class CommandHandlerClient:
         """
         policy = retry or default_retry_policy()
         channel = policy.execute(lambda: _create_channel(endpoint))
-        return cls(channel)
+        return cls(channel, owns_channel=True)
+
+    @classmethod
+    def from_channel(cls, channel: grpc.Channel) -> "CommandHandlerClient":
+        """Create a client from a caller-managed channel.
+
+        The returned client will not close the channel when `close()` is called;
+        the caller retains ownership.
+        """
+        return cls(channel, owns_channel=False)
 
     @classmethod
     def from_env(cls, env_var: str, default: str) -> "CommandHandlerClient":
@@ -199,32 +232,52 @@ class CommandHandlerClient:
         endpoint = os.environ.get(env_var, default)
         return cls.connect(endpoint)
 
-    def handle(self, command: CommandBook) -> CommandResponse:
+    def handle(
+        self, command: CommandBook, timeout: float | None = None
+    ) -> CommandResponse:
         """Execute a command with default async mode.
 
         This is a convenience method that wraps the command in a CommandRequest
         with SYNC_MODE_ASYNC (fire-and-forget) and CASCADE_ERROR_FAIL_FAST.
+
+        Args:
+            command: The command to execute.
+            timeout: Optional per-call deadline in seconds.
         """
         request = CommandRequest(
             command=command,
             sync_mode=SyncMode.SYNC_MODE_ASYNC,
             cascade_error_mode=CascadeErrorMode.CASCADE_ERROR_FAIL_FAST,
         )
-        return self.handle_command(request)
+        return self.handle_command(request, timeout=timeout)
 
-    def handle_command(self, request: CommandRequest) -> CommandResponse:
-        """Execute a command with the specified sync mode."""
+    def handle_command(
+        self, request: CommandRequest, timeout: float | None = None
+    ) -> CommandResponse:
+        """Execute a command with the specified sync mode.
+
+        Args:
+            request: The command request.
+            timeout: Optional per-call deadline in seconds.
+        """
         try:
-            return self._stub.HandleCommand(request)
+            return self._stub.HandleCommand(request, timeout=timeout)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
     def handle_sync_speculative(
-        self, request: SpeculateCommandHandlerRequest
+        self,
+        request: SpeculateCommandHandlerRequest,
+        timeout: float | None = None,
     ) -> CommandResponse:
-        """Execute a command speculatively against temporal state (no persistence)."""
+        """Execute a command speculatively against temporal state (no persistence).
+
+        Args:
+            request: The speculative command request.
+            timeout: Optional per-call deadline in seconds.
+        """
         try:
-            return self._stub.HandleSyncSpeculative(request)
+            return self._stub.HandleSyncSpeculative(request, timeout=timeout)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
@@ -241,8 +294,15 @@ class CommandHandlerClient:
         return CommandBuilder(self, domain)
 
     def close(self) -> None:
-        """Close the underlying channel."""
-        self._channel.close()
+        """Close the underlying channel if this client owns it."""
+        if self._owns_channel:
+            self._channel.close()
+
+    def __enter__(self) -> "CommandHandlerClient":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
 
 class SpeculativeClient:
@@ -252,18 +312,36 @@ class SpeculativeClient:
     Each coordinator service now provides its own speculative method.
     """
 
-    def __init__(self, channel: grpc.Channel):
+    def __init__(self, channel: grpc.Channel, owns_channel: bool = True):
         self._command_handler_stub = CommandHandlerCoordinatorServiceStub(channel)
         self._saga_stub = SagaCoordinatorServiceStub(channel)
         self._projector_stub = ProjectorCoordinatorServiceStub(channel)
         self._pm_stub = ProcessManagerCoordinatorServiceStub(channel)
         self._channel = channel
+        self._owns_channel = owns_channel
 
     @classmethod
-    def connect(cls, endpoint: str) -> "SpeculativeClient":
-        """Connect to coordinator services at the given endpoint."""
-        channel = _create_channel(endpoint)
-        return cls(channel)
+    def connect(
+        cls, endpoint: str, retry: RetryPolicy | None = None
+    ) -> "SpeculativeClient":
+        """Connect to coordinator services at the given endpoint.
+
+        Args:
+            endpoint: The gRPC endpoint (host:port or UDS path).
+            retry: Optional retry policy. Defaults to exponential backoff.
+        """
+        policy = retry or default_retry_policy()
+        channel = policy.execute(lambda: _create_channel(endpoint))
+        return cls(channel, owns_channel=True)
+
+    @classmethod
+    def from_channel(cls, channel: grpc.Channel) -> "SpeculativeClient":
+        """Create a client from a caller-managed channel.
+
+        The returned client will not close the channel when `close()` is called;
+        the caller retains ownership.
+        """
+        return cls(channel, owns_channel=False)
 
     @classmethod
     def from_env(cls, env_var: str, default: str) -> "SpeculativeClient":
@@ -272,56 +350,87 @@ class SpeculativeClient:
         return cls.connect(endpoint)
 
     def command_handler(
-        self, request: SpeculateCommandHandlerRequest
+        self,
+        request: SpeculateCommandHandlerRequest,
+        timeout: float | None = None,
     ) -> CommandResponse:
         """Execute a command speculatively against temporal state."""
         try:
-            return self._command_handler_stub.HandleSyncSpeculative(request)
+            return self._command_handler_stub.HandleSyncSpeculative(
+                request, timeout=timeout
+            )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
-    def projector(self, request: SpeculateProjectorRequest) -> Projection:
+    def projector(
+        self, request: SpeculateProjectorRequest, timeout: float | None = None
+    ) -> Projection:
         """Speculatively execute a projector against events."""
         try:
-            return self._projector_stub.HandleSpeculative(request)
+            return self._projector_stub.HandleSpeculative(request, timeout=timeout)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
-    def saga(self, request: SpeculateSagaRequest) -> SagaResponse:
+    def saga(
+        self, request: SpeculateSagaRequest, timeout: float | None = None
+    ) -> SagaResponse:
         """Speculatively execute a saga against events."""
         try:
-            return self._saga_stub.ExecuteSpeculative(request)
+            return self._saga_stub.ExecuteSpeculative(request, timeout=timeout)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
     def process_manager(
-        self, request: SpeculatePmRequest
+        self, request: SpeculatePmRequest, timeout: float | None = None
     ) -> ProcessManagerHandleResponse:
         """Speculatively execute a process manager."""
         try:
-            return self._pm_stub.HandleSpeculative(request)
+            return self._pm_stub.HandleSpeculative(request, timeout=timeout)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
     def close(self) -> None:
-        """Close the underlying channel."""
-        self._channel.close()
+        """Close the underlying channel if this client owns it."""
+        if self._owns_channel:
+            self._channel.close()
+
+    def __enter__(self) -> "SpeculativeClient":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
 
 class DomainClient:
     """Combined client for command handler, query, and speculative operations on a single domain."""
 
-    def __init__(self, channel: grpc.Channel):
-        self.command_handler = CommandHandlerClient(channel)
-        self.query = QueryClient(channel)
-        self.speculative = SpeculativeClient(channel)
+    def __init__(self, channel: grpc.Channel, owns_channel: bool = True):
+        self.command_handler = CommandHandlerClient.from_channel(channel)
+        self.query = QueryClient.from_channel(channel)
+        self.speculative = SpeculativeClient.from_channel(channel)
         self._channel = channel
+        self._owns_channel = owns_channel
 
     @classmethod
-    def connect(cls, endpoint: str) -> "DomainClient":
-        """Connect to a domain's coordinator at the given endpoint."""
-        channel = _create_channel(endpoint)
-        return cls(channel)
+    def connect(cls, endpoint: str, retry: RetryPolicy | None = None) -> "DomainClient":
+        """Connect to a domain's coordinator at the given endpoint.
+
+        Args:
+            endpoint: The gRPC endpoint (host:port or UDS path).
+            retry: Optional retry policy. Defaults to exponential backoff.
+        """
+        policy = retry or default_retry_policy()
+        channel = policy.execute(lambda: _create_channel(endpoint))
+        return cls(channel, owns_channel=True)
+
+    @classmethod
+    def from_channel(cls, channel: grpc.Channel) -> "DomainClient":
+        """Create a client from a caller-managed channel.
+
+        The returned client will not close the channel when `close()` is called;
+        the caller retains ownership.
+        """
+        return cls(channel, owns_channel=False)
 
     @classmethod
     def for_domain(
@@ -358,59 +467,45 @@ class DomainClient:
         endpoint = os.environ.get(env_var, default)
         return cls.connect(endpoint)
 
-    def execute(self, command: CommandBook) -> CommandResponse:
+    def execute(
+        self, command: CommandBook, timeout: float | None = None
+    ) -> CommandResponse:
         """Execute a command with default async mode (fire-and-forget)."""
-        return self.execute_with_mode(command, SyncMode.SYNC_MODE_ASYNC)
+        return self.execute_with_mode(
+            command, SyncMode.SYNC_MODE_ASYNC, timeout=timeout
+        )
 
     def execute_with_mode(
         self,
         command: CommandBook,
         sync_mode: SyncMode,
+        timeout: float | None = None,
     ) -> CommandResponse:
         """Execute a command with the specified sync mode.
 
         Args:
             command: The command to execute.
             sync_mode: Execution mode (ASYNC, SIMPLE, or CASCADE).
+            timeout: Optional per-call deadline in seconds.
         """
-        request = CommandRequest(command=command, sync_mode=sync_mode)
-        return self.command_handler.handle_command(request)
+        request = CommandRequest(
+            command=command,
+            sync_mode=sync_mode,
+            cascade_error_mode=CascadeErrorMode.CASCADE_ERROR_FAIL_FAST,
+        )
+        return self.command_handler.handle_command(request, timeout=timeout)
 
-    def get_events(self, query: Query) -> EventBook:
+    def get_events(self, query: Query, timeout: float | None = None) -> EventBook:
         """Retrieve events for the query (delegates to query client)."""
-        return self.query.get_event_book(query)
+        return self.query.get_event_book(query, timeout=timeout)
 
     def close(self) -> None:
-        """Close the underlying channel."""
-        self._channel.close()
+        """Close the underlying channel if this client owns it."""
+        if self._owns_channel:
+            self._channel.close()
 
+    def __enter__(self) -> "DomainClient":
+        return self
 
-class Client:
-    """Combined client for command handler, query, and speculative operations.
-
-    .. deprecated::
-        Use :class:`DomainClient` instead, which now includes all sub-clients.
-        Client will be removed in a future release.
-    """
-
-    def __init__(self, channel: grpc.Channel):
-        self.command_handler = CommandHandlerClient(channel)
-        self.query = QueryClient(channel)
-        self.speculative = SpeculativeClient(channel)
-        self._channel = channel
-
-    @classmethod
-    def connect(cls, endpoint: str) -> "Client":
-        """Connect to a server providing all services."""
-        channel = _create_channel(endpoint)
-        return cls(channel)
-
-    @classmethod
-    def from_env(cls, env_var: str, default: str) -> "Client":
-        """Connect using an environment variable with fallback."""
-        endpoint = os.environ.get(env_var, default)
-        return cls.connect(endpoint)
-
-    def close(self) -> None:
-        """Close the underlying channel."""
-        self._channel.close()
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()

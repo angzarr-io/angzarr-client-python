@@ -4,21 +4,12 @@ from importlib.metadata import version as _version
 
 __version__ = _version("angzarr-client")
 
-from .aggregate import CommandHandler, applies, handles
-from .aggregate_handler import CommandHandlerGrpc, run_command_handler_server
 from .builder import CommandBuilder, QueryBuilder
 from .client import (
-    Client,
     CommandHandlerClient,
     DomainClient,
     QueryClient,
     SpeculativeClient,
-)
-from .cloudevents import (
-    CloudEvent,
-    CloudEventsProjector,
-    CloudEventsResponse,
-    CloudEventsRouter,
 )
 from .compensation import (
     CompensationContext,
@@ -39,14 +30,6 @@ from .errors import (
     TransportError,
 )
 from .event_packing import new_event_book, new_event_book_multi, pack_event, pack_events
-from .handler_protocols import (
-    CommandHandlerDomainHandler,
-    ProcessManagerDomainHandler,
-    ProcessManagerResponse,
-    ProjectorDomainHandler,
-    SagaDomainHandler,
-    SagaHandlerResponse,
-)
 from .helpers import (
     DEFAULT_EDITION,
     META_ANGZARR_DOMAIN,
@@ -89,47 +72,32 @@ from .identity import (
     product_root,
     to_proto_bytes,
 )
-from .process_manager import ProcessManager
-from .process_manager_handler import (
-    PMHandleFunc,
-    PMPrepareFunc,
-    ProcessManagerHandler,
-    run_process_manager_server,
-)
-from .projector import Projector
-from .projector_handler import (
-    ProjectorHandleFunc,
-    ProjectorHandler,
-    run_projector_server,
-)
 from .router import (
-    ERRMSG_NO_COMMAND_PAGES,
-    ERRMSG_UNKNOWN_COMMAND,
+    BuildError,
     CommandHandlerRouter,
-    FluentRouter,
-    OORouter,
+    DispatchError,
+    ProcessManagerResponse,
     ProcessManagerRouter,
     ProjectorRouter,
     Router,
-    SingleFluentRouter,
-    UpcasterRouter,
-    command_handler,  # Decorator for functional command handlers
-    output_domain,  # Output domain decorator for sagas/PM methods
-    prepares,  # Prepare handler decorator for two-phase protocol
+    SagaHandlerResponse,
+    SagaRouter,
+    applies,
+    command_handler,
+    handles,
+    process_manager,
+    projector,
     rejected,
+    saga,
+    state_factory,
 )
-from .router import (
-    domain as domain_class,  # Class decorator for input domain (@domain("name"))
+from .router.server import (
+    CommandHandlerGrpc,
+    ProcessManagerGrpc,
+    ProjectorGrpc,
+    SagaGrpc,
 )
-from .router import (
-    handles as event_handles,  # Unified decorator for event handlers (sagas/PMs/projectors)
-)
-from .router import (
-    next_sequence as router_next_sequence,
-)
-from .saga import Saga
 from .saga_context import SagaContext
-from .saga_handler import HandleFunc, SagaHandler, run_saga_server
 from .server import (
     cleanup_socket,
     configure_logging,
@@ -137,16 +105,6 @@ from .server import (
     get_transport_config,
     run_server,
 )
-from .state_builder import (
-    CommandRouter,
-    SnapshotLoader,
-    StateApplier,
-    StateBuilder,
-    StateFactory,
-    StateRouter,
-)
-from .upcaster import Upcaster, upcasts
-from .upcaster_handler import UpcasterHandleFunc, UpcasterHandler, run_upcaster_server
 from .validation import (
     require_exists,
     require_non_negative,
@@ -173,7 +131,29 @@ __all__ = [
     "QueryClient",
     "SpeculativeClient",
     "DomainClient",
-    "Client",
+    # Router (unified)
+    "Router",
+    "BuildError",
+    "DispatchError",
+    "CommandHandlerRouter",
+    "SagaRouter",
+    "ProcessManagerRouter",
+    "ProjectorRouter",
+    "SagaHandlerResponse",
+    "ProcessManagerResponse",
+    "command_handler",
+    "saga",
+    "process_manager",
+    "projector",
+    "handles",
+    "applies",
+    "rejected",
+    "state_factory",
+    # gRPC server adapters
+    "CommandHandlerGrpc",
+    "SagaGrpc",
+    "ProcessManagerGrpc",
+    "ProjectorGrpc",
     # Errors
     "ClientError",
     "ConnectionError",
@@ -223,35 +203,12 @@ __all__ = [
     "EventPageW",
     "CommandPageW",
     "CommandResponseW",
-    # Router
-    "ERRMSG_UNKNOWN_COMMAND",
-    "ERRMSG_NO_COMMAND_PAGES",
-    "router_next_sequence",
-    "domain_class",  # Class decorator for input domain (@domain("name"))
-    "output_domain",  # Output domain decorator for sagas/PM methods (@output_domain("name"))
-    "event_handles",  # Unified decorator for event handlers (import from module for component-specific)
-    "prepares",  # Prepare handler decorator for two-phase protocol
-    "rejected",
-    "command_handler",  # Decorator for functional command handlers
     # Server
     "configure_logging",
     "get_transport_config",
     "create_server",
     "run_server",
     "cleanup_socket",
-    # Handlers
-    "CommandHandlerGrpc",
-    "run_command_handler_server",
-    "SagaHandler",
-    "run_saga_server",
-    "HandleFunc",
-    "ProcessManagerHandler",
-    "run_process_manager_server",
-    "PMPrepareFunc",
-    "PMHandleFunc",
-    "ProjectorHandler",
-    "run_projector_server",
-    "ProjectorHandleFunc",
     # Validation
     "require_exists",
     "require_not_exists",
@@ -277,25 +234,6 @@ __all__ = [
     "pack_events",
     "new_event_book",
     "new_event_book_multi",
-    # State builder
-    "StateBuilder",
-    "StateRouter",
-    "StateApplier",
-    "SnapshotLoader",
-    "StateFactory",
-    "CommandRouter",
-    # Component base classes
-    "CommandHandler",
-    "handles",
-    "applies",
-    "Saga",
-    "ProcessManager",
-    "Projector",
-    "Upcaster",
-    "upcasts",
-    "UpcasterHandler",
-    "run_upcaster_server",
-    "UpcasterHandleFunc",
     # Compensation
     "CompensationContext",
     "RejectionHandlerResponse",
@@ -303,32 +241,8 @@ __all__ = [
     "emit_compensation_events",
     "pm_delegate_to_framework",
     "pm_emit_compensation_events",
-    # Unified Router (core)
-    "Router",
-    # Fluent Routers (functional handlers)
-    "FluentRouter",
-    "SingleFluentRouter",
-    # OO Routers (decorator handlers)
-    "OORouter",
-    # Component-Specific Routers
-    "CommandHandlerRouter",
-    "UpcasterRouter",
-    "ProcessManagerRouter",
-    "ProjectorRouter",
-    # Handler Protocols
-    "CommandHandlerDomainHandler",
-    "SagaDomainHandler",
-    "ProcessManagerDomainHandler",
-    "ProjectorDomainHandler",
-    "SagaHandlerResponse",
-    "ProcessManagerResponse",
-    # CloudEvents
-    "CloudEvent",
-    "CloudEventsProjector",
-    "CloudEventsRouter",
-    "CloudEventsResponse",
-    # Saga Context
+    # Saga context
     "SagaContext",
-    # Destinations (for sagas/PMs)
+    # Destinations
     "Destinations",
 ]

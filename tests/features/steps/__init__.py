@@ -1,1 +1,1 @@
-"""Step definitions for client feature tests."""
+"""pytest-bdd step definitions for Gherkin features."""

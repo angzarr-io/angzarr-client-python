@@ -37,7 +37,7 @@ class CommandBuilder:
     ):
         self._client = client
         self._domain = domain
-        self._root = root
+        self._root = root if root is not None else uuid4()
         self._correlation_id: str | None = None
         self._sequence: int = 0
         self._sequence_set: bool = False
@@ -89,8 +89,7 @@ class CommandBuilder:
             domain=self._domain,
             correlation_id=correlation_id,
         )
-        if self._root:
-            cover.root.CopyFrom(uuid_to_proto(self._root))
+        cover.root.CopyFrom(uuid_to_proto(self._root))
 
         command_any = ProtoAny(type_url=self._type_url, value=self._payload)
         header = PageHeader(sequence=self._sequence)

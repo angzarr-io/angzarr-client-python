@@ -1,79 +1,65 @@
-"""Pytest-bdd configuration and shared fixtures for client feature tests."""
+"""Shared pytest-bdd fixtures.
+
+Each scenario gets a fresh ``World`` carrying router-under-build state, the
+built router, captured dispatch output, and side-effect logs. Step defs in
+``steps/*.py`` read and mutate ``world`` via the fixture.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
-# Shared event store for cross-context access (similar to Go's SharedEventStore)
-# This allows step definitions in one context to populate events that can be
-# read by steps in another context (e.g., query_client -> domain_client)
-SHARED_EVENT_STORE = {}
 
+@dataclass
+class World:
+    """Per-scenario test state shared across steps."""
 
-def clear_shared_event_store():
-    """Clear the shared event store between tests."""
-    SHARED_EVENT_STORE.clear()
-
-
-# Import step definitions so pytest-bdd can find them
-# Each module defines @given, @when, @then decorated functions
-from tests.features.steps.aggregate_client import *  # noqa: F401, F403
-from tests.features.steps.command_builder import *  # noqa: F401, F403
-from tests.features.steps.compensation import *  # noqa: F401, F403
-from tests.features.steps.connection import *  # noqa: F401, F403
-from tests.features.steps.domain_client import *  # noqa: F401, F403
-from tests.features.steps.error_handling import *  # noqa: F401, F403
-from tests.features.steps.event_decoding import *  # noqa: F401, F403
-from tests.features.steps.fact_flow import *  # noqa: F401, F403
-from tests.features.steps.merge_strategy import *  # noqa: F401, F403
-from tests.features.steps.query_builder import *  # noqa: F401, F403
-from tests.features.steps.query_client import *  # noqa: F401, F403
-from tests.features.steps.router import *  # noqa: F401, F403
-from tests.features.steps.speculative_client import *  # noqa: F401, F403
-from tests.features.steps.state_building import *  # noqa: F401, F403
-
-
-@pytest.fixture(autouse=True)
-def _clear_shared_store():
-    """Clear shared event store before each test."""
-    clear_shared_event_store()
-    yield
-    clear_shared_event_store()
+    # Handler instances registered so far.
+    handlers: list[Any] = field(default_factory=list)
+    # Dynamic handler classes keyed by role name ("Order", "Alpha", ...).
+    classes: dict[str, type] = field(default_factory=dict)
+    # Built router (set after `the router is built ...` step).
+    router: Any = None
+    # Dispatch inputs / outputs.
+    prior_events: Any = None
+    response: Any = None
+    dispatch_exc: Exception | None = None
+    # Multi-handler call-order log.
+    call_log: list[str] = field(default_factory=list)
+    # Projector write log.
+    write_log: list[Any] = field(default_factory=list)
+    # Destination sequences observed by saga/PM handlers.
+    dest_seqs: dict[str, int] = field(default_factory=dict)
+    observed_dest: dict[str, int] = field(default_factory=dict)
+    # Observed state fields during dispatch.
+    observed: dict[str, Any] = field(default_factory=dict)
 
 
 @pytest.fixture
-def context():
-    """Shared test context for scenario state."""
-    return {}
+def world() -> World:
+    return World()
 
 
-@pytest.fixture
-def text():
-    """Fixture for capturing docstring text from Gherkin steps.
+# --------------------------------------------------------------------------
+# Shared step defs usable from any feature file
+# --------------------------------------------------------------------------
 
-    pytest-bdd passes docstrings (text between triple quotes) as the 'text' argument.
-    This fixture provides a default empty string when no docstring is present.
-    """
-    return ""
+from pytest_bdd import parsers, then  # noqa: E402
 
 
-@pytest.fixture
-def mock_gateway(context):
-    """Mock gateway client that records commands."""
-    from unittest.mock import AsyncMock, MagicMock
-
-    gateway = MagicMock()
-    gateway.execute = AsyncMock(return_value=MagicMock(events=None))
-    gateway.last_command = None
-    context["mock_gateway"] = gateway
-    return gateway
+@then("the response contains exactly one command")
+def _then_one_command(world):
+    assert len(world.response.commands) == 1
 
 
-@pytest.fixture
-def mock_query_client(context):
-    """Mock query client that records queries."""
-    from unittest.mock import AsyncMock, MagicMock
+@then("the response contains no commands")
+def _then_no_commands(world):
+    assert len(world.response.commands) == 0
 
-    client = MagicMock()
-    client.get_events = AsyncMock(return_value=MagicMock(pages=[]))
-    client.last_query = None
-    context["mock_query_client"] = client
-    return client
+
+@then(parsers.parse('the command targets the "{domain}" domain'))
+def _then_command_targets(world, domain):
+    assert world.response.commands[0].cover.domain == domain

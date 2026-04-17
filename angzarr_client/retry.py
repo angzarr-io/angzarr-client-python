@@ -31,11 +31,13 @@ class ExponentialBackoffRetry(RetryPolicy):
         max_delay: float = 5.0,
         max_attempts: int = 10,
         jitter: bool = True,
+        on_retry: Callable[[int, Exception], None] | None = None,
     ):
         self.min_delay = min_delay
         self.max_delay = max_delay
         self.max_attempts = max_attempts
         self.jitter = jitter
+        self.on_retry = on_retry
 
     def execute(self, operation: Callable[[], T]) -> T:
         last_err: Exception | None = None
@@ -45,6 +47,8 @@ class ExponentialBackoffRetry(RetryPolicy):
             except Exception as e:
                 last_err = e
                 if attempt < self.max_attempts - 1:
+                    if self.on_retry is not None:
+                        self.on_retry(attempt, e)
                     delay = self._compute_delay(attempt)
                     time.sleep(delay)
         raise last_err  # type: ignore[misc]

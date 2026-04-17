@@ -1,0 +1,140 @@
+"""gRPC servicer adapters for the unified runtime routers.
+
+Thin wrappers that plug a ``CommandHandlerRouter`` / ``SagaRouter`` /
+``ProcessManagerRouter`` / ``ProjectorRouter`` into the corresponding
+generated gRPC servicer class. Each adapter:
+
+  - Delegates the ``Handle`` (and ``HandleSync`` where applicable) RPC to
+    the router's ``.dispatch`` method.
+  - Translates ``CommandRejectedError`` to gRPC ``FAILED_PRECONDITION``.
+  - Translates ``DispatchError`` to its carried ``grpc.StatusCode``.
+
+These adapters live alongside the unified router and are the recommended
+way to serve the new routers over gRPC. The legacy handlers in
+``aggregate_handler.py`` / ``saga_handler.py`` / ``process_manager_handler.py``
+/ ``projector_handler.py`` continue to function unchanged until R15.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import grpc
+
+from angzarr_client.errors import CommandRejectedError
+from angzarr_client.proto.angzarr import (
+    command_handler_pb2,
+    command_handler_pb2_grpc,
+    process_manager_pb2,
+    process_manager_pb2_grpc,
+    projector_pb2_grpc,
+    saga_pb2,
+    saga_pb2_grpc,
+)
+from angzarr_client.proto.angzarr import types_pb2 as types
+
+from .dispatch import DispatchError
+
+
+def _translate_and_abort(context: grpc.ServicerContext, exc: Exception) -> None:
+    """Map a dispatch-layer exception to a gRPC status and abort the RPC."""
+    if isinstance(exc, CommandRejectedError):
+        context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
+    elif isinstance(exc, DispatchError):
+        context.abort(exc.code(), exc.details())
+    else:
+        # Unknown exceptions bubble up as INTERNAL.
+        context.abort(grpc.StatusCode.INTERNAL, str(exc))
+
+
+class CommandHandlerGrpc(command_handler_pb2_grpc.CommandHandlerServiceServicer):
+    """gRPC adapter for a unified ``CommandHandlerRouter``."""
+
+    def __init__(self, router: Any) -> None:
+        self._router = router
+
+    def Handle(
+        self,
+        request: types.ContextualCommand,
+        context: grpc.ServicerContext,
+    ) -> command_handler_pb2.BusinessResponse:
+        return self._dispatch(request, context)
+
+    def HandleSync(
+        self,
+        request: types.ContextualCommand,
+        context: grpc.ServicerContext,
+    ) -> command_handler_pb2.BusinessResponse:
+        return self._dispatch(request, context)
+
+    def _dispatch(
+        self, request: types.ContextualCommand, context: grpc.ServicerContext
+    ) -> command_handler_pb2.BusinessResponse:
+        try:
+            return self._router.dispatch(request)
+        except Exception as exc:  # noqa: BLE001 — translated via _translate_and_abort
+            _translate_and_abort(context, exc)
+            return command_handler_pb2.BusinessResponse()
+
+
+class SagaGrpc(saga_pb2_grpc.SagaServiceServicer):
+    """gRPC adapter for a unified ``SagaRouter``."""
+
+    def __init__(self, router: Any) -> None:
+        self._router = router
+
+    def Handle(
+        self, request: saga_pb2.SagaHandleRequest, context: grpc.ServicerContext
+    ) -> saga_pb2.SagaResponse:
+        try:
+            return self._router.dispatch(request)
+        except Exception as exc:  # noqa: BLE001
+            _translate_and_abort(context, exc)
+            return saga_pb2.SagaResponse()
+
+
+class ProcessManagerGrpc(process_manager_pb2_grpc.ProcessManagerServiceServicer):
+    """gRPC adapter for a unified ``ProcessManagerRouter``."""
+
+    def __init__(self, router: Any) -> None:
+        self._router = router
+
+    def Prepare(
+        self,
+        request: process_manager_pb2.ProcessManagerPrepareRequest,
+        context: grpc.ServicerContext,
+    ) -> process_manager_pb2.ProcessManagerPrepareResponse:
+        # Destinations are config-driven; no dynamic declaration needed.
+        return process_manager_pb2.ProcessManagerPrepareResponse()
+
+    def Handle(
+        self,
+        request: process_manager_pb2.ProcessManagerHandleRequest,
+        context: grpc.ServicerContext,
+    ) -> process_manager_pb2.ProcessManagerHandleResponse:
+        try:
+            return self._router.dispatch(request)
+        except Exception as exc:  # noqa: BLE001
+            _translate_and_abort(context, exc)
+            return process_manager_pb2.ProcessManagerHandleResponse()
+
+
+class ProjectorGrpc(projector_pb2_grpc.ProjectorServiceServicer):
+    """gRPC adapter for a unified ``ProjectorRouter``."""
+
+    def __init__(self, router: Any) -> None:
+        self._router = router
+
+    def Handle(
+        self, request: types.EventBook, context: grpc.ServicerContext
+    ) -> types.Projection:
+        try:
+            return self._router.dispatch(request)
+        except Exception as exc:  # noqa: BLE001
+            _translate_and_abort(context, exc)
+            return types.Projection()
+
+    def HandleSpeculative(
+        self, request: types.EventBook, context: grpc.ServicerContext
+    ) -> types.Projection:
+        return self.Handle(request, context)

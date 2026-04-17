@@ -1,0 +1,248 @@
+"""R11: saga dispatch.
+
+Sagas translate events from one domain into commands for another. Contract:
+
+  - Saga class decorated with ``@saga(name, source, target)``.
+  - ``@handles(Evt)`` method receives ``(event, destinations)``.
+  - Returns ``CommandBook`` (or tuple of CommandBooks) for emitted commands;
+    ``EventBook`` (or tuple) for injected facts; or ``None`` for no output.
+  - ``SagaRouter.dispatch(SagaHandleRequest)`` returns a ``SagaResponse``
+    with commands + events merged across all matched sagas.
+  - Multi-saga merge: two sagas in the same source domain both ``@handles(Evt)``
+    are both invoked in registration order; outputs concatenated.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from google.protobuf.any_pb2 import Any as ProtoAny
+
+from angzarr_client.helpers import TYPE_URL_PREFIX
+from angzarr_client.proto.angzarr import (
+    CommandBook,
+    CommandPage,
+    Cover,
+    EventBook,
+    EventPage,
+    PageHeader,
+    SagaHandleRequest,
+)
+from angzarr_client.router import (
+    Router,
+    handles,
+    saga,
+)
+from tests.fixtures import (
+    OrderCreated,
+    OrderCompleted,
+    ReserveStock,
+    CreateShipment,
+)
+
+
+def _event_book_with(event_msgs: list, domain: str = "order") -> EventBook:
+    book = EventBook()
+    book.cover.CopyFrom(Cover(domain=domain))
+    for offset, msg in enumerate(event_msgs):
+        any_evt = ProtoAny()
+        any_evt.type_url = TYPE_URL_PREFIX + msg.DESCRIPTOR.full_name
+        any_evt.value = msg.SerializeToString()
+        page = EventPage()
+        page.header.CopyFrom(PageHeader(sequence=offset))
+        page.event.CopyFrom(any_evt)
+        book.pages.append(page)
+    book.next_sequence = len(event_msgs)
+    return book
+
+
+def _saga_request(
+    event_msgs: list, source_domain: str = "order", dest_seqs: dict | None = None
+) -> SagaHandleRequest:
+    req = SagaHandleRequest()
+    req.source.CopyFrom(_event_book_with(event_msgs, domain=source_domain))
+    if dest_seqs:
+        for k, v in dest_seqs.items():
+            req.destination_sequences[k] = v
+    return req
+
+
+def _command_book(cmd_msg, target_domain: str, seq: int = 0) -> CommandBook:
+    any_cmd = ProtoAny()
+    any_cmd.type_url = TYPE_URL_PREFIX + cmd_msg.DESCRIPTOR.full_name
+    any_cmd.value = cmd_msg.SerializeToString()
+    page = CommandPage()
+    page.header.CopyFrom(PageHeader(sequence=seq))
+    page.command.CopyFrom(any_cmd)
+    book = CommandBook()
+    book.cover.CopyFrom(Cover(domain=target_domain))
+    book.pages.append(page)
+    return book
+
+
+# --------------------------------------------------------------------------
+# Single-saga dispatch
+# --------------------------------------------------------------------------
+
+
+def test_saga_handler_invoked_for_matching_event():
+    captured = {}
+
+    @saga(name="saga-order-fulfillment", source="order", target="inventory")
+    class Fulfillment:
+        @handles(OrderCreated)
+        def translate(self, event, destinations):
+            captured["event_order_id"] = event.order_id
+            return _command_book(
+                ReserveStock(order_id=event.order_id, sku="sku-1", quantity=1),
+                target_domain="inventory",
+            )
+
+    router = Router("sagas").with_handler(Fulfillment()).build()
+    response = router.dispatch(
+        _saga_request([OrderCreated(order_id="o-1", customer_id="c-1")])
+    )
+
+    assert captured["event_order_id"] == "o-1"
+    assert len(response.commands) == 1
+    assert response.commands[0].cover.domain == "inventory"
+
+
+def test_saga_handler_receives_destinations():
+    captured = {}
+
+    @saga(name="saga-x", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def translate(self, event, destinations):
+            captured["destinations"] = destinations
+            return None
+
+    router = Router("sagas").with_handler(S()).build()
+    router.dispatch(
+        _saga_request(
+            [OrderCreated(order_id="o-1")],
+            dest_seqs={"inventory": 7, "fulfillment": 3},
+        )
+    )
+
+    d = captured["destinations"]
+    assert d.sequence_for("inventory") == 7
+    assert d.sequence_for("fulfillment") == 3
+
+
+def test_saga_returning_none_emits_empty_response():
+    @saga(name="s", source="order", target="inventory")
+    class Noop:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            return None
+
+    router = Router("sagas").with_handler(Noop()).build()
+    response = router.dispatch(_saga_request([OrderCreated(order_id="o-1")]))
+
+    assert len(response.commands) == 0
+
+
+def test_unknown_event_type_yields_no_calls():
+    call_order = []
+
+    @saga(name="s", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            call_order.append("called")
+            return None
+
+    router = Router("sagas").with_handler(S()).build()
+    # Send an OrderCompleted event — no @handles for it.
+    response = router.dispatch(_saga_request([OrderCompleted(order_id="o-1")]))
+
+    assert call_order == []
+    assert len(response.commands) == 0
+
+
+# --------------------------------------------------------------------------
+# Multi-saga merge
+# --------------------------------------------------------------------------
+
+
+def test_multiple_sagas_same_source_both_invoked_in_registration_order():
+    call_order = []
+
+    @saga(name="s-fulfill", source="order", target="inventory")
+    class Fulfillment:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            call_order.append("fulfill")
+            return _command_book(
+                ReserveStock(order_id=event.order_id, quantity=1),
+                target_domain="inventory",
+            )
+
+    @saga(name="s-ship", source="order", target="fulfillment")
+    class Shipping:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            call_order.append("ship")
+            return _command_book(
+                CreateShipment(order_id=event.order_id, address="addr"),
+                target_domain="fulfillment",
+            )
+
+    router = (
+        Router("sagas").with_handler(Fulfillment()).with_handler(Shipping()).build()
+    )
+    response = router.dispatch(_saga_request([OrderCreated(order_id="o-1")]))
+
+    assert call_order == ["fulfill", "ship"]
+    assert len(response.commands) == 2
+    assert response.commands[0].cover.domain == "inventory"
+    assert response.commands[1].cover.domain == "fulfillment"
+
+
+def test_saga_emitting_tuple_of_commands_yields_multiple_commands():
+    @saga(name="s", source="order", target="inventory")
+    class Multi:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            return (
+                _command_book(ReserveStock(order_id="o-1", sku="a"), "inventory"),
+                _command_book(ReserveStock(order_id="o-1", sku="b"), "inventory"),
+            )
+
+    router = Router("sagas").with_handler(Multi()).build()
+    response = router.dispatch(_saga_request([OrderCreated(order_id="o-1")]))
+
+    assert len(response.commands) == 2
+
+
+# --------------------------------------------------------------------------
+# Last event in the book is the trigger
+# --------------------------------------------------------------------------
+
+
+def test_saga_trigger_is_last_event_in_source_book():
+    seen_ids = []
+
+    @saga(name="s", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            seen_ids.append(event.order_id)
+            return None
+
+    router = Router("sagas").with_handler(S()).build()
+    # Book has three OrderCreated events; saga should see only the last.
+    response = router.dispatch(
+        _saga_request(
+            [
+                OrderCreated(order_id="first"),
+                OrderCreated(order_id="middle"),
+                OrderCreated(order_id="last"),
+            ]
+        )
+    )
+
+    assert seen_ids == ["last"]
+    assert len(response.commands) == 0

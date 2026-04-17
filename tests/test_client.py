@@ -7,7 +7,6 @@ import grpc
 import pytest
 
 from angzarr_client.client import (
-    Client,
     CommandHandlerClient,
     DomainClient,
     QueryClient,
@@ -101,7 +100,7 @@ class TestQueryClient:
         query = Query()
         result = client.get_event_book(query)
 
-        client._stub.GetEventBook.assert_called_once_with(query)
+        client._stub.GetEventBook.assert_called_once_with(query, timeout=None)
         assert result.next_sequence == 42
 
     def test_get_event_book_raises_grpc_error(self) -> None:
@@ -191,7 +190,7 @@ class TestCommandHandlerClient:
         cmd = CommandRequest()
         result = client.handle_command(cmd)
 
-        client._stub.HandleCommand.assert_called_once_with(cmd)
+        client._stub.HandleCommand.assert_called_once_with(cmd, timeout=None)
         assert result is not None
 
     def test_handle_command_raises_grpc_error(self) -> None:
@@ -215,7 +214,9 @@ class TestCommandHandlerClient:
         request = SpeculateCommandHandlerRequest()
         result = client.handle_sync_speculative(request)
 
-        client._stub.HandleSyncSpeculative.assert_called_once_with(request)
+        client._stub.HandleSyncSpeculative.assert_called_once_with(
+            request, timeout=None
+        )
         assert result is not None
 
     def test_handle_sync_speculative_raises_grpc_error(self) -> None:
@@ -283,7 +284,7 @@ class TestSpeculativeClient:
         result = client.command_handler(request)
 
         client._command_handler_stub.HandleSyncSpeculative.assert_called_once_with(
-            request
+            request, timeout=None
         )
         assert result is not None
 
@@ -308,7 +309,9 @@ class TestSpeculativeClient:
         request = SpeculateProjectorRequest()
         result = client.projector(request)
 
-        client._projector_stub.HandleSpeculative.assert_called_once_with(request)
+        client._projector_stub.HandleSpeculative.assert_called_once_with(
+            request, timeout=None
+        )
         assert result is not None
 
     def test_projector_raises_grpc_error(self) -> None:
@@ -332,7 +335,9 @@ class TestSpeculativeClient:
         request = SpeculateSagaRequest()
         result = client.saga(request)
 
-        client._saga_stub.ExecuteSpeculative.assert_called_once_with(request)
+        client._saga_stub.ExecuteSpeculative.assert_called_once_with(
+            request, timeout=None
+        )
         assert result is not None
 
     def test_saga_raises_grpc_error(self) -> None:
@@ -356,7 +361,7 @@ class TestSpeculativeClient:
         request = SpeculatePmRequest()
         result = client.process_manager(request)
 
-        client._pm_stub.HandleSpeculative.assert_called_once_with(request)
+        client._pm_stub.HandleSpeculative.assert_called_once_with(request, timeout=None)
         assert result is not None
 
     def test_process_manager_raises_grpc_error(self) -> None:
@@ -427,56 +432,5 @@ class TestDomainClient:
         """close closes the underlying channel."""
         channel = self._mock_channel()
         client = DomainClient(channel)
-        client.close()
-        channel.close.assert_called_once()
-
-
-class TestClient:
-    """Tests for Client (combined client)."""
-
-    def _mock_channel(self) -> Mock:
-        """Create a mock gRPC channel."""
-        return Mock(spec=grpc.Channel)
-
-    def test_init_creates_all_sub_clients(self) -> None:
-        """Constructor creates all sub-clients."""
-        channel = self._mock_channel()
-        client = Client(channel)
-        assert client._channel is channel
-        assert client.command_handler is not None
-        assert client.query is not None
-        assert client.speculative is not None
-        assert isinstance(client.command_handler, CommandHandlerClient)
-        assert isinstance(client.query, QueryClient)
-        assert isinstance(client.speculative, SpeculativeClient)
-
-    @patch("angzarr_client.client.grpc.insecure_channel")
-    def test_connect(self, mock_channel: Mock) -> None:
-        """connect creates client from endpoint."""
-        mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = Client.connect("localhost:9000")
-        mock_channel.assert_called_once_with("localhost:9000")
-
-    @patch.dict(os.environ, {"FULL_ENDPOINT": "full-host:9000"})
-    @patch("angzarr_client.client.grpc.insecure_channel")
-    def test_from_env_uses_env_var(self, mock_channel: Mock) -> None:
-        """from_env uses environment variable."""
-        mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = Client.from_env("FULL_ENDPOINT", "default:8000")
-        mock_channel.assert_called_once_with("full-host:9000")
-
-    @patch("angzarr_client.client.grpc.insecure_channel")
-    def test_from_env_uses_default(self, mock_channel: Mock) -> None:
-        """from_env uses default when env var not set."""
-        # Use a unique var name that won't exist, don't clear all env vars
-        # (clearing all breaks mutmut which needs MUTANT_UNDER_TEST)
-        mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = Client.from_env("CLIENT_NONEXISTENT_VAR_12345", "default:8000")
-        mock_channel.assert_called_once_with("default:8000")
-
-    def test_close_closes_channel(self) -> None:
-        """close closes the underlying channel."""
-        channel = self._mock_channel()
-        client = Client(channel)
         client.close()
         channel.close.assert_called_once()
