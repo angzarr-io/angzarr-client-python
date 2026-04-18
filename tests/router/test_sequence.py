@@ -90,7 +90,7 @@ def test_second_handler_sees_seq_advanced_by_first_emission():
             seen.append(("second", seq))
             return OrderCreated(order_id="b")
 
-    router = Router("agg").with_handler(First()).with_handler(Second()).build()
+    router = Router("agg").with_handler(First, lambda: First()).with_handler(Second, lambda: Second()).build()
     router.dispatch(_request_with_next_seq(5, CreateOrder(order_id="x")))
 
     assert seen == [("first", 5), ("second", 7)]
@@ -123,7 +123,7 @@ def test_third_handler_sees_seq_advanced_by_sum_of_prior_emissions():
             seen.append(seq)
             return OrderCreated(order_id="3")
 
-    router = Router("agg").with_handler(A()).with_handler(B()).with_handler(C()).build()
+    router = Router("agg").with_handler(A, lambda: A()).with_handler(B, lambda: B()).with_handler(C, lambda: C()).build()
     router.dispatch(_request_with_next_seq(10, CreateOrder(order_id="x")))
 
     # A: 10 → emits 1 → B: 11 → emits 2 → C: 13
@@ -148,7 +148,7 @@ def test_emitted_pages_carry_monotonic_sequences():
         def on(self, cmd, state, seq):
             return OrderCreated(order_id="b")
 
-    router = Router("agg").with_handler(First()).with_handler(Second()).build()
+    router = Router("agg").with_handler(First, lambda: First()).with_handler(Second, lambda: Second()).build()
     response = router.dispatch(_request_with_next_seq(5, CreateOrder(order_id="x")))
 
     seqs = [p.header.sequence for p in response.events.pages]
@@ -172,7 +172,7 @@ def test_handler_emitting_no_events_does_not_advance_seq():
             seen.append(("second", seq))
             return OrderCreated(order_id="b")
 
-    router = Router("agg").with_handler(First()).with_handler(Second()).build()
+    router = Router("agg").with_handler(First, lambda: First()).with_handler(Second, lambda: Second()).build()
     router.dispatch(_request_with_next_seq(42, CreateOrder(order_id="x")))
 
     # First emitted nothing → seq unchanged.
@@ -189,6 +189,6 @@ def test_single_handler_seq_matches_next_sequence():
             seen.append(seq)
             return None
 
-    router = Router("agg").with_handler(Only()).build()
+    router = Router("agg").with_handler(Only, lambda: Only()).build()
     router.dispatch(_request_with_next_seq(99, CreateOrder(order_id="x")))
     assert seen == [99]

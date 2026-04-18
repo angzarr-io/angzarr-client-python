@@ -72,27 +72,27 @@ class Output:
 
 
 def test_build_single_command_handler_returns_command_handler_router():
-    router = Router("x").with_handler(Player()).build()
+    router = Router("x").with_handler(Player, lambda: Player()).build()
     assert isinstance(router, CommandHandlerRouter)
 
 
 def test_build_multiple_command_handlers_returns_command_handler_router():
-    router = Router("x").with_handler(Player()).with_handler(Player()).build()
+    router = Router("x").with_handler(Player, Player).with_handler(Player, Player).build()
     assert isinstance(router, CommandHandlerRouter)
 
 
 def test_build_saga_returns_saga_router():
-    router = Router("x").with_handler(OrderSaga()).build()
+    router = Router("x").with_handler(OrderSaga, lambda: OrderSaga()).build()
     assert isinstance(router, SagaRouter)
 
 
 def test_build_process_manager_returns_pm_router():
-    router = Router("x").with_handler(PM()).build()
+    router = Router("x").with_handler(PM, lambda: PM()).build()
     assert isinstance(router, ProcessManagerRouter)
 
 
 def test_build_projector_returns_projector_router():
-    router = Router("x").with_handler(Output()).build()
+    router = Router("x").with_handler(Output, lambda: Output()).build()
     assert isinstance(router, ProjectorRouter)
 
 
@@ -102,25 +102,25 @@ def test_build_projector_returns_projector_router():
 
 
 def test_mixing_command_handler_and_saga_raises():
-    r = Router("x").with_handler(Player()).with_handler(OrderSaga())
+    r = Router("x").with_handler(Player, Player).with_handler(OrderSaga, lambda: OrderSaga())
     with pytest.raises(BuildError, match="cannot mix"):
         r.build()
 
 
 def test_mixing_saga_and_pm_raises():
-    r = Router("x").with_handler(OrderSaga()).with_handler(PM())
+    r = Router("x").with_handler(OrderSaga, lambda: OrderSaga()).with_handler(PM, lambda: PM())
     with pytest.raises(BuildError, match="cannot mix"):
         r.build()
 
 
 def test_mixing_projector_and_command_handler_raises():
-    r = Router("x").with_handler(Output()).with_handler(Player())
+    r = Router("x").with_handler(Output, lambda: Output()).with_handler(Player, Player)
     with pytest.raises(BuildError, match="cannot mix"):
         r.build()
 
 
 def test_build_error_names_both_kinds():
-    r = Router("x").with_handler(Player()).with_handler(OrderSaga())
+    r = Router("x").with_handler(Player, Player).with_handler(OrderSaga, lambda: OrderSaga())
     with pytest.raises(BuildError) as exc_info:
         r.build()
     msg = str(exc_info.value)
@@ -129,16 +129,21 @@ def test_build_error_names_both_kinds():
 
 
 # --------------------------------------------------------------------------
-# Built router exposes its name + registered handlers
+# Built router exposes its name + registered factories
 # --------------------------------------------------------------------------
 
 
 def test_built_router_carries_name():
-    router = Router("agg-service").with_handler(Player()).build()
+    router = Router("agg-service").with_handler(Player, lambda: Player()).build()
     assert router.name == "agg-service"
 
 
-def test_built_router_carries_handlers_in_registration_order():
-    p1, p2 = Player(), Player()
-    router = Router("x").with_handler(p1).with_handler(p2).build()
-    assert router.handlers == [p1, p2]
+def test_built_router_carries_factories_in_registration_order():
+    def f1():
+        return Player()
+
+    def f2():
+        return Player()
+
+    router = Router("x").with_handler(Player, f1).with_handler(Player, f2).build()
+    assert router._factories == [(Player, f1), (Player, f2)]

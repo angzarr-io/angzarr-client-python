@@ -106,7 +106,7 @@ def test_applier_mutates_state_from_prior_event():
             captured["state"] = state
             return None  # no emitted events
 
-    router = Router("agg").with_handler(Aggregate()).build()
+    router = Router("agg").with_handler(Aggregate, lambda: Aggregate()).build()
 
     prior = [OrderCreated(order_id="o-1", customer_id="c-9")]
     router.dispatch(_contextual_command(OrderCompleted(order_id="o-1"), prior))
@@ -135,7 +135,7 @@ def test_multiple_appliers_run_in_event_order():
             captured["state"] = state
             return None
 
-    router = Router("agg").with_handler(Aggregate()).build()
+    router = Router("agg").with_handler(Aggregate, lambda: Aggregate()).build()
     prior = [OrderCreated(order_id="o-1"), OrderCompleted(order_id="o-1")]
     router.dispatch(_contextual_command(CreateOrder(order_id="o-1"), prior))
 
@@ -158,7 +158,7 @@ def test_unknown_event_types_are_skipped():
             captured["state"] = state
             return None
 
-    router = Router("agg").with_handler(Aggregate()).build()
+    router = Router("agg").with_handler(Aggregate, lambda: Aggregate()).build()
     # Include an OrderCompleted event with no applier → should be skipped.
     prior = [OrderCreated(order_id="o-1"), OrderCompleted(order_id="o-1")]
     router.dispatch(_contextual_command(CreateOrder(order_id="o-1"), prior))
@@ -180,7 +180,7 @@ def test_no_prior_events_yields_default_state():
             captured["state"] = state
             return None
 
-    router = Router("agg").with_handler(Aggregate()).build()
+    router = Router("agg").with_handler(Aggregate, lambda: Aggregate()).build()
     router.dispatch(_contextual_command(CreateOrder(order_id="o-1"), prior_events=[]))
 
     # Nothing applied → default dataclass values.
@@ -207,7 +207,7 @@ def test_state_factory_overrides_default_constructor():
             captured["state"] = state
             return None
 
-    router = Router("agg").with_handler(Aggregate()).build()
+    router = Router("agg").with_handler(Aggregate, lambda: Aggregate()).build()
     router.dispatch(_contextual_command(CreateOrder(order_id="o-1"), prior_events=[]))
 
     assert captured["state"].last_customer == "default-customer"
@@ -233,7 +233,7 @@ def test_state_factory_runs_before_appliers():
             captured["final"] = state.last_customer
             return None
 
-    router = Router("agg").with_handler(Aggregate()).build()
+    router = Router("agg").with_handler(Aggregate, lambda: Aggregate()).build()
     prior = [OrderCreated(order_id="o-1", customer_id="from-event")]
     router.dispatch(_contextual_command(CreateOrder(order_id="o-1"), prior))
 
@@ -260,7 +260,7 @@ def test_state_is_isolated_between_dispatches():
             states.append(state)
             return None
 
-    router = Router("agg").with_handler(Aggregate()).build()
+    router = Router("agg").with_handler(Aggregate, lambda: Aggregate()).build()
     router.dispatch(_contextual_command(CreateOrder(order_id="a"), []))
     router.dispatch(
         _contextual_command(CreateOrder(order_id="b"), [OrderCreated(order_id="a")])

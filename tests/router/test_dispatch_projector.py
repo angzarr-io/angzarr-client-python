@@ -65,7 +65,7 @@ def test_projector_handles_event_and_writes_side_effects():
         def on_created(self, event):
             written.append(("created", event.order_id))
 
-    router = Router("prjs").with_handler(Output()).build()
+    router = Router("prjs").with_handler(Output, lambda: Output()).build()
     router.dispatch(_event_book([OrderCreated(order_id="o-1")]))
 
     assert written == [("created", "o-1")]
@@ -78,7 +78,7 @@ def test_projector_returns_projection_result():
         def on(self, event):
             pass
 
-    router = Router("prjs").with_handler(P()).build()
+    router = Router("prjs").with_handler(P, lambda: P()).build()
     result = router.dispatch(_event_book([OrderCreated(order_id="o-1")]))
 
     # Projection returned, cover copied from source book
@@ -95,7 +95,7 @@ def test_projector_iterates_every_event_in_book():
         def on(self, event):
             written.append(event.order_id)
 
-    router = Router("prjs").with_handler(P()).build()
+    router = Router("prjs").with_handler(P, lambda: P()).build()
     router.dispatch(
         _event_book(
             [
@@ -118,7 +118,7 @@ def test_unknown_event_types_skipped_silently():
         def on(self, event):
             written.append("created")
 
-    router = Router("prjs").with_handler(P()).build()
+    router = Router("prjs").with_handler(P, lambda: P()).build()
     # Mix of handled + not-handled events
     router.dispatch(
         _event_book(
@@ -154,7 +154,7 @@ def test_two_projectors_both_invoked_in_registration_order():
         def on(self, event):
             call_order.append(("B", event.order_id))
 
-    router = Router("prjs").with_handler(A()).with_handler(B()).build()
+    router = Router("prjs").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
     router.dispatch(_event_book([OrderCreated(order_id="o-1")]))
 
     assert call_order == [("A", "o-1"), ("B", "o-1")]
@@ -170,7 +170,7 @@ def test_projector_filters_by_declared_domains():
             # Won't fire — "inventory" not in declared domains
             written.append("fired")
 
-    router = Router("prjs").with_handler(OrderOnly()).build()
+    router = Router("prjs").with_handler(OrderOnly, lambda: OrderOnly()).build()
     # Dispatch an inventory EventBook — projector only declares "order" domain
     router.dispatch(
         _event_book(
@@ -195,7 +195,7 @@ def test_projector_handler_receives_only_event_parameter():
         def on(self, event):
             captured["event"] = event
 
-    router = Router("prjs").with_handler(P()).build()
+    router = Router("prjs").with_handler(P, lambda: P()).build()
     router.dispatch(_event_book([OrderCreated(order_id="o-1", customer_id="c-1")]))
 
     assert captured["event"].order_id == "o-1"

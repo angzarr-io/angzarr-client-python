@@ -84,7 +84,7 @@ def _given_pm_built(world):
             )
 
     world.handlers.append(Fulfillment())
-    world.router = Router("pms").with_handler(world.handlers[0]).build()
+    world.router = Router("pms").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
 
 
 @when("an OrderCreated trigger is dispatched to the PM router")

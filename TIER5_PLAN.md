@@ -4,7 +4,7 @@ Reference implementation for the cross-language unified Router redesign. Sequent
 
 ## Design (agreed)
 
-- **One builder**: `Router[S](name)` with `.with_handler(instance)` as the sole registration method.
+- **One builder**: `Router[S](name)` with `.with_handler(cls, factory)` as the sole registration method. `factory` is a zero-arg `Callable[[], Any]` (lambda, bound method, partial, pool checkout, singleton closure) — invoked per dispatch call so handler state is isolated per request and the router is safe to share across threads.
 - **Class decorators** declare the kind: `@command_handler`, `@saga`, `@process_manager`, `@projector`. No base classes.
 - **Method decorators** declare behavior: `@handles`, `@applies`, `@rejected`, `@state_factory`.
 - **Typed runtime routers** are the result of `Router.build()`: `CommandHandlerRouter[S]`, `SagaRouter`, `ProcessManagerRouter[S]`, `ProjectorRouter`. No public constructors.
@@ -18,8 +18,14 @@ Reference implementation for the cross-language unified Router redesign. Sequent
 ```python
 # Builder (single entry point)
 Router[S](name: str)
-    .with_handler(instance) -> Router
+    .with_handler(cls: type, factory: Callable[[], Any]) -> Router
     .build() -> CommandHandlerRouter[S] | SagaRouter | ProcessManagerRouter[S] | ProjectorRouter
+
+# Usage
+Router("agg-service")
+    .with_handler(Player, lambda: Player(db_pool))
+    .with_handler(Hand, lambda: Hand(rng))
+    .build()
 
 # Class decorators (no base class)
 @command_handler(domain: str, state: type[S])
@@ -96,12 +102,12 @@ Implement: `router/decorators.py` (class decorators only).
 Tests: `@handles`, `@applies`, `@rejected`, `@state_factory` each set a distinct attribute on the decorated method. Stacking conflicting method decorators raises `TypeError`.
 Implement: method decorators in `router/decorators.py`.
 
-### R3 — builder collects instances
-Tests: `Router(name).with_handler(inst)` stores the instance. `.build()` on empty builder → `BuildError`. `.with_handler(obj)` where `obj`'s class has no `@command_handler`/`@saga`/etc. → `BuildError` naming the class.
-Implement: `router/builder.py` — `Router`, `_instances` list, build-time dispatch.
+### R3 — builder collects factories
+Tests: `Router(name).with_handler(cls, factory)` stores a `(cls, factory)` tuple. `.build()` on empty builder → `BuildError`. `.with_handler(cls, factory)` where `cls` has no `@command_handler`/`@saga`/etc. → `BuildError` naming the class. Factories are not invoked at registration or build time — only during dispatch.
+Implement: `router/builder.py` — `Router`, `_factories: list[tuple[type, Callable[[], Any]]]`, build-time dispatch.
 
 ### R4 — mode inference
-Tests: homogeneous instance lists build to the correct runtime type (`CommandHandlerRouter`, `SagaRouter`, `ProcessManagerRouter`, `ProjectorRouter`). Mixed kinds → `BuildError("cannot mix ... in one router")`.
+Tests: homogeneous factory lists (all classes share one kind) build to the correct runtime type (`CommandHandlerRouter`, `SagaRouter`, `ProcessManagerRouter`, `ProjectorRouter`). Mixed kinds → `BuildError("cannot mix ... in one router")`.
 Implement: mode inference logic, stub runtime classes in `router/runtime.py`.
 
 ### R5 — build-time validation per kind
@@ -110,23 +116,23 @@ Tests (parametrized): missing required fields on class decorators raise `BuildEr
 - `@saga` missing `target`: error
 - `@process_manager` missing `pm_domain` / `sources` / `targets` / `state`: error
 - `@projector` missing `domains`: error
-- Multiple instances with same `(domain, type_url)`: **allowed** (call-both design)
+- Multiple factories with the same `(domain, type_url)`: **allowed** (call-both design)
 Implement: `router/validation.py`.
 
 ### R6 — single-handler command dispatch
-Tests: one `@command_handler` instance with one `@handles(Cmd)`. `router.dispatch(ContextualCommand)` returns `BusinessResponse` with the emitted event wrapped. Unknown type_url → gRPC `INVALID_ARGUMENT`.
+Tests: one `@command_handler` factory with a class carrying `@handles(Cmd)`. `router.dispatch(ContextualCommand)` returns `BusinessResponse` with the emitted event wrapped. The factory is invoked once per dispatch (only when a match is found). Unknown type_url → gRPC `INVALID_ARGUMENT`.
 Implement: `CommandHandlerRouter.dispatch` (no state yet), `router/dispatch.py`.
 
 ### R7 — state rebuild via @applies
-Tests: instance with `@applies(Evt)` mutating state. Prior EventBook with `Evt` present → handler receives state reflecting the mutation. Custom `@state_factory` override works; defaults to `state()` when not specified.
+Tests: class with `@applies(Evt)` mutating state. Prior EventBook with `Evt` present → handler (produced by its factory) receives state reflecting the mutation. Custom `@state_factory` override works; defaults to `state()` when not specified.
 Implement: pre-dispatch state rebuild loop in `CommandHandlerRouter`.
 
 ### R8 — multi-handler merge
-Tests: two command-handler instances in same domain both `@handles(Cmd)`. Both invoked in registration order. Events concatenated in registration order. Each instance's state rebuilt from its own `@applies` (isolated).
-Implement: multi-instance fan-out in dispatch.
+Tests: two command-handler factories in the same domain produce classes both carrying `@handles(Cmd)`. Both invoked in registration order (one factory call per matched handler per dispatch). Events concatenated in registration order. Each instance's state rebuilt from its own `@applies` (isolated).
+Implement: multi-handler fan-out in dispatch.
 
 ### R9 — sequence increments across handlers
-Tests: instance A emits 2 events at `seq=5`; instance B is called with `seq=7`. Merged output has monotonically increasing sequences. Framework-driven, handlers don't coordinate.
+Tests: handler A emits 2 events at `seq=5`; handler B is called with `seq=7`. Merged output has monotonically increasing sequences. Framework-driven, handlers don't coordinate.
 Implement: `seq` tracking in dispatch loop.
 
 ### R10 — rejection handler routing
@@ -134,7 +140,7 @@ Tests: `@rejected("payment", "ProcessPayment")` method receives Notification. Mu
 Implement: notification branch in `CommandHandlerRouter` / `SagaRouter` / `ProcessManagerRouter`.
 
 ### R11 — saga dispatch
-Tests: `@saga(source="order", target="inventory")` instance with `@handles(OrderPlaced)` returning commands for "inventory". `SagaRouter.dispatch` wraps into `SagaResponse`. Multi-handler merge applies.
+Tests: `@saga(source="order", target="inventory")` class with `@handles(OrderPlaced)` returning commands for "inventory". `SagaRouter.dispatch` wraps into `SagaResponse`. One factory call per matched handler per dispatch; multi-handler merge applies.
 Implement: `SagaRouter.dispatch`.
 
 ### R12 — process-manager dispatch
@@ -142,7 +148,7 @@ Tests: `@process_manager` with multiple sources, pm_domain, state. State rebuilt
 Implement: `ProcessManagerRouter.dispatch`.
 
 ### R13 — projector dispatch
-Tests: `@projector(domains=[...])` with `@handles` side-effecting through `self`. Multi-handler fan-out, no merge (side-effect semantics). No state.
+Tests: `@projector(domains=[...])` with `@handles` side-effecting through `self`. Multi-handler fan-out, no merge (side-effect semantics). No state. One projector instance per matching factory per dispatch, reused across every event in the book so projectors can batch writes within a single projection run.
 Implement: `ProjectorRouter.dispatch`.
 
 ### R14 — gRPC server wrappers adapt
@@ -167,7 +173,8 @@ Implement:
 
 - **Gherkin tests are the integration canary.** If R14 surfaces a regression, fix before advancing. Don't leave R14 half-done.
 - **Sequence-number logic is easy to get wrong.** R9 has explicit tests; don't merge R9 with R8.
-- **State rebuild recursion with multiple instances.** Each instance must rebuild independently; don't share state objects.
+- **State rebuild with multi-handler dispatch.** Each handler instance (produced by its factory) must rebuild state independently; don't share state objects across factories.
+- **Factory latency on the request path.** Factories run inside `dispatch()`; document that handlers with expensive construction (I/O, connection setup, config reads) should pool or close over a pre-built instance.
 - **Type-URL suffix vs exact match semantics.** Preserve current suffix behavior for back-compat; document it.
 
 ## Out of scope for Phase 1

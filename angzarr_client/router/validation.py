@@ -16,14 +16,13 @@ from typing import Any
 from .builder import BuildError
 
 
-def validate_handler(handler: Any) -> None:
-    """Raise :class:`BuildError` if the handler's class metadata is incoherent.
+def validate_handler(cls: type) -> None:
+    """Raise :class:`BuildError` if the handler class's metadata is incoherent.
 
-    Called once per registered handler at build time. Check the kind
+    Called once per registered handler class at build time. Check the kind
     discriminant (set by the class decorator) and validate kind-specific
-    fields.
+    fields. Operates purely on class-level metadata — no instance required.
     """
-    cls = type(handler)
     kind: str = cls.__angzarr_kind__
     meta: dict[str, Any] = cls.__angzarr_meta__
 

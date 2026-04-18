@@ -123,7 +123,7 @@ def test_pm_handler_invoked_for_matching_event():
                 ]
             )
 
-    router = Router("pms").with_handler(Fulfillment()).build()
+    router = Router("pms").with_handler(Fulfillment, lambda: Fulfillment()).build()
     response = router.dispatch(
         _pm_request([OrderCreated(order_id="o-1", customer_id="c-1")])
     )
@@ -153,7 +153,7 @@ def test_pm_state_rebuild_from_process_state():
             captured["state"] = state
             return None
 
-    router = Router("pms").with_handler(Fulfillment()).build()
+    router = Router("pms").with_handler(Fulfillment, lambda: Fulfillment()).build()
     router.dispatch(
         _pm_request(
             [OrderCreated(order_id="x")],
@@ -183,7 +183,7 @@ def test_pm_handler_receives_destinations():
             captured["dest"] = destinations
             return None
 
-    router = Router("pms").with_handler(P()).build()
+    router = Router("pms").with_handler(P, lambda: P()).build()
     router.dispatch(
         _pm_request(
             [OrderCreated(order_id="o-1")],
@@ -211,7 +211,7 @@ def test_pm_handler_receives_source_cover_when_declared():
             captured["source_cover"] = source_cover
             return None
 
-    router = Router("pms").with_handler(P()).build()
+    router = Router("pms").with_handler(P, P).build()
     req = _pm_request([OrderCreated(order_id="o-1")])
     req.trigger.cover.root.value = b"\x02" * 16
 
@@ -239,7 +239,7 @@ def test_pm_handler_without_source_cover_param_unaffected():
             captured["seen"] = True
             return None
 
-    router = Router("pms").with_handler(P()).build()
+    router = Router("pms").with_handler(P, P).build()
     router.dispatch(_pm_request([OrderCreated(order_id="o-1")]))
     assert captured == {"seen": True}
 
@@ -257,7 +257,7 @@ def test_pm_returning_none_yields_empty_response():
         def on(self, event, state, destinations):
             return None
 
-    router = Router("pms").with_handler(Noop()).build()
+    router = Router("pms").with_handler(Noop, lambda: Noop()).build()
     response = router.dispatch(_pm_request([OrderCreated(order_id="o-1")]))
 
     assert len(response.commands) == 0
@@ -285,7 +285,7 @@ def test_pm_multi_source_domain_routing():
             seen.append(("inventory", event.order_id))
             return None
 
-    router = Router("pms").with_handler(P()).build()
+    router = Router("pms").with_handler(P, lambda: P()).build()
     router.dispatch(_pm_request([OrderCreated(order_id="a")], source_domain="order"))
     router.dispatch(
         _pm_request(
@@ -346,7 +346,7 @@ def test_multiple_pms_both_invoked_in_registration_order():
                 ]
             )
 
-    router = Router("pms").with_handler(A()).with_handler(B()).build()
+    router = Router("pms").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
     response = router.dispatch(_pm_request([OrderCreated(order_id="o-1")]))
 
     assert call_order == ["A", "B"]
@@ -382,7 +382,7 @@ def test_pm_response_facts_and_process_events_propagate():
                 facts=[fact_book],
             )
 
-    router = Router("pms").with_handler(P()).build()
+    router = Router("pms").with_handler(P, lambda: P()).build()
     response = router.dispatch(_pm_request([OrderCreated(order_id="o-1")]))
 
     assert len(response.facts) == 1

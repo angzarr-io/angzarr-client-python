@@ -5,7 +5,7 @@ unified Router carries them alongside the other four kinds:
 
   - ``@upcaster(name, domain)`` class decorator stamps kind metadata.
   - ``@upcasts(FromType, ToType)`` method decorator registers a transform.
-  - ``Router(...).with_handler(U()).build()`` returns an ``UpcasterRouter``.
+  - ``Router(...).with_handler(U, U).build()`` returns an ``UpcasterRouter``.
   - Dispatch consumes an ``UpcastRequest`` (domain + pages) and returns an
     ``UpcastResponse`` (pages), transforming events whose proto type-URL
     matches a registered ``FromType``. Events without a registered transform
@@ -126,7 +126,7 @@ def test_builder_returns_upcaster_router_for_upcaster_kind():
     class Up:
         pass
 
-    result = Router("upcaster-order").with_handler(Up()).build()
+    result = Router("upcaster-order").with_handler(Up, Up).build()
     assert isinstance(result, UpcasterRouter)
 
 
@@ -136,7 +136,7 @@ def test_builder_rejects_empty_name():
         pass
 
     with pytest.raises(BuildError):
-        Router("x").with_handler(Up()).build()
+        Router("x").with_handler(Up, Up).build()
 
 
 def test_builder_rejects_empty_domain():
@@ -145,7 +145,7 @@ def test_builder_rejects_empty_domain():
         pass
 
     with pytest.raises(BuildError):
-        Router("x").with_handler(Up()).build()
+        Router("x").with_handler(Up, Up).build()
 
 
 def test_builder_rejects_mixed_kinds():
@@ -158,7 +158,7 @@ def test_builder_rejects_mixed_kinds():
         pass
 
     with pytest.raises(BuildError):
-        Router("x").with_handler(Up()).with_handler(Agg()).build()
+        Router("x").with_handler(Up, Up).with_handler(Agg, Agg).build()
 
 
 # --------------------------------------------------------------------------
@@ -177,7 +177,7 @@ def test_dispatch_transforms_matching_event():
                 total=0,
             )
 
-    router = Router("upcaster-order").with_handler(OrderUpcaster()).build()
+    router = Router("upcaster-order").with_handler(OrderUpcaster, OrderUpcaster).build()
     page = _page(OrderCreatedV1(order_id="o-1", customer_id="c-1"))
     response = router.dispatch(_request([page]))
 
@@ -194,7 +194,7 @@ def test_dispatch_passes_through_unregistered_type():
         def migrate(self, old):
             return OrderCreated(order_id=old.order_id)
 
-    router = Router("upcaster-order").with_handler(OrderUpcaster()).build()
+    router = Router("upcaster-order").with_handler(OrderUpcaster, OrderUpcaster).build()
     # StockReserved has no registered transform → passthrough.
     page = _page(StockReserved(order_id="o-1", sku="sku", quantity=1))
     response = router.dispatch(_request([page]))
@@ -213,7 +213,7 @@ def test_dispatch_preserves_page_header_and_timestamp():
         def migrate(self, old):
             return OrderCreated(order_id=old.order_id)
 
-    router = Router("upcaster-order").with_handler(OrderUpcaster()).build()
+    router = Router("upcaster-order").with_handler(OrderUpcaster, OrderUpcaster).build()
     page = _page(
         OrderCreatedV1(order_id="o-1"), sequence=42, created_at_seconds=1234
     )
@@ -230,7 +230,7 @@ def test_dispatch_preserves_order_across_mixed_events():
         def migrate(self, old):
             return OrderCreated(order_id=old.order_id)
 
-    router = Router("upcaster-order").with_handler(OrderUpcaster()).build()
+    router = Router("upcaster-order").with_handler(OrderUpcaster, OrderUpcaster).build()
     pages = [
         _page(OrderCreatedV1(order_id="a"), sequence=0),
         _page(StockReserved(order_id="a", sku="x", quantity=1), sequence=1),
@@ -255,7 +255,7 @@ def test_dispatch_skips_page_without_event():
         def migrate(self, old):
             return OrderCreated(order_id=old.order_id)
 
-    router = Router("upcaster-order").with_handler(OrderUpcaster()).build()
+    router = Router("upcaster-order").with_handler(OrderUpcaster, OrderUpcaster).build()
     empty = EventPage()
     empty.header.CopyFrom(PageHeader(sequence=7))
     response = router.dispatch(_request([empty]))
@@ -274,7 +274,7 @@ def test_dispatch_skips_handler_with_different_domain():
                 player_id=old.player_id, display_name=old.display_name
             )
 
-    router = Router("upcaster-player").with_handler(PlayerUpcaster()).build()
+    router = Router("upcaster-player").with_handler(PlayerUpcaster, PlayerUpcaster).build()
     # Request targets "order" domain — player handler must be skipped even
     # though it has an @upcasts method matching a proto type.
     page = _page(OrderCreatedV1(order_id="o-1"))
@@ -293,7 +293,7 @@ def test_dispatch_passthrough_with_empty_upcaster():
     class PassThru:
         pass
 
-    router = Router("upcaster-order").with_handler(PassThru()).build()
+    router = Router("upcaster-order").with_handler(PassThru, PassThru).build()
     page = _page(OrderCreatedV1(order_id="o-1"))
     response = router.dispatch(_request([page]))
 
@@ -320,7 +320,7 @@ def test_upcaster_grpc_adapter_delegates_to_router():
         def migrate(self, old):
             return OrderCreated(order_id=old.order_id)
 
-    router = Router("upcaster-order").with_handler(OrderUpcaster()).build()
+    router = Router("upcaster-order").with_handler(OrderUpcaster, OrderUpcaster).build()
     servicer = UpcasterGrpc(router)
 
     request = _request([_page(OrderCreatedV1(order_id="o-1"))])
@@ -348,7 +348,7 @@ def test_upcaster_grpc_adapter_translates_exception_to_internal():
         def migrate(self, old):
             raise RuntimeError("oops")
 
-    router = Router("upcaster-order").with_handler(Broken()).build()
+    router = Router("upcaster-order").with_handler(Broken, Broken).build()
     servicer = UpcasterGrpc(router)
 
     request = _request([_page(OrderCreatedV1(order_id="o-1"))])

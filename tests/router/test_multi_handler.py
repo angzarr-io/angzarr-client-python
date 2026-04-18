@@ -102,7 +102,7 @@ def test_both_handlers_invoked_in_registration_order():
             call_order.append("second")
             return OrderCreated(order_id=cmd.order_id, customer_id="from-second")
 
-    router = Router("agg").with_handler(First()).with_handler(Second()).build()
+    router = Router("agg").with_handler(First, lambda: First()).with_handler(Second, lambda: Second()).build()
     router.dispatch(_request(CreateOrder(order_id="o-1")))
 
     assert call_order == ["first", "second"]
@@ -121,7 +121,7 @@ def test_events_concatenated_in_registration_order():
         def on(self, cmd, state, seq):
             return OrderCompleted(order_id=cmd.order_id, shipped_at="t")
 
-    router = Router("agg").with_handler(First()).with_handler(Second()).build()
+    router = Router("agg").with_handler(First, lambda: First()).with_handler(Second, lambda: Second()).build()
     response = router.dispatch(_request(CreateOrder(order_id="o-1")))
 
     pages = response.events.pages
@@ -145,7 +145,7 @@ def test_reversed_registration_reverses_output_order():
             return OrderCompleted(order_id=cmd.order_id)
 
     # Register Second before First
-    router = Router("agg").with_handler(Second()).with_handler(First()).build()
+    router = Router("agg").with_handler(Second, lambda: Second()).with_handler(First, lambda: First()).build()
     response = router.dispatch(_request(CreateOrder(order_id="o-1")))
 
     pages = response.events.pages
@@ -184,7 +184,7 @@ def test_each_instance_rebuilds_its_own_state():
             states_seen.append(("second", state.count))
             return None
 
-    router = Router("agg").with_handler(First()).with_handler(Second()).build()
+    router = Router("agg").with_handler(First, lambda: First()).with_handler(Second, lambda: Second()).build()
 
     # Prior events: 3 OrderCreated (applies to First only), 2 StockUpdated (applies to Second only)
     prior = [
@@ -213,7 +213,7 @@ def test_handler_emitting_none_does_not_contribute_pages():
         def on(self, cmd, state, seq):
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(NoEmit()).with_handler(Emits()).build()
+    router = Router("agg").with_handler(NoEmit, lambda: NoEmit()).with_handler(Emits, lambda: Emits()).build()
     response = router.dispatch(_request(CreateOrder(order_id="o-1")))
 
     # Only the Emits handler contributed a page.
@@ -231,7 +231,7 @@ def test_handler_emitting_tuple_yields_multiple_pages():
                 OrderCompleted(order_id=cmd.order_id),
             )
 
-    router = Router("agg").with_handler(Multi()).build()
+    router = Router("agg").with_handler(Multi, lambda: Multi()).build()
     response = router.dispatch(_request(CreateOrder(order_id="o-1")))
 
     pages = response.events.pages
@@ -259,8 +259,8 @@ def test_only_matching_handlers_invoked():
 
     router = (
         Router("agg")
-        .with_handler(HandlesCreate())
-        .with_handler(HandlesComplete())
+        .with_handler(HandlesCreate, lambda: HandlesCreate())
+        .with_handler(HandlesComplete, lambda: HandlesComplete())
         .build()
     )
     router.dispatch(_request(CreateOrder(order_id="o-1")))

@@ -111,7 +111,7 @@ def test_rejection_handler_invoked_for_matching_key():
             captured["called"] = True
             return FundsReleased(amount=100, reason="reserve-failed")
 
-    router = Router("agg").with_handler(Payment()).build()
+    router = Router("agg").with_handler(Payment, lambda: Payment()).build()
 
     notif = _notification_for(ReserveStock(order_id="o-1"), target_domain="inventory")
     response = router.dispatch(_request_with_notification(notif))
@@ -130,7 +130,7 @@ def test_non_matching_rejection_returns_empty_business_response():
         def on(self, notif, state):
             return FundsReleased(amount=1, reason="x")
 
-    router = Router("agg").with_handler(Payment()).build()
+    router = Router("agg").with_handler(Payment, lambda: Payment()).build()
 
     # Rejected command is ProcessPayment (different type)
     notif = _notification_for(ProcessPayment(order_id="o-1"), target_domain="inventory")
@@ -163,7 +163,7 @@ def test_multiple_rejection_handlers_both_invoked_in_registration_order():
             call_order.append("B")
             return FundsReleased(amount=200, reason="from-B")
 
-    router = Router("agg").with_handler(A()).with_handler(B()).build()
+    router = Router("agg").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
 
     notif = _notification_for(ReserveStock(order_id="o-1"), target_domain="inventory")
     response = router.dispatch(_request_with_notification(notif))
@@ -188,7 +188,7 @@ def test_rejection_handler_receives_notification_and_state():
             captured["state_type"] = type(state).__name__
             return None  # No compensation
 
-    router = Router("agg").with_handler(Payment()).build()
+    router = Router("agg").with_handler(Payment, lambda: Payment()).build()
     notif = _notification_for(ReserveStock(order_id="o-1"), target_domain="inventory")
     router.dispatch(_request_with_notification(notif))
 
@@ -203,7 +203,7 @@ def test_rejection_handler_returning_none_yields_no_events():
         def on(self, notif, state):
             return None
 
-    router = Router("agg").with_handler(Payment()).build()
+    router = Router("agg").with_handler(Payment, lambda: Payment()).build()
     notif = _notification_for(ReserveStock(order_id="o-1"), target_domain="inventory")
     response = router.dispatch(_request_with_notification(notif))
 
@@ -228,7 +228,7 @@ def test_command_name_matched_by_suffix_not_full_path():
             called.append(True)
             return None
 
-    router = Router("agg").with_handler(Payment()).build()
+    router = Router("agg").with_handler(Payment, lambda: Payment()).build()
     notif = _notification_for(ReserveStock(order_id="o-1"), target_domain="inventory")
     router.dispatch(_request_with_notification(notif))
 

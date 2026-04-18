@@ -55,7 +55,7 @@ def _given_handler(world):
 @given("the router is built with the Order handler")
 def _given_built(world):
     world.handlers.append(world.classes["Order"]())
-    world.router = Router("agg").with_handler(world.handlers[0]).build()
+    world.router = Router("agg").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
 
 
 @when(parsers.parse('CreateOrder(order_id="{order_id}") is dispatched'))
@@ -105,7 +105,7 @@ def _when_dispatch_against_aggregate(world):
     cls.on_complete = on_complete
     # Rebuild router with replaced handler (same class, now also handles CompleteOrder).
     world.handlers = [cls()]
-    world.router = Router("agg").with_handler(world.handlers[0]).build()
+    world.router = Router("agg").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
 
     world.response = world.router.dispatch(
         contextual_command(
@@ -150,7 +150,7 @@ def _given_none_handler(world):
             return None
 
     world.handlers = [NoneOrder()]
-    world.router = Router("agg").with_handler(world.handlers[0]).build()
+    world.router = Router("agg").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
 
 
 @then("the response has no event pages")

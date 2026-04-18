@@ -90,8 +90,8 @@ def _build_alpha_beta(world):
     world.handlers = [Alpha(), Beta()]
     world.router = (
         Router("agg")
-        .with_handler(world.handlers[0])
-        .with_handler(world.handlers[1])
+        .with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i])
+        .with_handler(type(world.handlers[1]), lambda i=1: world.handlers[i])
         .build()
     )
 

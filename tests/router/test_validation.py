@@ -48,7 +48,7 @@ def test_empty_domain_on_command_handler_rejected_at_build():
             pass
 
     with pytest.raises(BuildError, match="domain"):
-        Router("x").with_handler(BadPlayer()).build()
+        Router("x").with_handler(BadPlayer, lambda: BadPlayer()).build()
 
 
 def test_empty_saga_target_rejected_at_build():
@@ -59,7 +59,7 @@ def test_empty_saga_target_rejected_at_build():
             pass
 
     with pytest.raises(BuildError, match="target"):
-        Router("x").with_handler(BadSaga()).build()
+        Router("x").with_handler(BadSaga, lambda: BadSaga()).build()
 
 
 def test_empty_saga_source_rejected_at_build():
@@ -70,7 +70,7 @@ def test_empty_saga_source_rejected_at_build():
             pass
 
     with pytest.raises(BuildError, match="source"):
-        Router("x").with_handler(BadSaga()).build()
+        Router("x").with_handler(BadSaga, lambda: BadSaga()).build()
 
 
 def test_empty_pm_sources_list_rejected_at_build():
@@ -81,7 +81,7 @@ def test_empty_pm_sources_list_rejected_at_build():
             pass
 
     with pytest.raises(BuildError, match="sources"):
-        Router("x").with_handler(BadPM()).build()
+        Router("x").with_handler(BadPM, lambda: BadPM()).build()
 
 
 def test_empty_pm_targets_list_rejected_at_build():
@@ -92,7 +92,7 @@ def test_empty_pm_targets_list_rejected_at_build():
             pass
 
     with pytest.raises(BuildError, match="targets"):
-        Router("x").with_handler(BadPM()).build()
+        Router("x").with_handler(BadPM, lambda: BadPM()).build()
 
 
 def test_empty_projector_domains_list_rejected_at_build():
@@ -103,7 +103,7 @@ def test_empty_projector_domains_list_rejected_at_build():
             pass
 
     with pytest.raises(BuildError, match="domains"):
-        Router("x").with_handler(BadProjector()).build()
+        Router("x").with_handler(BadProjector, lambda: BadProjector()).build()
 
 
 # --------------------------------------------------------------------------
@@ -138,8 +138,13 @@ def test_two_command_handlers_same_domain_same_type_allowed():
         def on(self, cmd, state, seq):
             pass
 
-    router = Router("x").with_handler(HandlerA()).with_handler(HandlerB()).build()
-    assert len(router.handlers) == 2
+    router = (
+        Router("x")
+        .with_handler(HandlerA, lambda: HandlerA())
+        .with_handler(HandlerB, lambda: HandlerB())
+        .build()
+    )
+    assert len(router._factories) == 2
 
 
 def test_two_sagas_same_source_same_event_allowed():
@@ -155,8 +160,13 @@ def test_two_sagas_same_source_same_event_allowed():
         def on(self, evt, dests):
             pass
 
-    router = Router("x").with_handler(SA()).with_handler(SB()).build()
-    assert len(router.handlers) == 2
+    router = (
+        Router("x")
+        .with_handler(SA, lambda: SA())
+        .with_handler(SB, lambda: SB())
+        .build()
+    )
+    assert len(router._factories) == 2
 
 
 def test_two_projectors_same_domain_same_event_allowed():
@@ -172,8 +182,13 @@ def test_two_projectors_same_domain_same_event_allowed():
         def on(self, evt):
             pass
 
-    router = Router("x").with_handler(PA()).with_handler(PB()).build()
-    assert len(router.handlers) == 2
+    router = (
+        Router("x")
+        .with_handler(PA, lambda: PA())
+        .with_handler(PB, lambda: PB())
+        .build()
+    )
+    assert len(router._factories) == 2
 
 
 # --------------------------------------------------------------------------
@@ -188,7 +203,7 @@ def test_valid_command_handler_builds_without_error():
         def on(self, cmd, state, seq):
             pass
 
-    router = Router("x").with_handler(Valid()).build()
+    router = Router("x").with_handler(Valid, lambda: Valid()).build()
     assert router is not None
 
 
@@ -199,7 +214,7 @@ def test_valid_saga_builds_without_error():
         def on(self, evt, dests):
             pass
 
-    router = Router("x").with_handler(Valid()).build()
+    router = Router("x").with_handler(Valid, lambda: Valid()).build()
     assert router is not None
 
 
@@ -212,7 +227,7 @@ def test_valid_pm_builds_without_error():
         def on(self, evt, state, dests):
             pass
 
-    router = Router("x").with_handler(Valid()).build()
+    router = Router("x").with_handler(Valid, lambda: Valid()).build()
     assert router is not None
 
 
@@ -223,5 +238,5 @@ def test_valid_projector_builds_without_error():
         def on(self, evt):
             pass
 
-    router = Router("x").with_handler(Valid()).build()
+    router = Router("x").with_handler(Valid, lambda: Valid()).build()
     assert router is not None

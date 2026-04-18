@@ -67,7 +67,7 @@ def _given_payment2(world):
 def _given_built_single(world):
     handler_cls = world.classes["__payment_handlers__"][0]
     world.handlers.append(handler_cls())
-    world.router = Router("agg").with_handler(world.handlers[0]).build()
+    world.router = Router("agg").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
 
 
 @given("the router is built with Payment then Payment2")
@@ -77,8 +77,8 @@ def _given_built_both(world):
     world.handlers = [classes[0](), classes[1]()]
     world.router = (
         Router("agg")
-        .with_handler(world.handlers[0])
-        .with_handler(world.handlers[1])
+        .with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i])
+        .with_handler(type(world.handlers[1]), lambda i=1: world.handlers[i])
         .build()
     )
 

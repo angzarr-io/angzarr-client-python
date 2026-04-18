@@ -35,6 +35,9 @@ from angzarr_client.proto.angzarr import types_pb2 as _types
 
 _NOTIFICATION_TYPE_URL = TYPE_URL_PREFIX + "angzarr.Notification"
 
+# (handler_class, zero-arg factory returning a fresh/pooled handler instance).
+Factory = tuple[type, Callable[[], Any]]
+
 
 # --------------------------------------------------------------------------
 # Error type raised by dispatch for caller-facing problems
@@ -67,17 +70,18 @@ class DispatchError(grpc.RpcError):
 # --------------------------------------------------------------------------
 
 
-def _collect_methods(instance: Any, sentinel: str) -> list[tuple[Any, Callable]]:
-    """Return (marker_value, bound_method) pairs for each method on ``instance``
-    that carries ``sentinel`` as an attribute.
+def _collect_method_names(cls: type, sentinel: str) -> list[tuple[Any, str]]:
+    """Return ``(marker_value, method_name)`` pairs for each method on ``cls``
+    whose underlying function carries ``sentinel`` as an attribute.
+
+    Walks the MRO so inherited decorated methods are picked up. Returning
+    names (not bound methods) lets callers defer instance construction until
+    after the outer filter has matched on class-level metadata.
     """
-    out: list[tuple[Any, Callable]] = []
-    cls = type(instance)
+    out: list[tuple[Any, str]] = []
     for name in dir(cls):
-        # Look up on the class to get the underlying function, then bind.
         attr = cls.__dict__.get(name)
         if attr is None:
-            # Walk the MRO to support inherited methods.
             for base in cls.__mro__[1:]:
                 attr = base.__dict__.get(name)
                 if attr is not None:
@@ -87,31 +91,8 @@ def _collect_methods(instance: Any, sentinel: str) -> list[tuple[Any, Callable]]
         marker = getattr(attr, sentinel, None)
         if marker is None:
             continue
-        bound = getattr(instance, name)
-        out.append((marker, bound))
+        out.append((marker, name))
     return out
-
-
-def _command_handlers_for(instance: Any) -> list[tuple[type, Callable]]:
-    """List of ``(command_type, bound_method)`` registered on ``instance``."""
-    return _collect_methods(instance, "__angzarr_handles__")
-
-
-def _rejection_handlers_for(instance: Any) -> list[tuple[tuple[str, str], Callable]]:
-    """List of ``((source_domain, command), bound_method)`` registered on ``instance``."""
-    return _collect_methods(instance, "__angzarr_rejected__")
-
-
-def _event_handlers_for(instance: Any) -> list[tuple[type, Callable]]:
-    """@handles methods on sagas / PMs / projectors (event dispatch)."""
-    return _collect_methods(instance, "__angzarr_handles__")
-
-
-def _upcasters_for(
-    instance: Any,
-) -> list[tuple[tuple[type, type], Callable]]:
-    """@upcasts methods on an upcaster: ``((from_type, to_type), method)`` pairs."""
-    return _collect_methods(instance, "__angzarr_upcasts__")
 
 
 def _accepts_source_cover(method: Callable) -> bool:
@@ -132,8 +113,9 @@ def _accepts_source_cover(method: Callable) -> bool:
 def _appliers_for(instance: Any) -> dict[str, Callable]:
     """Map proto full-name suffix → bound applier method for ``instance``."""
     out: dict[str, Callable] = {}
-    for event_type, method in _collect_methods(instance, "__angzarr_applies__"):
-        out[event_type.DESCRIPTOR.full_name] = method
+    cls = type(instance)
+    for event_type, method_name in _collect_method_names(cls, "__angzarr_applies__"):
+        out[event_type.DESCRIPTOR.full_name] = getattr(instance, method_name)
     return out
 
 
@@ -147,6 +129,8 @@ def _rebuild_state(instance: Any, prior_events) -> Any:
     if prior_events is None:
         return state
     appliers = _appliers_for(instance)
+    cls = type(instance)
+    applier_types = _collect_method_names(cls, "__angzarr_applies__")
     # prior_events is an EventBook; pages carry event Any payloads.
     for page in prior_events.pages:
         if not page.HasField("event"):
@@ -160,7 +144,7 @@ def _rebuild_state(instance: Any, prior_events) -> Any:
         if applier is None:
             continue
         # Rebuild the event message so the applier receives a typed instance.
-        for event_type, _ in _collect_methods(instance, "__angzarr_applies__"):
+        for event_type, _ in applier_types:
             if event_type.DESCRIPTOR.full_name == suffix:
                 evt = event_type()
                 evt.ParseFromString(event_any.value)
@@ -175,7 +159,7 @@ def _rebuild_state(instance: Any, prior_events) -> Any:
 
 
 def dispatch_command(
-    handlers: list[Any], request: ContextualCommand
+    factories: list[Factory], request: ContextualCommand
 ) -> BusinessResponse:
     """Dispatch a ContextualCommand to the matching @handles or @rejected method.
 
@@ -208,17 +192,18 @@ def dispatch_command(
 
     # Notification branch: compensation for a rejected upstream command.
     if type_url == _NOTIFICATION_TYPE_URL:
-        return _dispatch_notification(handlers, command_any, request)
+        return _dispatch_notification(factories, command_any, request)
 
-    # Find all handlers registered for (domain, type_url-suffix). R6 uses the
-    # first match only; R8 iterates all of them.
-    matched: list[tuple[Any, type, Callable]] = []
-    for inst in handlers:
-        if type(inst).__angzarr_meta__.get("domain") != domain:
+    # Find all factories whose class handles (domain, type_url-suffix). Matching
+    # is pure class-level reflection; handlers aren't instantiated until we
+    # know they'll be invoked.
+    matched: list[tuple[Callable[[], Any], type, str]] = []
+    for cls, factory in factories:
+        if cls.__angzarr_meta__.get("domain") != domain:
             continue
-        for cmd_type, method in _command_handlers_for(inst):
+        for cmd_type, method_name in _collect_method_names(cls, "__angzarr_handles__"):
             if type_url == TYPE_URL_PREFIX + cmd_type.DESCRIPTOR.full_name:
-                matched.append((inst, cmd_type, method))
+                matched.append((factory, cmd_type, method_name))
 
     if not matched:
         raise DispatchError(
@@ -234,14 +219,15 @@ def dispatch_command(
     current_seq = base_seq
     merged = EventBook()
 
-    for inst, cmd_type, method in matched:
+    for factory, cmd_type, method_name in matched:
         # Decode the command per-instance so each handler receives its own
         # independent parsed message (no shared mutation risk if anyone modifies it).
         cmd = cmd_type()
         cmd.ParseFromString(command_any.value)
 
+        inst = factory()
         state = _rebuild_state(inst, prior)
-        emitted = method(cmd, state, current_seq)
+        emitted = getattr(inst, method_name)(cmd, state, current_seq)
 
         pages = _pack_events(emitted, base_seq=current_seq).pages
         merged.pages.extend(pages)
@@ -253,7 +239,7 @@ def dispatch_command(
 
 
 def _dispatch_notification(
-    handlers: list[Any], command_any: ProtoAny, request: ContextualCommand
+    factories: list[Factory], command_any: ProtoAny, request: ContextualCommand
 ) -> BusinessResponse:
     """Route a Notification to all matching @rejected handlers; merge compensation."""
     notification = _types.Notification()
@@ -283,11 +269,12 @@ def _dispatch_notification(
     merged = EventBook()
     current_seq = int(request.events.next_sequence) if request.HasField("events") else 0
 
-    for inst in handlers:
-        for (d, c), method in _rejection_handlers_for(inst):
+    for cls, factory in factories:
+        for (d, c), method_name in _collect_method_names(cls, "__angzarr_rejected__"):
             if d == source_domain and c == cmd_suffix:
+                inst = factory()
                 state = _rebuild_state(inst, prior)
-                emitted = method(notification, state)
+                emitted = getattr(inst, method_name)(notification, state)
                 pages = _pack_events(emitted, base_seq=current_seq).pages
                 merged.pages.extend(pages)
                 current_seq += len(pages)
@@ -314,7 +301,9 @@ def _build_fresh_state(instance: Any) -> Any:
     return state_type()
 
 
-def dispatch_saga(handlers: list[Any], request: SagaHandleRequest) -> SagaResponse:
+def dispatch_saga(
+    factories: list[Factory], request: SagaHandleRequest
+) -> SagaResponse:
     """Dispatch a source event through registered saga handlers.
 
     The trigger is the last event in ``request.source``; sagas whose
@@ -340,15 +329,17 @@ def dispatch_saga(handlers: list[Any], request: SagaHandleRequest) -> SagaRespon
     destinations = Destinations.from_proto(request.destination_sequences)
 
     response = SagaResponse()
-    for inst in handlers:
-        if type(inst).__angzarr_meta__.get("source") != source_domain:
+    for cls, factory in factories:
+        if cls.__angzarr_meta__.get("source") != source_domain:
             continue
-        for evt_type, method in _event_handlers_for(inst):
+        for evt_type, method_name in _collect_method_names(cls, "__angzarr_handles__"):
             if evt_type.DESCRIPTOR.full_name != suffix:
                 continue
+            inst = factory()
             # Decode the trigger event.
             evt = evt_type()
             evt.ParseFromString(trigger.event.value)
+            method = getattr(inst, method_name)
             if _accepts_source_cover(method):
                 emitted = method(evt, destinations, source_cover=source_cover)
             else:
@@ -358,7 +349,7 @@ def dispatch_saga(handlers: list[Any], request: SagaHandleRequest) -> SagaRespon
 
 
 def dispatch_process_manager(
-    handlers: list[Any], request: Any
+    factories: list[Factory], request: Any
 ) -> ProcessManagerHandleResponse:
     """Dispatch a trigger event through registered process-manager handlers.
 
@@ -389,18 +380,20 @@ def dispatch_process_manager(
     response = ProcessManagerHandleResponse()
     merged_process_events = EventBook()
     has_pe = False
-    for inst in handlers:
-        meta = type(inst).__angzarr_meta__
+    for cls, factory in factories:
+        meta = cls.__angzarr_meta__
         sources = meta.get("sources", [])
         if trigger_domain not in sources:
             continue
         # Match the handler by event type.
-        for evt_type, method in _event_handlers_for(inst):
+        for evt_type, method_name in _collect_method_names(cls, "__angzarr_handles__"):
             if evt_type.DESCRIPTOR.full_name != suffix:
                 continue
+            inst = factory()
             state = _rebuild_state(inst, process_state)
             evt = evt_type()
             evt.ParseFromString(last.event.value)
+            method = getattr(inst, method_name)
             if _accepts_source_cover(method):
                 result = method(evt, state, destinations, source_cover=trigger_cover)
             else:
@@ -426,15 +419,31 @@ def dispatch_process_manager(
     return response
 
 
-def dispatch_projector(handlers: list[Any], events: EventBook) -> Projection:
+def dispatch_projector(factories: list[Factory], events: EventBook) -> Projection:
     """Fan out each event in ``events`` to matching @handles methods on all
     registered projectors that declare the source domain.
 
     Projector handlers are side-effect only — their return value is ignored.
     Returns a ``Projection`` with the source cover copied through for
     framework bookkeeping.
+
+    One handler instance is constructed per matching projector per dispatch
+    call (via its factory) and reused across every event in the book, so a
+    projector can accumulate state within a single projection run.
     """
     domain = events.cover.domain if events.HasField("cover") else ""
+
+    # Instantiate each matching projector once per dispatch. Non-matching
+    # projectors never have their factory invoked.
+    live: list[tuple[Any, list[tuple[type, str]]]] = []
+    for cls, factory in factories:
+        meta = cls.__angzarr_meta__
+        if domain not in meta.get("domains", []):
+            continue
+        method_table = _collect_method_names(cls, "__angzarr_handles__")
+        if not method_table:
+            continue
+        live.append((factory(), method_table))
 
     for page in events.pages:
         if not page.HasField("event"):
@@ -444,16 +453,13 @@ def dispatch_projector(handlers: list[Any], events: EventBook) -> Projection:
             continue
         suffix = type_url[len(TYPE_URL_PREFIX) :]
 
-        for inst in handlers:
-            meta = type(inst).__angzarr_meta__
-            if domain not in meta.get("domains", []):
-                continue
-            for evt_type, method in _event_handlers_for(inst):
+        for inst, method_table in live:
+            for evt_type, method_name in method_table:
                 if evt_type.DESCRIPTOR.full_name != suffix:
                     continue
                 evt = evt_type()
                 evt.ParseFromString(page.event.value)
-                method(evt)
+                getattr(inst, method_name)(evt)
 
     result = Projection()
     if events.HasField("cover"):
@@ -512,7 +518,7 @@ def _pack_events(emitted: Any, base_seq: int) -> EventBook:
 
 
 def dispatch_upcaster(
-    handlers: list[Any], request: UpcastRequest
+    factories: list[Factory], request: UpcastRequest
 ) -> UpcastResponse:
     """Transform events via registered @upcaster handlers.
 
@@ -530,18 +536,21 @@ def dispatch_upcaster(
             continue
         event_any: ProtoAny = page.event
         transformed = event_any
-        for inst in handlers:
-            meta = type(inst).__angzarr_meta__
+        for cls, factory in factories:
+            meta = cls.__angzarr_meta__
             if meta.get("domain") != request.domain:
                 continue
             matched = False
-            for (from_type, _to_type), method in _upcasters_for(inst):
+            for (from_type, _to_type), method_name in _collect_method_names(
+                cls, "__angzarr_upcasts__"
+            ):
                 expected = TYPE_URL_PREFIX + from_type.DESCRIPTOR.full_name
                 if event_any.type_url != expected:
                     continue
+                inst = factory()
                 old_evt = from_type()
                 event_any.Unpack(old_evt)
-                new_evt = method(old_evt)
+                new_evt = getattr(inst, method_name)(old_evt)
                 new_any = ProtoAny()
                 new_any.type_url = (
                     TYPE_URL_PREFIX + new_evt.DESCRIPTOR.full_name

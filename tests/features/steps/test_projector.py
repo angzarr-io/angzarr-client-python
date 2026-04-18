@@ -32,7 +32,7 @@ def _given_projector_handler(world):
 @given("the router is built with the Output projector")
 def _given_projector_built(world):
     world.handlers.append(world.classes["Output"]())
-    world.router = Router("prjs").with_handler(world.handlers[0]).build()
+    world.router = Router("prjs").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
 
 
 @when("an EventBook with three OrderCreated events is dispatched")

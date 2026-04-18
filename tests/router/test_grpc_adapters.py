@@ -89,7 +89,7 @@ def test_command_handler_grpc_handles_successful_command():
         def on(self, cmd, state, seq):
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(Agg()).build()
+    router = Router("agg").with_handler(Agg, lambda: Agg()).build()
     servicer = CommandHandlerGrpc(router)
 
     ctx = Mock(spec=grpc.ServicerContext)
@@ -106,7 +106,7 @@ def test_command_handler_grpc_translates_rejected_error_to_failed_precondition()
         def on(self, cmd, state, seq):
             raise CommandRejectedError("business rule violated")
 
-    router = Router("agg").with_handler(Agg()).build()
+    router = Router("agg").with_handler(Agg, lambda: Agg()).build()
     servicer = CommandHandlerGrpc(router)
 
     ctx = Mock(spec=grpc.ServicerContext)
@@ -125,7 +125,7 @@ def test_command_handler_grpc_translates_dispatch_error_to_invalid_argument():
         def on(self, cmd, state, seq):
             return None
 
-    router = Router("agg").with_handler(Agg()).build()
+    router = Router("agg").with_handler(Agg, lambda: Agg()).build()
     servicer = CommandHandlerGrpc(router)
     ctx = Mock(spec=grpc.ServicerContext)
 
@@ -150,7 +150,7 @@ def test_saga_grpc_handles_event_translation():
             cb.cover.CopyFrom(Cover(domain="inventory"))
             return cb
 
-    router = Router("sagas").with_handler(S()).build()
+    router = Router("sagas").with_handler(S, lambda: S()).build()
     servicer = SagaGrpc(router)
 
     # Build SagaHandleRequest
@@ -197,7 +197,7 @@ def test_pm_grpc_handles_trigger_event():
             cb.cover.CopyFrom(Cover(domain="inventory"))
             return ProcessManagerResponse(commands=[cb])
 
-    router = Router("pms").with_handler(PM()).build()
+    router = Router("pms").with_handler(PM, lambda: PM()).build()
     servicer = ProcessManagerGrpc(router)
 
     # Build PM handle request
@@ -235,7 +235,7 @@ def test_projector_grpc_handles_event_book():
         def on(self, event):
             written.append(event.order_id)
 
-    router = Router("prjs").with_handler(Output()).build()
+    router = Router("prjs").with_handler(Output, lambda: Output()).build()
     servicer = ProjectorGrpc(router)
 
     book = EventBook()

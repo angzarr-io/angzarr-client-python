@@ -1,9 +1,10 @@
 """Typed runtime routers produced by ``Router.build()``.
 
 Five kind-specific runtime routers: command handler, saga, process manager,
-projector, and upcaster. Each carries a ``name`` and a list of registered
-handler instances; ``dispatch`` delegates to the matching function in
-``dispatch.py``.
+projector, and upcaster. Each carries a ``name`` and a list of
+``(cls, factory)`` pairs; ``dispatch`` delegates to the matching function
+in ``dispatch.py``, which calls ``factory()`` per request to obtain a
+fresh handler instance.
 
 No public constructors: users reach these types only through
 ``Router(...).build()``. Constructors are conventionally private (leading
@@ -12,17 +13,25 @@ underscore on internal factories). Tests construct through the builder.
 
 from __future__ import annotations
 
-from typing import Any, Generic, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
 S = TypeVar("S")
 
+Factory = tuple[type, Callable[[], Any]]
+
 
 class _BuiltRouterBase:
-    """Shared base for the kind-specific runtime routers."""
+    """Shared base for the five kind-specific runtime routers.
 
-    def __init__(self, name: str, handlers: list[Any]) -> None:
+    Holds ``(cls, factory)`` pairs rather than handler instances so each
+    dispatch call can obtain a fresh (or pooled) handler. This gives the
+    router safe reuse across threads — shared mutable state on a handler
+    instance would otherwise race between concurrent dispatch calls.
+    """
+
+    def __init__(self, name: str, factories: list[Factory]) -> None:
         self.name = name
-        self.handlers = list(handlers)
+        self._factories: list[Factory] = list(factories)
 
 
 class CommandHandlerRouter(_BuiltRouterBase, Generic[S]):
@@ -32,7 +41,7 @@ class CommandHandlerRouter(_BuiltRouterBase, Generic[S]):
         """Route a ContextualCommand to the matching @handles method."""
         from .dispatch import dispatch_command
 
-        return dispatch_command(self.handlers, request)
+        return dispatch_command(self._factories, request)
 
 
 class SagaRouter(_BuiltRouterBase):
@@ -42,7 +51,7 @@ class SagaRouter(_BuiltRouterBase):
         """Route a SagaHandleRequest to all matching @handles methods."""
         from .dispatch import dispatch_saga
 
-        return dispatch_saga(self.handlers, request)
+        return dispatch_saga(self._factories, request)
 
 
 class ProcessManagerRouter(_BuiltRouterBase, Generic[S]):
@@ -52,7 +61,7 @@ class ProcessManagerRouter(_BuiltRouterBase, Generic[S]):
         """Route a ProcessManagerHandleRequest to matching handlers."""
         from .dispatch import dispatch_process_manager
 
-        return dispatch_process_manager(self.handlers, request)
+        return dispatch_process_manager(self._factories, request)
 
 
 class ProjectorRouter(_BuiltRouterBase):
@@ -62,7 +71,7 @@ class ProjectorRouter(_BuiltRouterBase):
         """Fan out each event in the book to matching @handles methods."""
         from .dispatch import dispatch_projector
 
-        return dispatch_projector(self.handlers, events)
+        return dispatch_projector(self._factories, events)
 
 
 class UpcasterRouter(_BuiltRouterBase):
@@ -72,4 +81,4 @@ class UpcasterRouter(_BuiltRouterBase):
         """Transform each event in ``request.events`` via matching @upcasts methods."""
         from .dispatch import dispatch_upcaster
 
-        return dispatch_upcaster(self.handlers, request)
+        return dispatch_upcaster(self._factories, request)

@@ -42,7 +42,7 @@ def _given_saga_handler(world):
 @given("the router is built with the OrderFulfillment saga")
 def _given_saga_built(world):
     world.handlers.append(world.classes["OrderFulfillment"]())
-    world.router = Router("sagas").with_handler(world.handlers[0]).build()
+    world.router = Router("sagas").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
 
 
 @when("an OrderCreated event is dispatched to the saga router")
