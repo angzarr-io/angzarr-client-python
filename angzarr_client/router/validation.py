@@ -35,6 +35,8 @@ def validate_handler(handler: Any) -> None:
         _validate_process_manager(cls.__name__, meta)
     elif kind == "projector":
         _validate_projector(cls.__name__, meta)
+    elif kind == "upcaster":
+        _validate_upcaster(cls.__name__, meta)
     else:  # pragma: no cover — guarded earlier by _stamp()
         raise BuildError(f"{cls.__name__}: unknown handler kind {kind!r}")
 
@@ -75,3 +77,8 @@ def _validate_process_manager(cls_name: str, meta: dict[str, Any]) -> None:
 def _validate_projector(cls_name: str, meta: dict[str, Any]) -> None:
     _require_non_empty_str(cls_name, "name", meta.get("name"))
     _require_non_empty_list(cls_name, "domains", meta.get("domains"))
+
+
+def _validate_upcaster(cls_name: str, meta: dict[str, Any]) -> None:
+    _require_non_empty_str(cls_name, "name", meta.get("name"))
+    _require_non_empty_str(cls_name, "domain", meta.get("domain"))

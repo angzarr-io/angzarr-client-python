@@ -1,8 +1,8 @@
 """gRPC servicer adapters for the unified runtime routers.
 
 Thin wrappers that plug a ``CommandHandlerRouter`` / ``SagaRouter`` /
-``ProcessManagerRouter`` / ``ProjectorRouter`` into the corresponding
-generated gRPC servicer class. Each adapter:
+``ProcessManagerRouter`` / ``ProjectorRouter`` / ``UpcasterRouter`` into
+the corresponding generated gRPC servicer class. Each adapter:
 
   - Delegates the ``Handle`` (and ``HandleSync`` where applicable) RPC to
     the router's ``.dispatch`` method.
@@ -30,6 +30,8 @@ from angzarr_client.proto.angzarr import (
     projector_pb2_grpc,
     saga_pb2,
     saga_pb2_grpc,
+    upcaster_pb2,
+    upcaster_pb2_grpc,
 )
 from angzarr_client.proto.angzarr import types_pb2 as types
 
@@ -138,3 +140,21 @@ class ProjectorGrpc(projector_pb2_grpc.ProjectorServiceServicer):
         self, request: types.EventBook, context: grpc.ServicerContext
     ) -> types.Projection:
         return self.Handle(request, context)
+
+
+class UpcasterGrpc(upcaster_pb2_grpc.UpcasterServiceServicer):
+    """gRPC adapter for a unified ``UpcasterRouter``."""
+
+    def __init__(self, router: Any) -> None:
+        self._router = router
+
+    def Upcast(
+        self,
+        request: upcaster_pb2.UpcastRequest,
+        context: grpc.ServicerContext,
+    ) -> upcaster_pb2.UpcastResponse:
+        try:
+            return self._router.dispatch(request)
+        except Exception as exc:  # noqa: BLE001
+            _translate_and_abort(context, exc)
+            return upcaster_pb2.UpcastResponse()

@@ -1,7 +1,9 @@
 """Typed runtime routers produced by ``Router.build()``.
 
-In R4 these are stubs carrying ``name`` + ``handlers`` only. Dispatch bodies
-land in R6 (command handler), R11 (saga), R12 (process manager), R13 (projector).
+Five kind-specific runtime routers: command handler, saga, process manager,
+projector, and upcaster. Each carries a ``name`` and a list of registered
+handler instances; ``dispatch`` delegates to the matching function in
+``dispatch.py``.
 
 No public constructors: users reach these types only through
 ``Router(...).build()``. Constructors are conventionally private (leading
@@ -16,7 +18,7 @@ S = TypeVar("S")
 
 
 class _BuiltRouterBase:
-    """Shared base for the four kind-specific runtime routers."""
+    """Shared base for the kind-specific runtime routers."""
 
     def __init__(self, name: str, handlers: list[Any]) -> None:
         self.name = name
@@ -61,3 +63,13 @@ class ProjectorRouter(_BuiltRouterBase):
         from .dispatch import dispatch_projector
 
         return dispatch_projector(self.handlers, events)
+
+
+class UpcasterRouter(_BuiltRouterBase):
+    """Runtime router transforming events through registered @upcaster instances."""
+
+    def dispatch(self, request):
+        """Transform each event in ``request.events`` via matching @upcasts methods."""
+        from .dispatch import dispatch_upcaster
+
+        return dispatch_upcaster(self.handlers, request)

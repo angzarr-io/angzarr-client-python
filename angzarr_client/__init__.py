@@ -82,6 +82,7 @@ from .router import (
     Router,
     SagaHandlerResponse,
     SagaRouter,
+    UpcasterRouter,
     applies,
     command_handler,
     handles,
@@ -90,12 +91,15 @@ from .router import (
     rejected,
     saga,
     state_factory,
+    upcaster,
+    upcasts,
 )
 from .router.server import (
     CommandHandlerGrpc,
     ProcessManagerGrpc,
     ProjectorGrpc,
     SagaGrpc,
+    UpcasterGrpc,
 )
 from .saga_context import SagaContext
 from .server import (
@@ -139,21 +143,25 @@ __all__ = [
     "SagaRouter",
     "ProcessManagerRouter",
     "ProjectorRouter",
+    "UpcasterRouter",
     "SagaHandlerResponse",
     "ProcessManagerResponse",
     "command_handler",
     "saga",
     "process_manager",
     "projector",
+    "upcaster",
     "handles",
     "applies",
     "rejected",
     "state_factory",
+    "upcasts",
     # gRPC server adapters
     "CommandHandlerGrpc",
     "SagaGrpc",
     "ProcessManagerGrpc",
     "ProjectorGrpc",
+    "UpcasterGrpc",
     # Errors
     "ClientError",
     "ConnectionError",

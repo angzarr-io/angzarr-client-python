@@ -27,6 +27,8 @@ from angzarr_client.proto.angzarr import (
     Projection,
     SagaHandleRequest,
     SagaResponse,
+    UpcastRequest,
+    UpcastResponse,
 )
 from angzarr_client.proto.angzarr import types_pb2 as _types
 
@@ -102,6 +104,13 @@ def _rejection_handlers_for(instance: Any) -> list[tuple[tuple[str, str], Callab
 def _event_handlers_for(instance: Any) -> list[tuple[type, Callable]]:
     """@handles methods on sagas / PMs / projectors (event dispatch)."""
     return _collect_methods(instance, "__angzarr_handles__")
+
+
+def _upcasters_for(
+    instance: Any,
+) -> list[tuple[tuple[type, type], Callable]]:
+    """@upcasts methods on an upcaster: ``((from_type, to_type), method)`` pairs."""
+    return _collect_methods(instance, "__angzarr_upcasts__")
 
 
 def _appliers_for(instance: Any) -> dict[str, Callable]:
@@ -476,3 +485,51 @@ def _pack_events(emitted: Any, base_seq: int) -> EventBook:
         page.event.CopyFrom(any_msg)
         book.pages.append(page)
     return book
+
+
+def dispatch_upcaster(
+    handlers: list[Any], request: UpcastRequest
+) -> UpcastResponse:
+    """Transform events via registered @upcaster handlers.
+
+    Only handlers whose ``@upcaster(domain=...)`` matches ``request.domain``
+    are consulted. For each event page, the first matching ``@upcasts(From, To)``
+    method (exact proto type-URL match on ``From``) is invoked; its return value
+    is packed into a new ``Any`` preserving the original ``PageHeader`` and
+    ``created_at`` timestamp. Events with no matching transform pass through
+    unchanged. Events already at a target version pass through.
+    """
+    out_events: list[EventPage] = []
+    for page in request.events:
+        if not page.HasField("event"):
+            out_events.append(page)
+            continue
+        event_any: ProtoAny = page.event
+        transformed = event_any
+        for inst in handlers:
+            meta = type(inst).__angzarr_meta__
+            if meta.get("domain") != request.domain:
+                continue
+            matched = False
+            for (from_type, _to_type), method in _upcasters_for(inst):
+                expected = TYPE_URL_PREFIX + from_type.DESCRIPTOR.full_name
+                if event_any.type_url != expected:
+                    continue
+                old_evt = from_type()
+                event_any.Unpack(old_evt)
+                new_evt = method(old_evt)
+                new_any = ProtoAny()
+                new_any.type_url = (
+                    TYPE_URL_PREFIX + new_evt.DESCRIPTOR.full_name
+                )
+                new_any.value = new_evt.SerializeToString()
+                transformed = new_any
+                matched = True
+                break
+            if matched:
+                break
+        new_page = EventPage()
+        new_page.CopyFrom(page)
+        new_page.event.CopyFrom(transformed)
+        out_events.append(new_page)
+    return UpcastResponse(events=out_events)

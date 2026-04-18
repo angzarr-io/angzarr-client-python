@@ -36,16 +36,17 @@ class Router:
     def with_handler(self, handler: Any) -> "Router":
         """Register a handler instance.
 
-        The instance's class must carry one of the four kind decorators
-        (@command_handler, @saga, @process_manager, @projector). Registering
-        an undecorated instance raises :class:`BuildError`.
+        The instance's class must carry one of the five kind decorators
+        (@command_handler, @saga, @process_manager, @projector, @upcaster).
+        Registering an undecorated instance raises :class:`BuildError`.
         """
         cls = type(handler)
         kind = getattr(cls, "__angzarr_kind__", None)
         if kind is None:
             raise BuildError(
                 f"{cls.__name__} has no @command_handler / @saga / "
-                f"@process_manager / @projector decorator — cannot register"
+                f"@process_manager / @projector / @upcaster decorator — "
+                f"cannot register"
             )
         self._handlers.append(handler)
         return self
@@ -73,6 +74,7 @@ class Router:
             ProcessManagerRouter,
             ProjectorRouter,
             SagaRouter,
+            UpcasterRouter,
         )
         from .validation import validate_handler
 
@@ -88,4 +90,6 @@ class Router:
             return ProcessManagerRouter(self.name, self._handlers)
         if kind == "projector":
             return ProjectorRouter(self.name, self._handlers)
+        if kind == "upcaster":
+            return UpcasterRouter(self.name, self._handlers)
         raise BuildError(f"unknown handler kind {kind!r}")

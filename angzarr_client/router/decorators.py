@@ -1,11 +1,12 @@
 """Class-level decorators that stash metadata on handler classes.
 
-Four kinds of components:
+Five kinds of components:
 
     @command_handler(domain=..., state=...)
     @saga(name=..., source=..., target=...)
     @process_manager(name=..., pm_domain=..., sources=[...], targets=[...], state=...)
     @projector(name=..., domains=[...])
+    @upcaster(name=..., domain=...)
 
 Each decorator:
   - sets ``cls.__angzarr_kind__`` to the kind string
@@ -108,6 +109,21 @@ def projector(*, name: str, domains: list[str]) -> Callable[[T], T]:
     return decorate
 
 
+def upcaster(*, name: str, domain: str) -> Callable[[T], T]:
+    """Mark a class as an upcaster transforming events in ``domain``.
+
+    Methods decorated with ``@upcasts(FromType, ToType)`` declare individual
+    version-to-version transformations. An upcaster with zero ``@upcasts``
+    methods is allowed (passthrough).
+    """
+
+    def decorate(cls: T) -> T:
+        _stamp(cls, "upcaster", {"name": name, "domain": domain})
+        return cls
+
+    return decorate
+
+
 # --------------------------------------------------------------------------
 # Method-level decorators
 # --------------------------------------------------------------------------
@@ -117,6 +133,7 @@ _METHOD_SENTINELS = (
     "__angzarr_applies__",
     "__angzarr_rejected__",
     "__angzarr_state_factory__",
+    "__angzarr_upcasts__",
 )
 
 
@@ -188,3 +205,19 @@ def state_factory(fn: F) -> F:
     _guard_method(fn, "@state_factory")
     fn.__angzarr_state_factory__ = True  # type: ignore[attr-defined]
     return fn
+
+
+def upcasts(from_type: type, to_type: type) -> Callable[[F], F]:
+    """Register a method as a transformation from ``from_type`` to ``to_type``.
+
+    The method must accept the old event and return the new one. Dispatch
+    matches by exact proto type-URL on the incoming event; events without a
+    registered transform pass through unchanged.
+    """
+
+    def decorate(fn: F) -> F:
+        _guard_method(fn, "@upcasts")
+        fn.__angzarr_upcasts__ = (from_type, to_type)  # type: ignore[attr-defined]
+        return fn
+
+    return decorate

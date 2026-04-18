@@ -25,21 +25,24 @@ def test_router_package_exposes_class_decorators():
         process_manager,
         projector,
         saga,
+        upcaster,
     )
 
     assert callable(command_handler)
     assert callable(saga)
     assert callable(process_manager)
     assert callable(projector)
+    assert callable(upcaster)
 
 
 def test_router_package_exposes_method_decorators():
-    from angzarr_client.router import applies, handles, rejected, state_factory
+    from angzarr_client.router import applies, handles, rejected, state_factory, upcasts
 
     assert callable(handles)
     assert callable(applies)
     assert callable(rejected)
     assert callable(state_factory)
+    assert callable(upcasts)
 
 
 def test_runtime_router_types_reachable():
@@ -48,12 +51,14 @@ def test_runtime_router_types_reachable():
         ProcessManagerRouter,
         ProjectorRouter,
         SagaRouter,
+        UpcasterRouter,
     )
 
     assert CommandHandlerRouter is not None
     assert SagaRouter is not None
     assert ProcessManagerRouter is not None
     assert ProjectorRouter is not None
+    assert UpcasterRouter is not None
 
 
 def test_grpc_adapters_reachable():
@@ -62,12 +67,14 @@ def test_grpc_adapters_reachable():
         ProcessManagerGrpc,
         ProjectorGrpc,
         SagaGrpc,
+        UpcasterGrpc,
     )
 
     assert CommandHandlerGrpc is not None
     assert SagaGrpc is not None
     assert ProcessManagerGrpc is not None
     assert ProjectorGrpc is not None
+    assert UpcasterGrpc is not None
 
 
 def test_dispatch_error_is_grpc_rpc_error():

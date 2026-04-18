@@ -18,6 +18,8 @@ from .decorators import (
     rejected,
     saga,
     state_factory,
+    upcaster,
+    upcasts,
 )
 from .dispatch import DispatchError
 from .responses import ProcessManagerResponse, SagaHandlerResponse
@@ -26,6 +28,7 @@ from .runtime import (
     ProcessManagerRouter,
     ProjectorRouter,
     SagaRouter,
+    UpcasterRouter,
 )
 
 __all__ = [
@@ -38,11 +41,13 @@ __all__ = [
     "saga",
     "process_manager",
     "projector",
+    "upcaster",
     # Method decorators
     "handles",
     "applies",
     "rejected",
     "state_factory",
+    "upcasts",
     # Response types
     "SagaHandlerResponse",
     "ProcessManagerResponse",
@@ -51,4 +56,5 @@ __all__ = [
     "SagaRouter",
     "ProcessManagerRouter",
     "ProjectorRouter",
+    "UpcasterRouter",
 ]
