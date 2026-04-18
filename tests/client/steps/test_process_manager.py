@@ -13,7 +13,7 @@ from angzarr_client.router import (
     handles,
     process_manager,
 )
-from tests.features.steps._helpers import command_book, pm_request
+from tests.client.steps._helpers import command_book, pm_request
 from tests.fixtures import OrderCompleted, OrderCreated, ReserveStock, StockReserved
 
 scenarios("process_manager.feature")
@@ -84,7 +84,8 @@ def _given_pm_built(world):
             )
 
     world.handlers.append(Fulfillment())
-    world.router = Router("pms").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
+    h = world.handlers[0]
+    world.router = Router("pms").with_handler(type(h), lambda h=h: h).build()
 
 
 @when("an OrderCreated trigger is dispatched to the PM router")

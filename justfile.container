@@ -18,9 +18,16 @@ proto:
 build: proto
     uv build
 
-# Run tests
-test:
-    uv run --extra dev pytest tests/ -v
+# Framework-harness cucumber (pytest-bdd; feature files from angzarr-project/features/client/)
+test-client-unit:
+    uv run --extra dev pytest tests/client/ -v
+
+# Plain pytest, excluding the BDD subset
+test-pytest:
+    uv run --extra dev pytest tests/ -v --ignore=tests/client
+
+# Full suite
+test: test-pytest test-client-unit
 
 # Run tests with coverage
 coverage:

@@ -60,9 +60,16 @@ artifacts = ["angzarr_client/proto/**/*.py"]
 packages = ["angzarr_client"]
 
 [tool.pytest.ini_options]
-bdd_features_base_dir = "features"
+bdd_features_base_dir = "angzarr-project/features/client"
 testpaths = ["tests"]
 norecursedirs = ["mutants"]
+filterwarnings = [
+    # pytest-bdd converts each Gherkin tag into a pytest mark. Scenario IDs
+    # (@C-NNNN, @EU-NNNN, @EA-NNNN) collide with PytestUnknownMarkWarning.
+    "ignore:Unknown pytest.mark.C-:pytest.PytestUnknownMarkWarning",
+    "ignore:Unknown pytest.mark.EU-:pytest.PytestUnknownMarkWarning",
+    "ignore:Unknown pytest.mark.EA-:pytest.PytestUnknownMarkWarning",
+]
 
 [tool.mutmut]
 paths_to_mutate = [
@@ -88,7 +95,7 @@ paths_to_mutate = [
     "angzarr_client/router/server.py",
     "angzarr_client/router/validation.py",
 ]
-pytest_add_cli_args_test_selection = ["tests/", "--ignore=tests/features"]
+pytest_add_cli_args_test_selection = ["tests/", "--ignore=tests/client"]
 also_copy = ["angzarr_client/"]
 
 [tool.ruff]

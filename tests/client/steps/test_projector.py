@@ -5,7 +5,7 @@ from __future__ import annotations
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.router import Router, handles, projector
-from tests.features.steps._helpers import event_book
+from tests.client.steps._helpers import event_book
 from tests.fixtures import OrderCompleted, OrderCreated
 
 scenarios("projector.feature")
@@ -32,7 +32,8 @@ def _given_projector_handler(world):
 @given("the router is built with the Output projector")
 def _given_projector_built(world):
     world.handlers.append(world.classes["Output"]())
-    world.router = Router("prjs").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
+    h = world.handlers[0]
+    world.router = Router("prjs").with_handler(type(h), lambda h=h: h).build()
 
 
 @when("an EventBook with three OrderCreated events is dispatched")

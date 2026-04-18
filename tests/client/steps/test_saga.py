@@ -5,8 +5,8 @@ from __future__ import annotations
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.router import Router, handles, saga
-from tests.features.steps._helpers import command_book, saga_request
-from tests.fixtures import OrderCreated, ReserveStock, StockReserved
+from tests.client.steps._helpers import command_book, saga_request
+from tests.fixtures import CreateShipment, OrderCreated, ReserveStock, StockReserved
 
 scenarios("saga.feature")
 
@@ -42,7 +42,8 @@ def _given_saga_handler(world):
 @given("the router is built with the OrderFulfillment saga")
 def _given_saga_built(world):
     world.handlers.append(world.classes["OrderFulfillment"]())
-    world.router = Router("sagas").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
+    h = world.handlers[0]
+    world.router = Router("sagas").with_handler(type(h), lambda h=h: h).build()
 
 
 @when("an OrderCreated event is dispatched to the saga router")
@@ -94,3 +95,67 @@ def _then_saga_inv(world, n):
 @then(parsers.parse("the saga observed destination fulfillment = {n:d}"))
 def _then_saga_ful(world, n):
     assert world.observed_dest["fulfillment"] == n
+
+
+# --------------------------------------------------------------------------
+# Multi-destination sequence stamping (C-0053)
+# --------------------------------------------------------------------------
+
+
+@given(
+    parsers.parse(
+        'a saga "OrderSplit" translating from "{source}" to "{a}" and "{b}"'
+    )
+)
+def _given_saga_multi_target(world, source, a, b):
+    @saga(name="saga-order-split", source=source, target=a)
+    class OrderSplit:
+        pass
+
+    world.classes["OrderSplit"] = OrderSplit
+    world.classes["__saga_targets__"] = [a, b]
+
+
+@given(
+    parsers.parse(
+        'the saga handles OrderCreated by emitting a ReserveStock for "{inv}" and a CreateShipment for "{ful}"'
+    )
+)
+def _given_saga_multi_handler(world, inv, ful):
+    cls = world.classes["OrderSplit"]
+
+    @handles(OrderCreated)
+    def translate(self, event, destinations):
+        return [
+            command_book(
+                ReserveStock(order_id=event.order_id, sku="x", quantity=1),
+                target_domain=inv,
+                seq=destinations.sequence_for(inv),
+            ),
+            command_book(
+                CreateShipment(order_id=event.order_id, address="X"),
+                target_domain=ful,
+                seq=destinations.sequence_for(ful),
+            ),
+        ]
+
+    cls.translate = translate
+    world.handlers.append(cls())
+    h = world.handlers[-1]
+    world.router = Router("sagas").with_handler(type(h), lambda h=h: h).build()
+
+
+@then(parsers.parse("the ReserveStock command carries destination sequence {n:d}"))
+def _then_reserve_stock_seq(world, n):
+    reserve = next(
+        c for c in world.response.commands if c.cover.domain == "inventory"
+    )
+    assert reserve.pages[0].header.sequence == n
+
+
+@then(parsers.parse("the CreateShipment command carries destination sequence {n:d}"))
+def _then_create_shipment_seq(world, n):
+    shipment = next(
+        c for c in world.response.commands if c.cover.domain == "fulfillment"
+    )
+    assert shipment.pages[0].header.sequence == n

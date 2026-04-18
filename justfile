@@ -10,16 +10,19 @@ proto:
     buf generate
     uv run python scripts/generate_protos.py
 
-# Sync feature files from angzarr core
-sync-features:
-    bash scripts/sync-features.sh
+# Framework-harness cucumber (pytest-bdd; feature files from angzarr-project/features/client/)
+test-client-unit:
+    uv run --extra dev pytest tests/client/ -v
 
-# Run tests
-test: sync-features
-    uv run --extra dev pytest tests/ -v
+# Plain pytest, excluding the BDD subset
+test-pytest:
+    uv run --extra dev pytest tests/ -v --ignore=tests/client
+
+# Full suite
+test: test-pytest test-client-unit
 
 # Run tests with coverage
-coverage: sync-features
+coverage:
     uv run --extra dev pytest tests/ --cov=angzarr_client --cov-report=term-missing --cov-report=html
 
 # Run mutation testing (80% kill rate threshold)

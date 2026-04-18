@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.router import Router, command_handler, rejected
-from tests.features.steps._helpers import contextual_notification, notification_for
+from tests.client.steps._helpers import contextual_notification, notification_for
 from tests.fixtures import FundsReleased, ProcessPayment, ReserveStock
 
 scenarios("rejection.feature")
@@ -67,7 +67,8 @@ def _given_payment2(world):
 def _given_built_single(world):
     handler_cls = world.classes["__payment_handlers__"][0]
     world.handlers.append(handler_cls())
-    world.router = Router("agg").with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i]).build()
+    h = world.handlers[0]
+    world.router = Router("agg").with_handler(type(h), lambda h=h: h).build()
 
 
 @given("the router is built with Payment then Payment2")
@@ -75,10 +76,11 @@ def _given_built_both(world):
     classes = world.classes["__payment_handlers__"]
     assert len(classes) >= 2
     world.handlers = [classes[0](), classes[1]()]
+    h0, h1 = world.handlers[0], world.handlers[1]
     world.router = (
         Router("agg")
-        .with_handler(type(world.handlers[0]), lambda i=0: world.handlers[i])
-        .with_handler(type(world.handlers[1]), lambda i=1: world.handlers[i])
+        .with_handler(type(h0), lambda h=h0: h)
+        .with_handler(type(h1), lambda h=h1: h)
         .build()
     )
 
