@@ -8,6 +8,7 @@ subsequent rounds.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable
 
 import grpc
@@ -111,6 +112,21 @@ def _upcasters_for(
 ) -> list[tuple[tuple[type, type], Callable]]:
     """@upcasts methods on an upcaster: ``((from_type, to_type), method)`` pairs."""
     return _collect_methods(instance, "__angzarr_upcasts__")
+
+
+def _accepts_source_cover(method: Callable) -> bool:
+    """Return True if ``method`` declares a ``source_cover`` parameter.
+
+    Saga and process-manager handlers may opt into receiving the source
+    event book's ``Cover`` (domain + root + correlation_id) by adding a
+    ``source_cover`` keyword parameter. Handlers without it retain the
+    original arity.
+    """
+    try:
+        sig = inspect.signature(method)
+    except (TypeError, ValueError):
+        return False
+    return "source_cover" in sig.parameters
 
 
 def _appliers_for(instance: Any) -> dict[str, Callable]:
@@ -307,7 +323,8 @@ def dispatch_saga(handlers: list[Any], request: SagaHandleRequest) -> SagaRespon
     in registration order. Emitted commands + fact books are merged.
     """
     source = request.source
-    source_domain = source.cover.domain if source.HasField("cover") else ""
+    source_cover = source.cover if source.HasField("cover") else None
+    source_domain = source_cover.domain if source_cover is not None else ""
     if not source.pages:
         return SagaResponse()
 
@@ -332,7 +349,10 @@ def dispatch_saga(handlers: list[Any], request: SagaHandleRequest) -> SagaRespon
             # Decode the trigger event.
             evt = evt_type()
             evt.ParseFromString(trigger.event.value)
-            emitted = method(evt, destinations)
+            if _accepts_source_cover(method):
+                emitted = method(evt, destinations, source_cover=source_cover)
+            else:
+                emitted = method(evt, destinations)
             _merge_saga_output(emitted, response)
     return response
 
@@ -350,7 +370,8 @@ def dispatch_process_manager(
     ``ProcessManagerHandleResponse``.
     """
     trigger = request.trigger
-    trigger_domain = trigger.cover.domain if trigger.HasField("cover") else ""
+    trigger_cover = trigger.cover if trigger.HasField("cover") else None
+    trigger_domain = trigger_cover.domain if trigger_cover is not None else ""
     if not trigger.pages:
         return ProcessManagerHandleResponse()
 
@@ -380,7 +401,10 @@ def dispatch_process_manager(
             state = _rebuild_state(inst, process_state)
             evt = evt_type()
             evt.ParseFromString(last.event.value)
-            result = method(evt, state, destinations)
+            if _accepts_source_cover(method):
+                result = method(evt, state, destinations, source_cover=trigger_cover)
+            else:
+                result = method(evt, state, destinations)
             if result is None:
                 continue
             if not isinstance(result, ProcessManagerResponse):

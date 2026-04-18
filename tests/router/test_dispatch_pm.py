@@ -195,6 +195,55 @@ def test_pm_handler_receives_destinations():
     assert captured["dest"].sequence_for("fulfillment") == 5
 
 
+def test_pm_handler_receives_source_cover_when_declared():
+    captured = {}
+
+    @process_manager(
+        name="pm-x",
+        pm_domain="fulfillment",
+        sources=["order"],
+        targets=["inventory"],
+        state=WorkflowState,
+    )
+    class P:
+        @handles(OrderCreated)
+        def on(self, event, state, destinations, source_cover=None):
+            captured["source_cover"] = source_cover
+            return None
+
+    router = Router("pms").with_handler(P()).build()
+    req = _pm_request([OrderCreated(order_id="o-1")])
+    req.trigger.cover.root.value = b"\x02" * 16
+
+    router.dispatch(req)
+
+    cover = captured["source_cover"]
+    assert cover is not None
+    assert cover.domain == "order"
+    assert cover.root.value == b"\x02" * 16
+
+
+def test_pm_handler_without_source_cover_param_unaffected():
+    captured = {}
+
+    @process_manager(
+        name="pm-x",
+        pm_domain="fulfillment",
+        sources=["order"],
+        targets=["inventory"],
+        state=WorkflowState,
+    )
+    class P:
+        @handles(OrderCreated)
+        def on(self, event, state, destinations):
+            captured["seen"] = True
+            return None
+
+    router = Router("pms").with_handler(P()).build()
+    router.dispatch(_pm_request([OrderCreated(order_id="o-1")]))
+    assert captured == {"seen": True}
+
+
 def test_pm_returning_none_yields_empty_response():
     @process_manager(
         name="pm-noop",

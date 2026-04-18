@@ -131,6 +131,46 @@ def test_saga_handler_receives_destinations():
     assert d.sequence_for("fulfillment") == 3
 
 
+def test_saga_handler_receives_source_cover_when_declared():
+    captured = {}
+
+    @saga(name="saga-x", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def translate(self, event, destinations, source_cover=None):
+            captured["source_cover"] = source_cover
+            return None
+
+    router = Router("sagas").with_handler(S()).build()
+    req = _saga_request([OrderCreated(order_id="o-1")], source_domain="order")
+    # Stamp a root onto the source cover to exercise the pass-through.
+    req.source.cover.root.value = b"\x01" * 16
+
+    router.dispatch(req)
+
+    cover = captured["source_cover"]
+    assert cover is not None
+    assert cover.domain == "order"
+    assert cover.root.value == b"\x01" * 16
+
+
+def test_saga_handler_without_source_cover_param_unaffected():
+    """Handlers without ``source_cover`` in their signature keep receiving
+    just ``(event, destinations)`` — opt-in contract."""
+    captured = {}
+
+    @saga(name="saga-x", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def translate(self, event, destinations):
+            captured["seen"] = True
+            return None
+
+    router = Router("sagas").with_handler(S()).build()
+    router.dispatch(_saga_request([OrderCreated(order_id="o-1")]))
+    assert captured == {"seen": True}
+
+
 def test_saga_returning_none_emits_empty_response():
     @saga(name="s", source="order", target="inventory")
     class Noop:
