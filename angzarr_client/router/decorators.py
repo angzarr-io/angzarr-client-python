@@ -27,9 +27,14 @@ def _stamp(cls: type, kind: str, meta: dict[str, Any]) -> None:
     """Attach kind + meta attributes to the class; guard against double-decoration."""
     existing = getattr(cls, "__angzarr_kind__", None)
     if existing is not None:
+        if existing == kind:
+            raise TypeError(
+                f"{cls.__name__} is already decorated with @{kind}; "
+                f"angzarr components may only be decorated once"
+            )
         raise TypeError(
-            f"{cls.__name__} is already decorated as {existing!r}; "
-            f"cannot also decorate as {kind!r}"
+            f"{cls.__name__} is already decorated as @{existing}; "
+            f"cannot also decorate as @{kind}"
         )
     cls.__angzarr_kind__ = kind  # type: ignore[attr-defined]
     cls.__angzarr_meta__ = meta  # type: ignore[attr-defined]

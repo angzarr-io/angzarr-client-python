@@ -199,7 +199,7 @@ class CommandBookW:
         """Get the merge strategy of the first command page."""
         if not self.proto.pages:
             return MergeStrategy.MERGE_COMMUTATIVE
-        return MergeStrategy(self.proto.pages[0].merge_strategy)
+        return self.proto.pages[0].merge_strategy
 
     def _cover(self) -> Cover | None:
         """Get the cover, or None if not set."""
@@ -436,7 +436,7 @@ class CommandPageW:
 
     def merge_strategy(self) -> MergeStrategy:
         """Return the merge strategy for this command."""
-        return MergeStrategy(self.proto.merge_strategy)
+        return self.proto.merge_strategy
 
 
 class CommandResponseW:

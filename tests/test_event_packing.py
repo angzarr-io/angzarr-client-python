@@ -62,3 +62,46 @@ def test_pack_event_custom_type_url_prefix():
     book = pack_event(_cover(), event, seq=0, type_url_prefix="type.custom/")
 
     assert book.pages[0].event.type_url.startswith("type.custom/")
+
+
+def test_new_event_book_single_packed_event():
+    from google.protobuf.any_pb2 import Any
+
+    from angzarr_client.event_packing import new_event_book
+
+    cmd = angzarr.CommandBook()
+    cmd.cover.root.CopyFrom(angzarr.UUID(value=b"test-root"))
+    packed = Any()
+    packed.Pack(Timestamp(seconds=5))
+    book = new_event_book(cmd, seq=3, event=packed)
+    assert len(book.pages) == 1
+    assert book.pages[0].header.sequence == 3
+    assert book.pages[0].event.type_url == packed.type_url
+    assert book.cover.root.value == b"test-root"
+
+
+def test_new_event_book_multi_sequential():
+    from google.protobuf.any_pb2 import Any
+
+    from angzarr_client.event_packing import new_event_book_multi
+
+    cmd = angzarr.CommandBook()
+    cmd.cover.root.CopyFrom(angzarr.UUID(value=b"r"))
+    packed = []
+    for i in range(3):
+        a = Any()
+        a.Pack(Timestamp(seconds=i))
+        packed.append(a)
+    book = new_event_book_multi(cmd, start_seq=10, events=packed)
+    assert len(book.pages) == 3
+    for i, page in enumerate(book.pages):
+        assert page.header.sequence == 10 + i
+
+
+def test_new_event_book_multi_empty():
+    from angzarr_client.event_packing import new_event_book_multi
+
+    cmd = angzarr.CommandBook()
+    cmd.cover.root.CopyFrom(angzarr.UUID(value=b"r"))
+    book = new_event_book_multi(cmd, start_seq=0, events=[])
+    assert len(book.pages) == 0

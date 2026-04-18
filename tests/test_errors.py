@@ -178,6 +178,84 @@ class TestInvalidArgumentError:
         assert isinstance(err, ClientError)
 
 
+class TestClientErrorBasePredicates:
+    """Default predicates on ClientError all return False."""
+
+    def test_base_is_not_found_false(self) -> None:
+        assert ClientError("x").is_not_found() is False
+
+    def test_base_is_precondition_failed_false(self) -> None:
+        assert ClientError("x").is_precondition_failed() is False
+
+    def test_base_is_invalid_argument_false(self) -> None:
+        assert ClientError("x").is_invalid_argument() is False
+
+    def test_base_is_connection_error_false(self) -> None:
+        assert ClientError("x").is_connection_error() is False
+
+    def test_invalid_timestamp_inherits_base_predicates(self) -> None:
+        err = InvalidTimestampError("bad")
+        assert err.is_not_found() is False
+        assert err.is_precondition_failed() is False
+        assert err.is_invalid_argument() is False
+        assert err.is_connection_error() is False
+
+
+class TestConnectionPredicates:
+    def test_connection_error_is_connection_error(self) -> None:
+        assert ConnectionError("x").is_connection_error() is True
+
+    def test_transport_error_is_connection_error(self) -> None:
+        assert TransportError(OSError("x")).is_connection_error() is True
+
+    def test_invalid_argument_is_invalid_argument(self) -> None:
+        assert InvalidArgumentError("x").is_invalid_argument() is True
+
+
+class TestGRPCErrorExtraBranches:
+    def _err(self, code: grpc.StatusCode) -> GRPCError:
+        return GRPCError(MockRpcError(code, ""))
+
+    def test_status_returns_underlying(self) -> None:
+        rpc_error = MockRpcError(grpc.StatusCode.INTERNAL, "")
+        err = GRPCError(rpc_error)
+        assert err.status() is rpc_error
+
+    def test_is_connection_error_true_for_unavailable(self) -> None:
+        assert self._err(grpc.StatusCode.UNAVAILABLE).is_connection_error() is True
+
+    def test_is_connection_error_false_otherwise(self) -> None:
+        assert self._err(grpc.StatusCode.INTERNAL).is_connection_error() is False
+
+
+class TestCommandRejectedErrorPredicates:
+    def test_precondition_failed_constructor(self) -> None:
+        from angzarr_client.errors import CommandRejectedError
+
+        err = CommandRejectedError.precondition_failed("bad state")
+        assert err.status_code == "FAILED_PRECONDITION"
+        assert err.is_precondition_failed() is True
+        assert err.is_invalid_argument() is False
+        assert err.is_not_found() is False
+
+    def test_invalid_argument_constructor(self) -> None:
+        from angzarr_client.errors import CommandRejectedError
+
+        err = CommandRejectedError.invalid_argument("bad input")
+        assert err.status_code == "INVALID_ARGUMENT"
+        assert err.is_invalid_argument() is True
+        assert err.is_precondition_failed() is False
+
+    def test_not_found_constructor(self) -> None:
+        from angzarr_client.errors import CommandRejectedError
+
+        err = CommandRejectedError.not_found("no such aggregate")
+        assert err.status_code == "NOT_FOUND"
+        assert err.is_not_found() is True
+        assert err.is_precondition_failed() is False
+        assert err.is_invalid_argument() is False
+
+
 class TestInvalidTimestampError:
     """Tests for InvalidTimestampError."""
 

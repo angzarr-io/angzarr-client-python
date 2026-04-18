@@ -176,6 +176,24 @@ def test_stacking_pm_on_projector_raises():
             pass
 
 
+def test_stacking_same_kind_decorator_twice_raises():
+    with pytest.raises(TypeError, match=r"already decorated with @projector"):
+
+        @projector(name="prj", domains=["a"])
+        @projector(name="prj", domains=["a"])
+        class _Twice:
+            pass
+
+
+def test_stacking_same_command_handler_twice_raises():
+    with pytest.raises(TypeError, match=r"already decorated with @command_handler"):
+
+        @command_handler(domain="player", state=PlayerState)
+        @command_handler(domain="player", state=PlayerState)
+        class _Twice:
+            pass
+
+
 # --------------------------------------------------------------------------
 # Decorators preserve the class (return the same object, allow normal use)
 # --------------------------------------------------------------------------

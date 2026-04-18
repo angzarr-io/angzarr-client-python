@@ -430,6 +430,330 @@ class TestCommandResponseW:
         assert wrapper.events() == []
 
 
+class TestEventBookWAdditional:
+    """Additional EventBookW coverage."""
+
+    def test_is_empty_true_for_empty_book(self) -> None:
+        assert EventBookW(EventBook()).is_empty() is True
+
+    def test_is_empty_false_with_pages(self) -> None:
+        proto = EventBook()
+        proto.pages.add().header.sequence = 1
+        assert EventBookW(proto).is_empty() is False
+
+    def test_last_page_returns_last(self) -> None:
+        proto = EventBook()
+        proto.pages.add().header.sequence = 1
+        proto.pages.add().header.sequence = 7
+        page = EventBookW(proto).last_page()
+        assert page is not None
+        assert page.proto.header.sequence == 7
+
+    def test_last_page_none_when_empty(self) -> None:
+        assert EventBookW(EventBook()).last_page() is None
+
+    def test_first_page_returns_first(self) -> None:
+        proto = EventBook()
+        proto.pages.add().header.sequence = 3
+        proto.pages.add().header.sequence = 9
+        page = EventBookW(proto).first_page()
+        assert page is not None
+        assert page.proto.header.sequence == 3
+
+    def test_first_page_none_when_empty(self) -> None:
+        assert EventBookW(EventBook()).first_page() is None
+
+    def test_root_uuid_none_when_no_cover(self) -> None:
+        assert EventBookW(EventBook()).root_uuid() is None
+
+    def test_root_uuid_invalid_bytes(self) -> None:
+        proto = EventBook()
+        proto.cover.root.value = b"too-short"
+        assert EventBookW(proto).root_uuid() is None
+
+    def test_root_id_hex_from_cover(self) -> None:
+        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
+        proto = EventBook()
+        proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
+        assert EventBookW(proto).root_id_hex() == test_uuid.bytes.hex()
+
+    def test_root_id_hex_empty_when_no_cover(self) -> None:
+        assert EventBookW(EventBook()).root_id_hex() == ""
+
+    def test_edition_none_when_no_cover(self) -> None:
+        assert EventBookW(EventBook()).edition() is None
+
+    def test_cover_wrapper_returns_empty_when_no_cover(self) -> None:
+        cw = EventBookW(EventBook()).cover_wrapper()
+        assert isinstance(cw, CoverW)
+        assert cw.domain() == UNKNOWN_DOMAIN
+
+
+class TestCommandBookWAdditional:
+    """Additional CommandBookW coverage."""
+
+    def test_command_sequence_from_first_page(self) -> None:
+        proto = CommandBook()
+        proto.pages.add().header.sequence = 42
+        assert CommandBookW(proto).command_sequence() == 42
+
+    def test_command_sequence_zero_when_no_pages(self) -> None:
+        assert CommandBookW(CommandBook()).command_sequence() == 0
+
+    def test_command_sequence_zero_when_page_has_no_header(self) -> None:
+        proto = CommandBook()
+        proto.pages.add()  # page without header set
+        assert CommandBookW(proto).command_sequence() == 0
+
+    def test_first_command_returns_first(self) -> None:
+        proto = CommandBook()
+        proto.pages.add().header.sequence = 1
+        assert CommandBookW(proto).first_command() is not None
+
+    def test_first_command_none_when_empty(self) -> None:
+        assert CommandBookW(CommandBook()).first_command() is None
+
+    def test_merge_strategy_default_when_no_pages(self) -> None:
+        from angzarr_client.proto.angzarr import MergeStrategy
+
+        assert CommandBookW(CommandBook()).merge_strategy() == MergeStrategy.MERGE_COMMUTATIVE
+
+    def test_merge_strategy_from_first_page(self) -> None:
+        from angzarr_client.proto.angzarr import MergeStrategy
+
+        proto = CommandBook()
+        page = proto.pages.add()
+        page.merge_strategy = MergeStrategy.MERGE_STRICT
+        assert CommandBookW(proto).merge_strategy() == MergeStrategy.MERGE_STRICT
+
+    def test_domain_unknown_when_no_cover(self) -> None:
+        assert CommandBookW(CommandBook()).domain() == UNKNOWN_DOMAIN
+
+    def test_correlation_id_empty_when_no_cover(self) -> None:
+        assert CommandBookW(CommandBook()).correlation_id() == ""
+
+    def test_has_correlation_id_true(self) -> None:
+        proto = CommandBook()
+        proto.cover.correlation_id = "corr"
+        assert CommandBookW(proto).has_correlation_id() is True
+
+    def test_has_correlation_id_false(self) -> None:
+        assert CommandBookW(CommandBook()).has_correlation_id() is False
+
+    def test_root_uuid_from_cover(self) -> None:
+        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
+        proto = CommandBook()
+        proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
+        assert CommandBookW(proto).root_uuid() == test_uuid
+
+    def test_root_uuid_none_when_no_cover(self) -> None:
+        assert CommandBookW(CommandBook()).root_uuid() is None
+
+    def test_root_uuid_none_for_invalid_bytes(self) -> None:
+        proto = CommandBook()
+        proto.cover.root.value = b"bad"
+        assert CommandBookW(proto).root_uuid() is None
+
+    def test_edition_from_cover(self) -> None:
+        proto = CommandBook()
+        proto.cover.edition.name = "v1"
+        assert CommandBookW(proto).edition() == "v1"
+
+    def test_edition_none_when_no_cover(self) -> None:
+        assert CommandBookW(CommandBook()).edition() is None
+
+    def test_routing_key_is_domain(self) -> None:
+        proto = CommandBook()
+        proto.cover.domain = "orders"
+        assert CommandBookW(proto).routing_key() == "orders"
+
+    def test_cache_key_with_root(self) -> None:
+        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
+        proto = CommandBook()
+        proto.cover.domain = "orders"
+        proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
+        assert CommandBookW(proto).cache_key() == f"None:orders:{test_uuid.bytes.hex()}"
+
+    def test_cache_key_without_root(self) -> None:
+        proto = CommandBook()
+        proto.cover.domain = "orders"
+        assert CommandBookW(proto).cache_key() == "None:orders:"
+
+    def test_cover_wrapper(self) -> None:
+        proto = CommandBook()
+        proto.cover.domain = "orders"
+        assert CommandBookW(proto).cover_wrapper().domain() == "orders"
+
+    def test_cover_wrapper_empty_when_no_cover(self) -> None:
+        cw = CommandBookW(CommandBook()).cover_wrapper()
+        assert cw.domain() == UNKNOWN_DOMAIN
+
+
+class TestQueryWAdditional:
+    """Additional QueryW coverage."""
+
+    def test_domain_unknown_when_no_cover(self) -> None:
+        assert QueryW(Query()).domain() == UNKNOWN_DOMAIN
+
+    def test_correlation_id_empty_when_no_cover(self) -> None:
+        assert QueryW(Query()).correlation_id() == ""
+
+    def test_has_correlation_id_true_and_false(self) -> None:
+        assert QueryW(Query()).has_correlation_id() is False
+        proto = Query()
+        proto.cover.correlation_id = "x"
+        assert QueryW(proto).has_correlation_id() is True
+
+    def test_root_uuid_from_cover(self) -> None:
+        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
+        proto = Query()
+        proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
+        assert QueryW(proto).root_uuid() == test_uuid
+
+    def test_root_uuid_none_when_no_cover(self) -> None:
+        assert QueryW(Query()).root_uuid() is None
+
+    def test_root_uuid_none_for_invalid_bytes(self) -> None:
+        proto = Query()
+        proto.cover.root.value = b"bad"
+        assert QueryW(proto).root_uuid() is None
+
+    def test_routing_key_is_domain(self) -> None:
+        proto = Query()
+        proto.cover.domain = "inv"
+        assert QueryW(proto).routing_key() == "inv"
+
+    def test_cover_wrapper_returns_empty_when_no_cover(self) -> None:
+        assert QueryW(Query()).cover_wrapper().domain() == UNKNOWN_DOMAIN
+
+    def test_cover_wrapper_wraps_cover(self) -> None:
+        proto = Query()
+        proto.cover.domain = "inv"
+        assert QueryW(proto).cover_wrapper().domain() == "inv"
+
+
+class TestEventPageWAdditional:
+    """Additional EventPageW coverage."""
+
+    def test_sequence_num_returns_header_sequence(self) -> None:
+        proto = EventPage(header=PageHeader(sequence=17))
+        assert EventPageW(proto).sequence_num() == 17
+
+    def test_sequence_num_zero_when_no_header(self) -> None:
+        assert EventPageW(EventPage()).sequence_num() == 0
+
+    def test_header_returns_header(self) -> None:
+        proto = EventPage(header=PageHeader(sequence=3))
+        h = EventPageW(proto).header()
+        assert h is not None
+        assert h.sequence == 3
+
+    def test_header_none_when_absent(self) -> None:
+        assert EventPageW(EventPage()).header() is None
+
+    def test_is_deferred_false_when_no_header(self) -> None:
+        assert EventPageW(EventPage()).is_deferred() is False
+
+    def test_is_deferred_false_when_no_deferred_subfield(self) -> None:
+        assert EventPageW(EventPage(header=PageHeader(sequence=1))).is_deferred() is False
+
+    def test_is_deferred_true_for_external_deferred(self) -> None:
+        proto = EventPage(header=PageHeader(sequence=1))
+        proto.header.external_deferred.SetInParent()
+        assert EventPageW(proto).is_deferred() is True
+
+    def test_is_deferred_true_for_angzarr_deferred(self) -> None:
+        proto = EventPage(header=PageHeader(sequence=1))
+        proto.header.angzarr_deferred.SetInParent()
+        assert EventPageW(proto).is_deferred() is True
+
+    def test_type_url_returns_url(self) -> None:
+        proto = EventPage(header=PageHeader(sequence=1))
+        proto.event.Pack(Cover(domain="x"))
+        url = EventPageW(proto).type_url()
+        assert url is not None and url.endswith("angzarr.Cover")
+
+    def test_type_url_none_when_no_event(self) -> None:
+        assert EventPageW(EventPage(header=PageHeader(sequence=1))).type_url() is None
+
+    def test_payload_returns_bytes(self) -> None:
+        proto = EventPage(header=PageHeader(sequence=1))
+        proto.event.Pack(Cover(domain="x"))
+        payload = EventPageW(proto).payload()
+        assert isinstance(payload, (bytes, bytearray))
+
+    def test_payload_none_when_no_event(self) -> None:
+        assert EventPageW(EventPage(header=PageHeader(sequence=1))).payload() is None
+
+    def test_decode_typed_returns_message(self) -> None:
+        proto = EventPage(header=PageHeader(sequence=1))
+        proto.event.Pack(Cover(domain="zzz"))
+        result = EventPageW(proto).decode_typed(Cover)
+        assert result is not None and result.domain == "zzz"
+
+    def test_decode_typed_none_when_no_event(self) -> None:
+        assert EventPageW(EventPage(header=PageHeader(sequence=1))).decode_typed(Cover) is None
+
+
+class TestCommandPageWAdditional:
+    """Additional CommandPageW coverage."""
+
+    def test_sequence_zero_when_no_header(self) -> None:
+        assert CommandPageW(CommandPage()).sequence() == 0
+
+    def test_header_returns_header(self) -> None:
+        proto = CommandPage()
+        proto.header.sequence = 5
+        h = CommandPageW(proto).header()
+        assert h is not None and h.sequence == 5
+
+    def test_header_none_when_absent(self) -> None:
+        assert CommandPageW(CommandPage()).header() is None
+
+    def test_is_deferred_false_when_no_header(self) -> None:
+        assert CommandPageW(CommandPage()).is_deferred() is False
+
+    def test_is_deferred_true_for_external_deferred(self) -> None:
+        proto = CommandPage()
+        proto.header.sequence = 1
+        proto.header.external_deferred.SetInParent()
+        assert CommandPageW(proto).is_deferred() is True
+
+    def test_is_deferred_true_for_angzarr_deferred(self) -> None:
+        proto = CommandPage()
+        proto.header.sequence = 1
+        proto.header.angzarr_deferred.SetInParent()
+        assert CommandPageW(proto).is_deferred() is True
+
+    def test_type_url_returns_url(self) -> None:
+        proto = CommandPage()
+        proto.header.sequence = 1
+        proto.command.Pack(Cover(domain="x"))
+        url = CommandPageW(proto).type_url()
+        assert url is not None and url.endswith("angzarr.Cover")
+
+    def test_type_url_none_when_no_command(self) -> None:
+        proto = CommandPage()
+        proto.header.sequence = 1
+        assert CommandPageW(proto).type_url() is None
+
+    def test_payload_returns_bytes(self) -> None:
+        proto = CommandPage()
+        proto.header.sequence = 1
+        proto.command.Pack(Cover(domain="x"))
+        assert CommandPageW(proto).payload() is not None
+
+    def test_payload_none_when_no_command(self) -> None:
+        proto = CommandPage()
+        proto.header.sequence = 1
+        assert CommandPageW(proto).payload() is None
+
+    def test_merge_strategy_default(self) -> None:
+        from angzarr_client.proto.angzarr import MergeStrategy
+
+        assert CommandPageW(CommandPage()).merge_strategy() == MergeStrategy.MERGE_COMMUTATIVE
+
+
 class TestWrapperAttributeAccess:
     """Tests for delegated attribute access to underlying proto."""
 

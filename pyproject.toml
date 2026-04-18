@@ -65,7 +65,29 @@ testpaths = ["tests"]
 norecursedirs = ["mutants"]
 
 [tool.mutmut]
-paths_to_mutate = ["angzarr_client/builder.py", "angzarr_client/client.py", "angzarr_client/errors.py", "angzarr_client/helpers.py", "angzarr_client/wrappers.py"]
+paths_to_mutate = [
+    "angzarr_client/builder.py",
+    "angzarr_client/client.py",
+    "angzarr_client/compensation.py",
+    "angzarr_client/destinations.py",
+    "angzarr_client/errors.py",
+    "angzarr_client/event_packing.py",
+    "angzarr_client/helpers.py",
+    "angzarr_client/identity.py",
+    "angzarr_client/protoname.py",
+    "angzarr_client/retry.py",
+    "angzarr_client/saga_context.py",
+    "angzarr_client/server.py",
+    "angzarr_client/validation.py",
+    "angzarr_client/wrappers.py",
+    "angzarr_client/router/builder.py",
+    "angzarr_client/router/decorators.py",
+    "angzarr_client/router/dispatch.py",
+    "angzarr_client/router/responses.py",
+    "angzarr_client/router/runtime.py",
+    "angzarr_client/router/server.py",
+    "angzarr_client/router/validation.py",
+]
 pytest_add_cli_args_test_selection = ["tests/", "--ignore=tests/features"]
 also_copy = ["angzarr_client/"]
 

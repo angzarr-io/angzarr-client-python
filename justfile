@@ -22,7 +22,7 @@ test: sync-features
 coverage: sync-features
     uv run --extra dev pytest tests/ --cov=angzarr_client --cov-report=term-missing --cov-report=html
 
-# Run mutation testing (70% kill rate threshold)
+# Run mutation testing (80% kill rate threshold)
 mutation-test:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -41,11 +41,11 @@ mutation-test:
     fi
     rate=$((killed * 100 / total))
     echo "Mutation kill rate: ${rate}% (${killed}/${total}, ${survived} survived)"
-    if [ "$rate" -lt 70 ]; then
-        echo "FAIL: Kill rate ${rate}% is below 70% threshold"
+    if [ "$rate" -lt 80 ]; then
+        echo "FAIL: Kill rate ${rate}% is below 80% threshold"
         exit 1
     fi
-    echo "PASS: Kill rate meets 70% threshold"
+    echo "PASS: Kill rate meets 80% threshold"
 
 # Show mutation testing results
 mutation-test-results:
