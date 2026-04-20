@@ -608,7 +608,7 @@ class TestDecodeEvent:
         page.event.Pack(cover)
 
         # Use full type name for exact matching
-        result = decode_event(page, "angzarr.Cover", Cover)
+        result = decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover)
         assert result is not None
         assert result.domain == "test"
         assert result.correlation_id == "abc"
@@ -834,7 +834,7 @@ class TestAdditionalHelpers:
         from angzarr_client.helpers import full_type_name
         from angzarr_client.proto.angzarr import Cover
 
-        assert full_type_name(Cover) == "angzarr.Cover"
+        assert full_type_name(Cover) == "angzarr_client.proto.angzarr.Cover"
 
     def test_full_type_url_for_and_alias(self) -> None:
         from angzarr_client.helpers import (
@@ -859,4 +859,4 @@ class TestAdditionalHelpers:
 
         # Patch Unpack on the Any to force the except branch
         monkeypatch.setattr(type(page.event), "Unpack", boom)
-        assert decode_event(page, "angzarr.Cover", Cover) is None
+        assert decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover) is None

@@ -345,7 +345,7 @@ class TestEventPageW:
         wrapper = EventPageW(proto)
 
         # Use full type name for exact matching
-        result = wrapper.decode_event("angzarr.Cover", Cover)
+        result = wrapper.decode_event("angzarr_client.proto.angzarr.Cover", Cover)
         assert result is not None
         assert result.domain == "test"
         assert result.correlation_id == "abc"
@@ -671,7 +671,7 @@ class TestEventPageWAdditional:
         proto = EventPage(header=PageHeader(sequence=1))
         proto.event.Pack(Cover(domain="x"))
         url = EventPageW(proto).type_url()
-        assert url is not None and url.endswith("angzarr.Cover")
+        assert url is not None and url.endswith("angzarr_client.proto.angzarr.Cover")
 
     def test_type_url_none_when_no_event(self) -> None:
         assert EventPageW(EventPage(header=PageHeader(sequence=1))).type_url() is None
@@ -730,7 +730,7 @@ class TestCommandPageWAdditional:
         proto.header.sequence = 1
         proto.command.Pack(Cover(domain="x"))
         url = CommandPageW(proto).type_url()
-        assert url is not None and url.endswith("angzarr.Cover")
+        assert url is not None and url.endswith("angzarr_client.proto.angzarr.Cover")
 
     def test_type_url_none_when_no_command(self) -> None:
         proto = CommandPage()

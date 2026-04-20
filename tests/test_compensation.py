@@ -96,7 +96,7 @@ class TestCompensationContextProperties:
             _make_rejection_notification(rejected_command=cmd)
         )
         assert ctx.rejected_command_type is not None
-        assert ctx.rejected_command_type.endswith("angzarr.Cover")
+        assert ctx.rejected_command_type.endswith("angzarr_client.proto.angzarr.Cover")
 
     def test_rejected_command_type_none_when_no_command_in_page(self) -> None:
         cmd = types.CommandBook()

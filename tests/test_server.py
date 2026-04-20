@@ -112,7 +112,7 @@ class TestCreateServer:
         server, address = srv.create_server(
             add_servicer_func=add_servicer,
             servicer=servicer,
-            service_name="angzarr.Test",
+            service_name="angzarr_client.proto.angzarr.Test",
         )
         assert add_servicer.call_count == 1
         assert address.startswith("[::]:")
@@ -150,7 +150,7 @@ class TestRunServerLogging:
             srv.run_server(
                 add_servicer_func=lambda *a, **kw: None,
                 servicer=object(),
-                service_name="angzarr.Test",
+                service_name="angzarr_client.proto.angzarr.Test",
                 domain="orders",
                 default_port="9999",
                 logger=logger,
@@ -184,11 +184,11 @@ class TestRunServerLogging:
             srv.run_server(
                 add_servicer_func=lambda *a, **kw: None,
                 servicer=object(),
-                service_name="angzarr.Test",
+                service_name="angzarr_client.proto.angzarr.Test",
                 domain="orders",
             )
         out = capsys.readouterr().out
-        assert "angzarr.Test" in out
+        assert "angzarr_client.proto.angzarr.Test" in out
         assert "orders" in out
 
 

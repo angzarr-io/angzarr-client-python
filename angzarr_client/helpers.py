@@ -31,7 +31,7 @@ WILDCARD_DOMAIN = "*"
 DEFAULT_EDITION = "angzarr"
 META_ANGZARR_DOMAIN = "_angzarr"
 PROJECTION_DOMAIN_PREFIX = "_projection"
-PROJECTION_TYPE_URL = "angzarr.Projection"
+PROJECTION_TYPE_URL = "angzarr_client.proto.angzarr.Projection"
 CORRELATION_ID_HEADER = "x-correlation-id"
 TYPE_URL_PREFIX = "type.googleapis.com/"
 
@@ -285,7 +285,7 @@ def type_url(package_name: str, type_name: str) -> str:
 def type_name_from_url(type_url_str: str) -> str:
     """Extract the fully qualified type name from a type URL.
 
-    For "type.googleapis.com/examples.CardsDealt", returns "examples.CardsDealt".
+    For "type.googleapis.com/examples.CardsDealt", returns "angzarr_client.proto.examples.CardsDealt".
     """
     if "/" in type_url_str:
         return type_url_str.rsplit("/", 1)[1]
@@ -297,7 +297,7 @@ def type_url_matches(type_url_str: str, type_name: str) -> bool:
 
     Args:
         type_url_str: Full type URL (e.g., "type.googleapis.com/examples.CardsDealt")
-        type_name: Fully qualified type name (e.g., "examples.CardsDealt")
+        type_name: Fully qualified type name (e.g., "angzarr_client.proto.examples.CardsDealt")
 
     Returns:
         True if type_url equals TYPE_URL_PREFIX + type_name
@@ -389,10 +389,10 @@ def full_type_name(msg_class: type[Message]) -> str:
         msg_class: The protobuf message class
 
     Returns:
-        The fully-qualified type name (e.g., "examples.PlayerRegistered")
+        The fully-qualified type name (e.g., "angzarr_client.proto.examples.PlayerRegistered")
 
     Example:
-        name = full_type_name(PlayerRegistered)  # "examples.PlayerRegistered"
+        name = full_type_name(PlayerRegistered)  # "angzarr_client.proto.examples.PlayerRegistered"
     """
     return msg_class.DESCRIPTOR.full_name
 

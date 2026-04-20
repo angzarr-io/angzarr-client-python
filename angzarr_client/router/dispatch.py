@@ -33,7 +33,7 @@ from angzarr_client.proto.angzarr import (
 )
 from angzarr_client.proto.angzarr import types_pb2 as _types
 
-_NOTIFICATION_TYPE_URL = TYPE_URL_PREFIX + "angzarr.Notification"
+_NOTIFICATION_TYPE_URL = TYPE_URL_PREFIX + "angzarr_client.proto.angzarr.Notification"
 
 # (handler_class, zero-arg factory returning a fresh/pooled handler instance).
 Factory = tuple[type, Callable[[], Any]]

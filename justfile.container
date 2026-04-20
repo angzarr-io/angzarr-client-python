@@ -51,6 +51,31 @@ mutate:
 mutate-dry:
     uv run --extra dev mutmut results
 
+# Run mutation testing with 80% kill-rate threshold (CI gate)
+mutation-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf mutants
+    uv run --extra dev mutmut run
+    uv run --extra dev mutmut results
+    uv run --extra dev mutmut export-cicd-stats
+    # Kill rate = killed / (total - no_tests). Threshold: >= 80%.
+    TOTAL=$(python -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['total'])")
+    KILLED=$(python -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['killed'])")
+    NO_TESTS=$(python -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['no_tests'])")
+    EVALUATED=$((TOTAL - NO_TESTS))
+    if [ "$EVALUATED" -eq 0 ]; then
+        echo "ERROR: No evaluable mutants"
+        exit 1
+    fi
+    KILL_RATE=$((KILLED * 100 / EVALUATED))
+    echo "Kill rate: ${KILL_RATE}% (${KILLED}/${EVALUATED} evaluable; ${NO_TESTS} untested)"
+    if [ "$KILL_RATE" -lt 80 ]; then
+        echo "FAIL: Kill rate ${KILL_RATE}% is below 80% threshold"
+        exit 1
+    fi
+    echo "PASS: Mutation testing threshold met"
+
 # Publish to PyPI
 publish:
     uv run --with twine twine upload dist/*
