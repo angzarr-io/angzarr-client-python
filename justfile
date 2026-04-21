@@ -83,3 +83,25 @@ fmt:
 fmt-fix:
     uv run ruff check --fix . --exclude angzarr-project
     uv run black .
+
+# =============================================================================
+# Submodule management
+# =============================================================================
+# The angzarr-project submodule is kept chmod a-w so accidental edits (Claude,
+# editors, scripts) fail loudly. Use `bump-angzarr-project` to update — it
+# unlocks, pulls the tracking branch, stages the new pointer, then relocks.
+
+# Lock submodules read-only (filesystem enforcement).
+submodules-lock:
+    chmod -R a-w angzarr-project
+
+# Unlock submodules for manual edits. Remember to `submodules-lock` after.
+submodules-unlock:
+    chmod -R u+w angzarr-project
+
+# Bump angzarr-project to latest on its tracking branch.
+bump-angzarr-project:
+    chmod -R u+w angzarr-project
+    git submodule update --remote --merge angzarr-project
+    git add angzarr-project
+    chmod -R a-w angzarr-project
