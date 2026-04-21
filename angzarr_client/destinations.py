@@ -109,6 +109,27 @@ class Destinations:
             page.header.sequence = seq
         return cmd
 
+    @staticmethod
+    def deferred_header(
+        source_cover: types.Cover,
+        source_seq: int,
+    ) -> types.PageHeader:
+        """Build a PageHeader carrying an ``AngzarrDeferredSequence``.
+
+        Use this on saga-produced commands so the framework can dedupe
+        on ``(source.root, source_seq, target.root)``. AMQP at-least-once
+        redelivery of the trigger event then becomes a no-op at the
+        destination aggregate's pipeline (cached events returned without
+        re-invoking business logic), instead of relying on a business
+        guard that surfaces as an idempotent-failure-shaped retry storm.
+        """
+        return types.PageHeader(
+            angzarr_deferred=types.AngzarrDeferredSequence(
+                source=source_cover,
+                source_seq=source_seq,
+            ),
+        )
+
     def has_domain(self, domain: str) -> bool:
         """Check if a destination domain is available.
 

@@ -110,6 +110,43 @@ def _accepts_source_cover(method: Callable) -> bool:
     return "source_cover" in sig.parameters
 
 
+def _accepts_source_seq(method: Callable) -> bool:
+    """Return True if ``method`` declares a ``source_seq`` parameter.
+
+    Sagas that opt into ``AngzarrDeferredSequence`` headers need the
+    source event's sequence to populate the deferred provenance. The
+    framework dedupes saga-produced commands on
+    ``(source.root, source_seq, target.root)`` so AMQP redelivery of the
+    triggering event becomes a no-op at the aggregate pipeline.
+    """
+    try:
+        sig = inspect.signature(method)
+    except (TypeError, ValueError):
+        return False
+    return "source_seq" in sig.parameters
+
+
+def _trigger_sequence(trigger_page) -> int:
+    """Extract the explicit sequence from a trigger's PageHeader.
+
+    Sagas reacting to a normal aggregate event always see an explicit
+    ``sequence`` on the source page; defer/external pages produce events
+    too but the aggregate sequence is what matters for downstream dedup.
+    Returns 0 if no header is present (defensive — shouldn't happen in
+    a well-formed EventBook).
+    """
+    if not trigger_page.HasField("header"):
+        return 0
+    header = trigger_page.header
+    if header.HasField("sequence"):
+        return int(header.sequence)
+    if header.HasField("external_deferred"):
+        return 0
+    if header.HasField("angzarr_deferred"):
+        return int(header.angzarr_deferred.source_seq)
+    return 0
+
+
 def _appliers_for(instance: Any) -> dict[str, Callable]:
     """Map proto full-name suffix → bound applier method for ``instance``."""
     out: dict[str, Callable] = {}
@@ -328,6 +365,8 @@ def dispatch_saga(
 
     destinations = Destinations.from_proto(request.destination_sequences)
 
+    source_seq = _trigger_sequence(trigger)
+
     response = SagaResponse()
     for cls, factory in factories:
         if cls.__angzarr_meta__.get("source") != source_domain:
@@ -340,10 +379,12 @@ def dispatch_saga(
             evt = evt_type()
             evt.ParseFromString(trigger.event.value)
             method = getattr(inst, method_name)
+            kwargs = {}
             if _accepts_source_cover(method):
-                emitted = method(evt, destinations, source_cover=source_cover)
-            else:
-                emitted = method(evt, destinations)
+                kwargs["source_cover"] = source_cover
+            if _accepts_source_seq(method):
+                kwargs["source_seq"] = source_seq
+            emitted = method(evt, destinations, **kwargs)
             _merge_saga_output(emitted, response)
     return response
 
