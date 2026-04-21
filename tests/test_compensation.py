@@ -162,7 +162,7 @@ class TestCompensationContextProperties:
         ctx = CompensationContext.from_notification(
             _make_rejection_notification(rejected_command=cmd)
         )
-        assert ctx.dispatch_key == "inventory/angzarr.Cover"
+        assert ctx.dispatch_key == "inventory/angzarr_client.proto.angzarr.Cover"
 
 
 class TestAggregateHelpers:

@@ -83,3 +83,43 @@ def _then_only_created(world):
 @then("the write log remains empty")
 def _then_empty(world):
     assert world.write_log == []
+
+
+# --- Factory-invocation scenario (@C-0086) ---
+
+
+@given('a projector "Output" whose factory counts invocations')
+def _given_projector_counting(world):
+    write_log = world.write_log
+
+    @projector(name="prj-output", domains=["order"])
+    class Output:
+        @handles(OrderCreated)
+        def on(self, event):
+            write_log.append(event.order_id)
+
+    world.classes["Output"] = Output
+    world.observed["factory_calls"] = 0
+
+
+@when("an EventBook with five OrderCreated events is dispatched")
+def _when_five_created(world):
+    Output = world.classes["Output"]
+    observed = world.observed
+
+    def factory():
+        observed["factory_calls"] += 1
+        return Output()
+
+    world.router = Router("prjs").with_handler(Output, factory).build()
+    world.router.dispatch(
+        event_book(
+            [OrderCreated(order_id=f"o-{i}") for i in range(5)],
+            domain="order",
+        )
+    )
+
+
+@then(parsers.parse("the factory was invoked exactly {n:d} time"))
+def _then_factory_count(world, n):
+    assert world.observed["factory_calls"] == n, world.observed["factory_calls"]

@@ -120,7 +120,27 @@ def _build_alpha_beta(world):
 
 @given("the router is built with Alpha then Beta")
 def _given_built_alpha_beta(world):
-    _build_alpha_beta(world)
+    if "alpha_calls" in world.observed:
+        Alpha = world.classes["Alpha"]
+        Beta = world.classes["Beta"]
+        observed = world.observed
+
+        def alpha_factory():
+            observed["alpha_calls"] += 1
+            return Alpha()
+
+        def beta_factory():
+            observed["beta_calls"] += 1
+            return Beta()
+
+        world.router = (
+            Router("dupes")
+            .with_handler(Alpha, alpha_factory)
+            .with_handler(Beta, beta_factory)
+            .build()
+        )
+    else:
+        _build_alpha_beta(world)
 
 
 # --- Scenario 1: both called, merged order ---
@@ -458,3 +478,49 @@ def _then_log_a(world, n):
 @then(parsers.parse("ProjB's log has {n:d} entry"))
 def _then_log_b(world, n):
     assert len(world.observed["log_b"]) == n
+
+
+# --- Factory-invocation scenario (@C-0087) ---
+
+
+@dataclass
+class _OrderState:
+    created: bool = False
+
+
+@given(
+    'two command handlers Alpha and Beta for domain "order" both handling CreateOrder'
+)
+def _given_alpha_beta_both_handle_create_order(world):
+    OrderState = _OrderState
+
+    @command_handler(domain="order", state=OrderState)
+    class Alpha:
+        @handles(CreateOrder)
+        def handle(self, _cmd, _state, _seq):
+            return None
+
+    @command_handler(domain="order", state=OrderState)
+    class Beta:
+        @handles(CreateOrder)
+        def handle(self, _cmd, _state, _seq):
+            return None
+
+    world.classes["Alpha"] = Alpha
+    world.classes["Beta"] = Beta
+
+
+@given("each factory counts invocations")
+def _given_factories_count(world):
+    world.observed["alpha_calls"] = 0
+    world.observed["beta_calls"] = 0
+
+
+@then(parsers.parse("Alpha's factory was invoked exactly {n:d} time"))
+def _then_alpha_calls(world, n):
+    assert world.observed["alpha_calls"] == n, world.observed["alpha_calls"]
+
+
+@then(parsers.parse("Beta's factory was invoked exactly {n:d} time"))
+def _then_beta_calls(world, n):
+    assert world.observed["beta_calls"] == n, world.observed["beta_calls"]

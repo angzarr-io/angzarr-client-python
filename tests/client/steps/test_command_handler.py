@@ -37,6 +37,7 @@ def _given_handler_class(world):
 
 
 @given("the handler applies OrderCreated by setting state.created = true")
+@given("Order applies OrderCreated by setting state.created = true")
 def _given_applier(world):
     cls = world.classes["Order"]
 
@@ -95,6 +96,11 @@ def _given_prior_created(world):
     world.prior_events = event_book(
         [OrderCreated(order_id="o-1", customer_id="c-x")], domain="order"
     )
+
+
+@given("no prior events in the incoming ContextualCommand")
+def _given_no_prior(world):
+    world.prior_events = event_book([], domain="order")
 
 
 @when("a command is dispatched against the aggregate")

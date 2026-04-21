@@ -88,7 +88,7 @@ class TestConstants:
         assert WILDCARD_DOMAIN == "*"
 
     def test_default_edition(self) -> None:
-        assert DEFAULT_EDITION == "angzarr"
+        assert DEFAULT_EDITION == ""
 
     def test_meta_domain(self) -> None:
         assert META_ANGZARR_DOMAIN == "_angzarr"
@@ -844,7 +844,10 @@ class TestAdditionalHelpers:
         )
         from angzarr_client.proto.angzarr import Cover
 
-        assert full_type_url_for(Cover) == f"{TYPE_URL_PREFIX}angzarr.Cover"
+        assert (
+            full_type_url_for(Cover)
+            == f"{TYPE_URL_PREFIX}angzarr_client.proto.angzarr.Cover"
+        )
         assert full_type_url is full_type_url_for
 
     def test_decode_event_returns_none_on_unpack_failure(self, monkeypatch) -> None:

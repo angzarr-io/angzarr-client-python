@@ -9,7 +9,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.router import Router, command_handler, handles, saga
 from angzarr_client.router.builder import BuildError
-from angzarr_client.router.runtime import CommandHandlerRouter
+from angzarr_client.router.runtime import CommandHandlerRouter, SagaRouter
 from tests.fixtures import CreateOrder
 
 scenarios("builder.feature")
@@ -154,6 +154,12 @@ def _then_build_error(world, needle):
 def _then_command_handler_router(world):
     assert world.dispatch_exc is None, world.dispatch_exc
     assert isinstance(world.response, CommandHandlerRouter)
+
+
+@then("the result is a SagaRouter")
+def _then_saga_router(world):
+    assert world.dispatch_exc is None, world.dispatch_exc
+    assert isinstance(world.response, SagaRouter)
 
 
 @then("the build succeeds")
