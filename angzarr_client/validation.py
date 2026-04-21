@@ -10,9 +10,13 @@ from .errors import CommandRejectedError
 
 
 def require_exists(field: str, error_msg: str) -> None:
-    """Require that a field is non-empty (entity exists)."""
+    """Require that a field is non-empty (entity exists).
+
+    Raises a NOT_FOUND rejection — not retryable, since refetching events
+    cannot change the outcome.
+    """
     if not field:
-        raise CommandRejectedError(error_msg)
+        raise CommandRejectedError.not_found(error_msg)
 
 
 def require_not_exists(field: str, error_msg: str) -> None:

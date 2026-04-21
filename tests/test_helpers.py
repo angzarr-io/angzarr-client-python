@@ -30,7 +30,6 @@ from angzarr_client.helpers import (
     divergence_for,
     domain,
     edition,
-    edition_opt,
     event_pages,
     # CommandResponse helpers
     events_from_response,
@@ -89,7 +88,7 @@ class TestConstants:
         assert WILDCARD_DOMAIN == "*"
 
     def test_default_edition(self) -> None:
-        assert DEFAULT_EDITION == "angzarr"
+        assert DEFAULT_EDITION == ""
 
     def test_meta_domain(self) -> None:
         assert META_ANGZARR_DOMAIN == "_angzarr"
@@ -245,31 +244,16 @@ class TestEdition:
         cover.edition.name = "v2"
         assert edition(cover) == "v2"
 
-    def test_returns_default_when_not_set(self) -> None:
-        """Returns DEFAULT_EDITION when not set."""
+    def test_returns_none_when_not_set(self) -> None:
+        """Returns None when not set."""
         cover = Cover(domain="test")
-        assert edition(cover) == DEFAULT_EDITION
+        assert edition(cover) is None
 
-    def test_returns_default_for_empty_name(self) -> None:
-        """Returns DEFAULT_EDITION for empty name."""
+    def test_returns_none_for_empty_name(self) -> None:
+        """Returns None for empty name."""
         cover = Cover(domain="test")
         cover.edition.name = ""
-        assert edition(cover) == DEFAULT_EDITION
-
-
-class TestEditionOpt:
-    """Tests for edition_opt function."""
-
-    def test_returns_edition_name(self) -> None:
-        """Returns edition name when set."""
-        cover = Cover(domain="test")
-        cover.edition.name = "speculative"
-        assert edition_opt(cover) == "speculative"
-
-    def test_returns_none_when_not_set(self) -> None:
-        """Returns None when edition not set."""
-        cover = Cover(domain="test")
-        assert edition_opt(cover) is None
+        assert edition(cover) is None
 
 
 class TestRoutingKey:
@@ -290,14 +274,14 @@ class TestCacheKey:
         cover = Cover(domain="orders")
         cover.root.CopyFrom(uuid_to_proto(test_uuid))
         result = cache_key(cover)
-        # Default edition is "angzarr"
-        assert result == f"angzarr:orders:{test_uuid.bytes.hex()}"
+        # No edition set → empty prefix
+        assert result == f":orders:{test_uuid.bytes.hex()}"
 
     def test_returns_domain_with_empty_root(self) -> None:
         """Cache key with no root has empty suffix."""
         cover = Cover(domain="orders")
-        # Default edition is "angzarr"
-        assert cache_key(cover) == "angzarr:orders:"
+        # No edition set → empty prefix
+        assert cache_key(cover) == ":orders:"
 
 
 class TestUuidConversion:
@@ -525,13 +509,13 @@ class TestTypeUrlHelpers:
         result = type_url("com.example", "MyMessage")
         assert result == "type.googleapis.com/com.example.MyMessage"
 
-    def test_type_name_from_url_with_dot(self) -> None:
-        """type_name_from_url extracts name after last dot."""
+    def test_type_name_from_url_fully_qualified(self) -> None:
+        """type_name_from_url extracts fully qualified name after last slash."""
         result = type_name_from_url("type.googleapis.com/com.example.MyMessage")
-        assert result == "MyMessage"
+        assert result == "com.example.MyMessage"
 
     def test_type_name_from_url_with_slash(self) -> None:
-        """type_name_from_url extracts name after slash if no dot."""
+        """type_name_from_url extracts name after last slash."""
         result = type_name_from_url("prefix/MyMessage")
         assert result == "MyMessage"
 
@@ -624,7 +608,7 @@ class TestDecodeEvent:
         page.event.Pack(cover)
 
         # Use full type name for exact matching
-        result = decode_event(page, "angzarr.Cover", Cover)
+        result = decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover)
         assert result is not None
         assert result.domain == "test"
         assert result.correlation_id == "abc"
@@ -706,3 +690,176 @@ class TestConstructionHelpers:
         ts = parse_timestamp("2024-01-15T10:30:00Z")
         tq = temporal_by_time(ts)
         assert tq.as_of_time.seconds == ts.seconds
+
+
+class TestAdditionalHelpers:
+    """Targeted tests to fill remaining coverage gaps."""
+
+    def test_bytes_to_uuid_text_16_bytes(self) -> None:
+        from uuid import UUID as PyUUID
+
+        from angzarr_client.helpers import bytes_to_uuid_text
+
+        u = PyUUID("12345678-1234-5678-1234-567812345678")
+        assert bytes_to_uuid_text(u.bytes) == str(u)
+
+    def test_bytes_to_uuid_text_non_16_bytes(self) -> None:
+        from angzarr_client.helpers import bytes_to_uuid_text
+
+        assert bytes_to_uuid_text(b"\x01\x02") == "0102"
+
+    def test_proto_uuid_to_text_none(self) -> None:
+        from angzarr_client.helpers import proto_uuid_to_text
+
+        assert proto_uuid_to_text(None) == ""
+
+    def test_proto_uuid_to_text_value(self) -> None:
+        from uuid import UUID as PyUUID
+
+        from angzarr_client.helpers import proto_uuid_to_text, uuid_to_proto
+
+        u = PyUUID("12345678-1234-5678-1234-567812345678")
+        assert proto_uuid_to_text(uuid_to_proto(u)) == str(u)
+
+    def test_proto_uuid_to_hex_none(self) -> None:
+        from angzarr_client.helpers import proto_uuid_to_hex
+
+        assert proto_uuid_to_hex(None) == ""
+
+    def test_proto_uuid_to_hex_value(self) -> None:
+        from uuid import UUID as PyUUID
+
+        from angzarr_client.helpers import proto_uuid_to_hex, uuid_to_proto
+
+        u = PyUUID("12345678-1234-5678-1234-567812345678")
+        assert proto_uuid_to_hex(uuid_to_proto(u)) == u.bytes.hex()
+
+    def test_root_id_text_with_root(self) -> None:
+        from uuid import UUID as PyUUID
+
+        from angzarr_client.helpers import root_id_text, uuid_to_proto
+        from angzarr_client.proto.angzarr import Cover
+
+        u = PyUUID("12345678-1234-5678-1234-567812345678")
+        c = Cover()
+        c.root.CopyFrom(uuid_to_proto(u))
+        assert root_id_text(c) == str(u)
+
+    def test_root_id_text_empty_without_root(self) -> None:
+        from angzarr_client.helpers import root_id_text
+        from angzarr_client.proto.angzarr import Cover
+
+        assert root_id_text(Cover()) == ""
+
+    def test_edition_is_empty(self) -> None:
+        from angzarr_client.helpers import edition_is_empty
+        from angzarr_client.proto.angzarr import Edition
+
+        assert edition_is_empty(None) is True
+        assert edition_is_empty(Edition()) is True
+        assert edition_is_empty(Edition(name="v1")) is False
+
+    def test_edition_name_or_default(self) -> None:
+        from angzarr_client.helpers import (
+            DEFAULT_EDITION,
+            edition_name_or_default,
+        )
+        from angzarr_client.proto.angzarr import Edition
+
+        assert edition_name_or_default(None) == DEFAULT_EDITION
+        assert edition_name_or_default(Edition()) == DEFAULT_EDITION
+        assert edition_name_or_default(Edition(name="speculative")) == "speculative"
+
+    def test_type_matches_none_returns_false(self) -> None:
+        from angzarr_client.helpers import type_matches
+        from angzarr_client.proto.angzarr import Cover
+
+        assert type_matches(None, Cover) is False
+
+    def test_type_matches_true(self) -> None:
+        from google.protobuf.any_pb2 import Any
+
+        from angzarr_client.helpers import type_matches
+        from angzarr_client.proto.angzarr import Cover
+
+        any_proto = Any()
+        any_proto.Pack(Cover(domain="x"))
+        assert type_matches(any_proto, Cover) is True
+
+    def test_try_unpack_returns_message(self) -> None:
+        from google.protobuf.any_pb2 import Any
+
+        from angzarr_client.helpers import try_unpack
+        from angzarr_client.proto.angzarr import Cover
+
+        any_proto = Any()
+        any_proto.Pack(Cover(domain="x"))
+        msg = try_unpack(any_proto, Cover)
+        assert msg is not None and msg.domain == "x"
+
+    def test_try_unpack_returns_none_for_mismatch(self) -> None:
+        from google.protobuf.any_pb2 import Any
+
+        from angzarr_client.helpers import try_unpack
+        from angzarr_client.proto.angzarr import Cover, EventBook
+
+        any_proto = Any()
+        any_proto.Pack(EventBook())
+        assert try_unpack(any_proto, Cover) is None
+
+    def test_unpack_raises_on_mismatch(self) -> None:
+        import pytest
+        from google.protobuf.any_pb2 import Any
+
+        from angzarr_client.helpers import unpack
+        from angzarr_client.proto.angzarr import Cover, EventBook
+
+        any_proto = Any()
+        any_proto.Pack(EventBook())
+        with pytest.raises(ValueError, match="type mismatch"):
+            unpack(any_proto, Cover)
+
+    def test_unpack_returns_message(self) -> None:
+        from google.protobuf.any_pb2 import Any
+
+        from angzarr_client.helpers import unpack
+        from angzarr_client.proto.angzarr import Cover
+
+        any_proto = Any()
+        any_proto.Pack(Cover(domain="xyz"))
+        msg = unpack(any_proto, Cover)
+        assert msg.domain == "xyz"
+
+    def test_full_type_name(self) -> None:
+        from angzarr_client.helpers import full_type_name
+        from angzarr_client.proto.angzarr import Cover
+
+        assert full_type_name(Cover) == "angzarr_client.proto.angzarr.Cover"
+
+    def test_full_type_url_for_and_alias(self) -> None:
+        from angzarr_client.helpers import (
+            TYPE_URL_PREFIX,
+            full_type_url,
+            full_type_url_for,
+        )
+        from angzarr_client.proto.angzarr import Cover
+
+        assert (
+            full_type_url_for(Cover)
+            == f"{TYPE_URL_PREFIX}angzarr_client.proto.angzarr.Cover"
+        )
+        assert full_type_url is full_type_url_for
+
+    def test_decode_event_returns_none_on_unpack_failure(self, monkeypatch) -> None:
+        from angzarr_client.helpers import decode_event
+        from angzarr_client.proto.angzarr import Cover, EventPage, PageHeader
+
+        page = EventPage(header=PageHeader(sequence=1))
+        page.event.Pack(Cover(domain="x"))
+
+        def boom(self, _msg):
+            raise RuntimeError("decoding failed")
+
+        # Patch Unpack on the Any to force the except branch
+        monkeypatch.setattr(type(page.event), "Unpack", boom)
+        assert decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover) is None

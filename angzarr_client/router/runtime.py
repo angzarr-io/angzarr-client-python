@@ -1,0 +1,84 @@
+"""Typed runtime routers produced by ``Router.build()``.
+
+Five kind-specific runtime routers: command handler, saga, process manager,
+projector, and upcaster. Each carries a ``name`` and a list of
+``(cls, factory)`` pairs; ``dispatch`` delegates to the matching function
+in ``dispatch.py``, which calls ``factory()`` per request to obtain a
+fresh handler instance.
+
+No public constructors: users reach these types only through
+``Router(...).build()``. Constructors are conventionally private (leading
+underscore on internal factories). Tests construct through the builder.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Generic, TypeVar
+
+S = TypeVar("S")
+
+Factory = tuple[type, Callable[[], Any]]
+
+
+class _BuiltRouterBase:
+    """Shared base for the five kind-specific runtime routers.
+
+    Holds ``(cls, factory)`` pairs rather than handler instances so each
+    dispatch call can obtain a fresh (or pooled) handler. This gives the
+    router safe reuse across threads — shared mutable state on a handler
+    instance would otherwise race between concurrent dispatch calls.
+    """
+
+    def __init__(self, name: str, factories: list[Factory]) -> None:
+        self.name = name
+        self._factories: list[Factory] = list(factories)
+
+
+class CommandHandlerRouter(_BuiltRouterBase, Generic[S]):
+    """Runtime router dispatching commands to registered @command_handler instances."""
+
+    def dispatch(self, request):
+        """Route a ContextualCommand to the matching @handles method."""
+        from .dispatch import dispatch_command
+
+        return dispatch_command(self._factories, request)
+
+
+class SagaRouter(_BuiltRouterBase):
+    """Runtime router dispatching events to registered @saga instances."""
+
+    def dispatch(self, request):
+        """Route a SagaHandleRequest to all matching @handles methods."""
+        from .dispatch import dispatch_saga
+
+        return dispatch_saga(self._factories, request)
+
+
+class ProcessManagerRouter(_BuiltRouterBase, Generic[S]):
+    """Runtime router dispatching events to registered @process_manager instances."""
+
+    def dispatch(self, request):
+        """Route a ProcessManagerHandleRequest to matching handlers."""
+        from .dispatch import dispatch_process_manager
+
+        return dispatch_process_manager(self._factories, request)
+
+
+class ProjectorRouter(_BuiltRouterBase):
+    """Runtime router fanning events out to registered @projector instances."""
+
+    def dispatch(self, events):
+        """Fan out each event in the book to matching @handles methods."""
+        from .dispatch import dispatch_projector
+
+        return dispatch_projector(self._factories, events)
+
+
+class UpcasterRouter(_BuiltRouterBase):
+    """Runtime router transforming events through registered @upcaster instances."""
+
+    def dispatch(self, request):
+        """Transform each event in ``request.events`` via matching @upcasts methods."""
+        from .dispatch import dispatch_upcaster
+
+        return dispatch_upcaster(self._factories, request)

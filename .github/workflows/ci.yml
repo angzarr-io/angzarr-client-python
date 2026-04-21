@@ -22,6 +22,8 @@ jobs:
       options: --user root
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install dependencies
         run: uv sync --extra dev
@@ -45,6 +47,8 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -53,16 +57,40 @@ jobs:
         uses: extractions/setup-just@v2
 
       - name: Generate protos
-        run: just gen
-
-      - name: Sync feature files
-        run: bash scripts/sync-features.sh
+        run: just proto
 
       - name: Install dependencies
         run: uv sync --extra dev
 
       - name: Run tests
         run: uv run pytest tests/ -v
+
+  mutation-test:
+    name: Mutation Test
+    needs: test
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Generate protos
+        run: just proto
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Mutation test
+        run: just mutation-test
 
   build:
     runs-on: ubuntu-latest
@@ -75,12 +103,14 @@ jobs:
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install just
         uses: extractions/setup-just@v2
 
       - name: Generate protos
-        run: just gen
+        run: just proto
 
       - name: Build package
         run: uv build

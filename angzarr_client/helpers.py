@@ -28,10 +28,10 @@ T = TypeVar("T", bound=Message)
 # Constants matching Rust proto_ext::constants
 UNKNOWN_DOMAIN = "unknown"
 WILDCARD_DOMAIN = "*"
-DEFAULT_EDITION = "angzarr"
+DEFAULT_EDITION = ""
 META_ANGZARR_DOMAIN = "_angzarr"
 PROJECTION_DOMAIN_PREFIX = "_projection"
-PROJECTION_TYPE_URL = "angzarr.Projection"
+PROJECTION_TYPE_URL = "angzarr_client.proto.angzarr.Projection"
 CORRELATION_ID_HEADER = "x-correlation-id"
 TYPE_URL_PREFIX = "type.googleapis.com/"
 
@@ -89,16 +89,8 @@ def root_id_hex(obj: CoverBearer) -> str:
     return c.root.value.hex()
 
 
-def edition(obj: CoverBearer) -> str:
-    """Return the edition name from a Cover-bearing type, defaulting to DEFAULT_EDITION."""
-    c = cover_of(obj)
-    if c is None or not c.HasField("edition") or not c.edition.name:
-        return DEFAULT_EDITION
-    return c.edition.name
-
-
-def edition_opt(obj: CoverBearer) -> str | None:
-    """Return the edition name as Optional, None if not set."""
+def edition(obj: CoverBearer) -> str | None:
+    """Return the edition name from a Cover-bearing type, or None if not set."""
     c = cover_of(obj)
     if c is None or not c.HasField("edition") or not c.edition.name:
         return None
@@ -112,7 +104,7 @@ def routing_key(obj: CoverBearer) -> str:
 
 def cache_key(obj: CoverBearer) -> str:
     """Generate a cache key based on edition + domain + root."""
-    return f"{edition(obj)}:{domain(obj)}:{root_id_hex(obj)}"
+    return f"{edition(obj) or ''}:{domain(obj)}:{root_id_hex(obj)}"
 
 
 # UUID conversion
@@ -291,9 +283,10 @@ def type_url(package_name: str, type_name: str) -> str:
 
 
 def type_name_from_url(type_url_str: str) -> str:
-    """Extract the type name from a type URL."""
-    if "." in type_url_str:
-        return type_url_str.rsplit(".", 1)[1]
+    """Extract the fully qualified type name from a type URL.
+
+    For "type.googleapis.com/examples.CardsDealt", returns "angzarr_client.proto.examples.CardsDealt".
+    """
     if "/" in type_url_str:
         return type_url_str.rsplit("/", 1)[1]
     return type_url_str
@@ -304,7 +297,7 @@ def type_url_matches(type_url_str: str, type_name: str) -> bool:
 
     Args:
         type_url_str: Full type URL (e.g., "type.googleapis.com/examples.CardsDealt")
-        type_name: Fully qualified type name (e.g., "examples.CardsDealt")
+        type_name: Fully qualified type name (e.g., "angzarr_client.proto.examples.CardsDealt")
 
     Returns:
         True if type_url equals TYPE_URL_PREFIX + type_name
@@ -396,10 +389,10 @@ def full_type_name(msg_class: type[Message]) -> str:
         msg_class: The protobuf message class
 
     Returns:
-        The fully-qualified type name (e.g., "examples.PlayerRegistered")
+        The fully-qualified type name (e.g., "angzarr_client.proto.examples.PlayerRegistered")
 
     Example:
-        name = full_type_name(PlayerRegistered)  # "examples.PlayerRegistered"
+        name = full_type_name(PlayerRegistered)  # "angzarr_client.proto.examples.PlayerRegistered"
     """
     return msg_class.DESCRIPTOR.full_name
 

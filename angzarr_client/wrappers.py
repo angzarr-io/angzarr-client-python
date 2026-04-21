@@ -8,7 +8,6 @@ from typing import Optional, TypeVar
 from uuid import UUID as PyUUID
 
 from .helpers import (
-    DEFAULT_EDITION,
     UNKNOWN_DOMAIN,
     type_url_matches,
 )
@@ -62,14 +61,8 @@ class CoverW:
             return ""
         return self.proto.root.value.hex()
 
-    def edition(self) -> str:
-        """Return the edition name, defaulting to DEFAULT_EDITION."""
-        if not self.proto.HasField("edition") or not self.proto.edition.name:
-            return DEFAULT_EDITION
-        return self.proto.edition.name
-
-    def edition_opt(self) -> str | None:
-        """Return the edition name as Optional, None if not set."""
+    def edition(self) -> str | None:
+        """Return the edition name, or None if not set."""
         if not self.proto.HasField("edition") or not self.proto.edition.name:
             return None
         return self.proto.edition.name
@@ -80,7 +73,7 @@ class CoverW:
 
     def cache_key(self) -> str:
         """Generate a cache key based on edition + domain + root."""
-        return f"{self.edition()}:{self.domain()}:{self.root_id_hex()}"
+        return f"{self.edition() or ''}:{self.domain()}:{self.root_id_hex()}"
 
 
 class EventBookW:
@@ -154,11 +147,11 @@ class EventBookW:
             return ""
         return cover.root.value.hex()
 
-    def edition(self) -> str:
-        """Return the edition name, defaulting to DEFAULT_EDITION."""
+    def edition(self) -> str | None:
+        """Return the edition name, or None if not set."""
         cover = self._cover()
         if cover is None or not cover.HasField("edition") or not cover.edition.name:
-            return DEFAULT_EDITION
+            return None
         return cover.edition.name
 
     def routing_key(self) -> str:
@@ -167,7 +160,7 @@ class EventBookW:
 
     def cache_key(self) -> str:
         """Generate a cache key based on edition + domain + root."""
-        return f"{self.edition()}:{self.domain()}:{self.root_id_hex()}"
+        return f"{self.edition() or ''}:{self.domain()}:{self.root_id_hex()}"
 
     def cover_wrapper(self) -> "CoverW":
         """Return a CoverW wrapping the cover."""
@@ -206,7 +199,7 @@ class CommandBookW:
         """Get the merge strategy of the first command page."""
         if not self.proto.pages:
             return MergeStrategy.MERGE_COMMUTATIVE
-        return MergeStrategy(self.proto.pages[0].merge_strategy)
+        return self.proto.pages[0].merge_strategy
 
     def _cover(self) -> Cover | None:
         """Get the cover, or None if not set."""
@@ -242,11 +235,11 @@ class CommandBookW:
         except ValueError:
             return None
 
-    def edition(self) -> str:
-        """Return the edition name, defaulting to DEFAULT_EDITION."""
+    def edition(self) -> str | None:
+        """Return the edition name, or None if not set."""
         cover = self._cover()
         if cover is None or not cover.HasField("edition") or not cover.edition.name:
-            return DEFAULT_EDITION
+            return None
         return cover.edition.name
 
     def routing_key(self) -> str:
@@ -443,7 +436,7 @@ class CommandPageW:
 
     def merge_strategy(self) -> MergeStrategy:
         """Return the merge strategy for this command."""
-        return MergeStrategy(self.proto.merge_strategy)
+        return self.proto.merge_strategy
 
 
 class CommandResponseW:

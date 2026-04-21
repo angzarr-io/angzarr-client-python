@@ -93,12 +93,14 @@ class Destinations:
             The same CommandBook (for chaining).
 
         Raises:
-            ValueError: If domain is not in destination_sequences.
+            InvalidArgumentError: If domain is not in destination_sequences.
                         Check your output_domains config if you get this error.
         """
+        from .errors import InvalidArgumentError
+
         seq = self._sequences.get(domain)
         if seq is None:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"No sequence for domain '{domain}' - check output_domains config"
             )
         for page in cmd.pages:
@@ -106,6 +108,27 @@ class Destinations:
                 page.header.SetInParent()
             page.header.sequence = seq
         return cmd
+
+    @staticmethod
+    def deferred_header(
+        source_cover: types.Cover,
+        source_seq: int,
+    ) -> types.PageHeader:
+        """Build a PageHeader carrying an ``AngzarrDeferredSequence``.
+
+        Use this on saga-produced commands so the framework can dedupe
+        on ``(source.root, source_seq, target.root)``. AMQP at-least-once
+        redelivery of the trigger event then becomes a no-op at the
+        destination aggregate's pipeline (cached events returned without
+        re-invoking business logic), instead of relying on a business
+        guard that surfaces as an idempotent-failure-shaped retry storm.
+        """
+        return types.PageHeader(
+            angzarr_deferred=types.AngzarrDeferredSequence(
+                source=source_cover,
+                source_seq=source_seq,
+            ),
+        )
 
     def has_domain(self, domain: str) -> bool:
         """Check if a destination domain is available.

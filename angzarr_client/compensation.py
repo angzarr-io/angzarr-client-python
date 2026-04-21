@@ -149,6 +149,23 @@ class CompensationContext:
             return self.source_aggregate.root.value
         return None
 
+    @property
+    def dispatch_key(self) -> str:
+        """Build a dispatch key for routing rejection handlers.
+
+        Returns:
+            A key in format "domain/command" or empty string.
+        """
+        if not self.rejected_command or not self.rejected_command.HasField("cover"):
+            return ""
+        domain = self.rejected_command.cover.domain
+        cmd_type = self.rejected_command_type
+        if not domain or not cmd_type:
+            return ""
+        from .helpers import type_name_from_url
+
+        return f"{domain}/{type_name_from_url(cmd_type)}"
+
 
 # --- Aggregate helpers ---
 
@@ -220,10 +237,25 @@ class RejectionHandlerResponse:
     """Notification to forward upstream (rejection propagation)."""
 
 
+@dataclass
+class PMRevocationResponse:
+    """Result from PM compensation helpers.
+
+    Named type matching Go's PMRevocationResponse, replacing raw tuples
+    for better discoverability and documentation.
+    """
+
+    process_events: types.EventBook | None = None
+    """PM events to persist (may be None when delegating)."""
+
+    revocation: command_handler.RevocationResponse | None = None
+    """Framework action flags."""
+
+
 def pm_delegate_to_framework(
     reason: str,
     emit_system_event: bool = True,
-) -> tuple[None, command_handler.RevocationResponse]:
+) -> PMRevocationResponse:
     """Create a PM response that delegates compensation to the framework.
 
     Use when the PM doesn't have custom compensation logic.
@@ -233,11 +265,14 @@ def pm_delegate_to_framework(
         emit_system_event: Emit SagaCompensationFailed to fallback domain.
 
     Returns:
-        Tuple of (None, RevocationResponse) - no PM events, delegate to framework.
+        PMRevocationResponse with no process events, delegate to framework.
     """
-    return None, command_handler.RevocationResponse(
-        emit_system_revocation=emit_system_event,
-        reason=reason,
+    return PMRevocationResponse(
+        process_events=None,
+        revocation=command_handler.RevocationResponse(
+            emit_system_revocation=emit_system_event,
+            reason=reason,
+        ),
     )
 
 
@@ -245,7 +280,7 @@ def pm_emit_compensation_events(
     process_events: types.EventBook,
     also_emit_system_event: bool = False,
     reason: str = "",
-) -> tuple[types.EventBook, command_handler.RevocationResponse]:
+) -> PMRevocationResponse:
     """Create a PM response containing compensation events.
 
     Use when the PM emits events to record the compensation in its state.
@@ -256,9 +291,12 @@ def pm_emit_compensation_events(
         reason: Reason for system event (if emitting).
 
     Returns:
-        Tuple of (EventBook, RevocationResponse).
+        PMRevocationResponse with events and revocation flags.
     """
-    return process_events, command_handler.RevocationResponse(
-        emit_system_revocation=also_emit_system_event,
-        reason=reason,
+    return PMRevocationResponse(
+        process_events=process_events,
+        revocation=command_handler.RevocationResponse(
+            emit_system_revocation=also_emit_system_event,
+            reason=reason,
+        ),
     )

@@ -18,8 +18,11 @@ from .saga_pb2 import (
     SpeculateSagaRequest,
 )
 from .saga_pb2_grpc import SagaCoordinatorServiceStub
+from .upcaster_pb2 import UpcastRequest, UpcastResponse
+from .upcaster_pb2_grpc import UpcasterServiceStub
 from .types_pb2 import (
     UUID,
+    CascadeErrorMode,
     CommandBook,
     CommandPage,
     CommandRequest,
@@ -80,9 +83,13 @@ __all__ = [
     "ProjectorCoordinatorServiceStub",
     "ProcessManagerCoordinatorServiceStub",
     "EventQueryServiceStub",
+    "UpcasterServiceStub",
     # Responses
     "BusinessResponse",
     "RevocationResponse",
     "SagaResponse",
     "ProcessManagerHandleResponse",
+    # Upcaster
+    "UpcastRequest",
+    "UpcastResponse",
 ]

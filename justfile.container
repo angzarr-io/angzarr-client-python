@@ -18,9 +18,16 @@ proto:
 build: proto
     uv build
 
-# Run tests
-test:
-    uv run --extra dev pytest tests/ -v
+# Framework-harness cucumber (pytest-bdd; feature files from angzarr-project/features/client/)
+test-client-unit:
+    uv run --extra dev pytest tests/client/ -v
+
+# Plain pytest, excluding the BDD subset
+test-pytest:
+    uv run --extra dev pytest tests/ -v --ignore=tests/client
+
+# Full suite
+test: test-pytest test-client-unit
 
 # Run tests with coverage
 coverage:
@@ -28,12 +35,12 @@ coverage:
 
 # Format check (ruff + black)
 fmt:
-    uv run ruff check . --exclude angzarr-core
+    uv run ruff check . --exclude angzarr-project
     uv run black --check .
 
 # Auto-format code
 fmt-fix:
-    uv run ruff check --fix . --exclude angzarr-core
+    uv run ruff check --fix . --exclude angzarr-project
     uv run black .
 
 # Run mutation testing
@@ -43,6 +50,31 @@ mutate:
 # Dry-run mutation testing
 mutate-dry:
     uv run --extra dev mutmut results
+
+# Run mutation testing with 80% kill-rate threshold (CI gate)
+mutation-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf mutants
+    uv run --extra dev mutmut run
+    uv run --extra dev mutmut results
+    uv run --extra dev mutmut export-cicd-stats
+    # Kill rate = killed / (total - no_tests). Threshold: >= 80%.
+    TOTAL=$(python -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['total'])")
+    KILLED=$(python -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['killed'])")
+    NO_TESTS=$(python -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['no_tests'])")
+    EVALUATED=$((TOTAL - NO_TESTS))
+    if [ "$EVALUATED" -eq 0 ]; then
+        echo "ERROR: No evaluable mutants"
+        exit 1
+    fi
+    KILL_RATE=$((KILLED * 100 / EVALUATED))
+    echo "Kill rate: ${KILL_RATE}% (${KILLED}/${EVALUATED} evaluable; ${NO_TESTS} untested)"
+    if [ "$KILL_RATE" -lt 80 ]; then
+        echo "FAIL: Kill rate ${KILL_RATE}% is below 80% threshold"
+        exit 1
+    fi
+    echo "PASS: Mutation testing threshold met"
 
 # Publish to PyPI
 publish:

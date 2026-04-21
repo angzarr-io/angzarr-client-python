@@ -60,13 +60,43 @@ artifacts = ["angzarr_client/proto/**/*.py"]
 packages = ["angzarr_client"]
 
 [tool.pytest.ini_options]
-bdd_features_base_dir = "features"
+bdd_features_base_dir = "angzarr-project/features/client"
 testpaths = ["tests"]
+norecursedirs = ["mutants"]
+filterwarnings = [
+    # pytest-bdd converts each Gherkin tag into a pytest mark. Scenario IDs
+    # (@C-NNNN, @EU-NNNN, @EA-NNNN) collide with PytestUnknownMarkWarning.
+    "ignore:Unknown pytest.mark.C-:pytest.PytestUnknownMarkWarning",
+    "ignore:Unknown pytest.mark.EU-:pytest.PytestUnknownMarkWarning",
+    "ignore:Unknown pytest.mark.EA-:pytest.PytestUnknownMarkWarning",
+]
 
 [tool.mutmut]
-paths_to_mutate = ["angzarr_client/builder.py", "angzarr_client/client.py", "angzarr_client/errors.py", "angzarr_client/helpers.py", "angzarr_client/wrappers.py"]
-pytest_add_cli_args_test_selection = ["tests/"]
-also_copy = ["angzarr_client/proto", "angzarr_client/__init__.py"]
+paths_to_mutate = [
+    "angzarr_client/builder.py",
+    "angzarr_client/client.py",
+    "angzarr_client/compensation.py",
+    "angzarr_client/destinations.py",
+    "angzarr_client/errors.py",
+    "angzarr_client/event_packing.py",
+    "angzarr_client/helpers.py",
+    "angzarr_client/identity.py",
+    "angzarr_client/protoname.py",
+    "angzarr_client/retry.py",
+    "angzarr_client/saga_context.py",
+    "angzarr_client/server.py",
+    "angzarr_client/validation.py",
+    "angzarr_client/wrappers.py",
+    "angzarr_client/router/builder.py",
+    "angzarr_client/router/decorators.py",
+    "angzarr_client/router/dispatch.py",
+    "angzarr_client/router/responses.py",
+    "angzarr_client/router/runtime.py",
+    "angzarr_client/router/server.py",
+    "angzarr_client/router/validation.py",
+]
+pytest_add_cli_args_test_selection = ["tests/", "--ignore=tests/client"]
+also_copy = ["angzarr_client/"]
 
 [tool.ruff]
 exclude = [
@@ -75,6 +105,7 @@ exclude = [
 ]
 
 [tool.black]
+target-version = ["py310", "py311", "py312"]
 extend-exclude = '''
 (
     angzarr_client/proto

@@ -43,6 +43,7 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = CommandBuilder(client, "orders", root)
+        builder.with_sequence(0)
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
         book = builder.build()
 
@@ -53,17 +54,43 @@ class TestCommandBuilder:
         # Auto-generated correlation ID
         assert book.cover.correlation_id != ""
 
-    def test_build_without_root(self) -> None:
-        """Build command for new aggregate (no root)."""
+    def test_build_generates_root_when_none_provided(self) -> None:
+        """Build command for new aggregate auto-generates a client-side root UUID."""
+        client = self._mock_aggregate_client()
+        msg = StringValue(value="test")
+
+        builder = CommandBuilder(client, "orders")
+        builder.with_sequence(0)
+        builder.with_command("type.googleapis.com/test.CreateOrder", msg)
+        book = builder.build()
+
+        assert book.cover.domain == "orders"
+        # Tier 2: client-side UUIDs for new aggregates; cover.root is always populated.
+        assert book.cover.HasField("root")
+        assert len(book.cover.root.value) == 16
+
+    def test_build_missing_sequence_raises(self) -> None:
+        """Build without with_sequence() should raise."""
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
         builder = CommandBuilder(client, "orders")
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
+
+        with pytest.raises(InvalidArgumentError):
+            builder.build()
+
+    def test_build_sequence_zero_valid(self) -> None:
+        """with_sequence(0) is valid for new aggregates."""
+        client = self._mock_aggregate_client()
+        msg = StringValue(value="test")
+
+        builder = CommandBuilder(client, "orders")
+        builder.with_sequence(0)
+        builder.with_command("type.googleapis.com/test.CreateOrder", msg)
         book = builder.build()
 
-        assert book.cover.domain == "orders"
-        assert not book.cover.HasField("root")
+        assert book.pages[0].header.sequence == 0
 
     def test_with_correlation_id(self) -> None:
         """Build with explicit correlation ID."""
@@ -73,6 +100,7 @@ class TestCommandBuilder:
         builder = (
             CommandBuilder(client, "orders")
             .with_correlation_id("my-corr-123")
+            .with_sequence(0)
             .with_command("type/Cmd", msg)
         )
         book = builder.build()
@@ -130,7 +158,11 @@ class TestCommandBuilder:
         client.handle_command.return_value = expected_response
 
         msg = StringValue(value="test")
-        builder = CommandBuilder(client, "orders").with_command("type/Cmd", msg)
+        builder = (
+            CommandBuilder(client, "orders")
+            .with_sequence(0)
+            .with_command("type/Cmd", msg)
+        )
         response = builder.execute()
 
         client.handle_command.assert_called_once()
@@ -340,15 +372,17 @@ class TestConvenienceFunctions:
         assert builder._domain == "orders"
         assert builder._root == root
 
-    def test_command_new_creates_builder_without_root(self) -> None:
-        """command_new creates builder for new aggregate."""
+    def test_command_new_creates_builder_with_generated_root(self) -> None:
+        """command_new generates a client-side root UUID for a new aggregate."""
         client = Mock()
 
         builder = command_new(client, "orders")
 
         assert isinstance(builder, CommandBuilder)
         assert builder._domain == "orders"
-        assert builder._root is None
+        # Tier 2: client-side UUID generation in command_new.
+        assert builder._root is not None
+        assert isinstance(builder._root, PyUUID)
 
     def test_query_creates_builder_with_root(self) -> None:
         """query creates builder for specific aggregate."""
