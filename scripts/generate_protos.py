@@ -10,6 +10,7 @@ Usage:
     uv run scripts/generate_protos.py
 """
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -34,8 +35,19 @@ def main() -> int:
 
     print(result.stdout)
 
-    # Fix imports for package structure
     proto_dir = repo_root / "angzarr_client" / "proto"
+
+    # Relocate top-level packages that buf emits at repo root (e.g. google/)
+    # into the angzarr_client/proto/ namespace so downstream imports work.
+    for pkg in ("google", "health"):
+        src = repo_root / pkg
+        if src.exists():
+            dst = proto_dir / pkg
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.move(str(src), str(dst))
+            print(f"Relocated {pkg}/ → angzarr_client/proto/{pkg}/")
+
     print(f"Fixing imports in {proto_dir}...")
 
     for py_file in proto_dir.rglob("*.py"):
