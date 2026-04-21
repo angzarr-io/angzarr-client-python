@@ -103,9 +103,7 @@ def _then_saga_ful(world, n):
 
 
 @given(
-    parsers.parse(
-        'a saga "OrderSplit" translating from "{source}" to "{a}" and "{b}"'
-    )
+    parsers.parse('a saga "OrderSplit" translating from "{source}" to "{a}" and "{b}"')
 )
 def _given_saga_multi_target(world, source, a, b):
     @saga(name="saga-order-split", source=source, target=a)
@@ -147,9 +145,7 @@ def _given_saga_multi_handler(world, inv, ful):
 
 @then(parsers.parse("the ReserveStock command carries destination sequence {n:d}"))
 def _then_reserve_stock_seq(world, n):
-    reserve = next(
-        c for c in world.response.commands if c.cover.domain == "inventory"
-    )
+    reserve = next(c for c in world.response.commands if c.cover.domain == "inventory")
     assert reserve.pages[0].header.sequence == n
 
 

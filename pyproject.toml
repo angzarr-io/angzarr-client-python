@@ -105,6 +105,7 @@ exclude = [
 ]
 
 [tool.black]
+target-version = ["py310", "py311", "py312"]
 extend-exclude = '''
 (
     angzarr_client/proto

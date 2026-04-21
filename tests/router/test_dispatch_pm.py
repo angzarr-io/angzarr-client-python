@@ -346,7 +346,9 @@ def test_multiple_pms_both_invoked_in_registration_order():
                 ]
             )
 
-    router = Router("pms").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
+    router = (
+        Router("pms").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
+    )
     response = router.dispatch(_pm_request([OrderCreated(order_id="o-1")]))
 
     assert call_order == ["A", "B"]

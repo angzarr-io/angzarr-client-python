@@ -516,7 +516,10 @@ class TestCommandBookWAdditional:
     def test_merge_strategy_default_when_no_pages(self) -> None:
         from angzarr_client.proto.angzarr import MergeStrategy
 
-        assert CommandBookW(CommandBook()).merge_strategy() == MergeStrategy.MERGE_COMMUTATIVE
+        assert (
+            CommandBookW(CommandBook()).merge_strategy()
+            == MergeStrategy.MERGE_COMMUTATIVE
+        )
 
     def test_merge_strategy_from_first_page(self) -> None:
         from angzarr_client.proto.angzarr import MergeStrategy
@@ -655,7 +658,9 @@ class TestEventPageWAdditional:
         assert EventPageW(EventPage()).is_deferred() is False
 
     def test_is_deferred_false_when_no_deferred_subfield(self) -> None:
-        assert EventPageW(EventPage(header=PageHeader(sequence=1))).is_deferred() is False
+        assert (
+            EventPageW(EventPage(header=PageHeader(sequence=1))).is_deferred() is False
+        )
 
     def test_is_deferred_true_for_external_deferred(self) -> None:
         proto = EventPage(header=PageHeader(sequence=1))
@@ -692,7 +697,10 @@ class TestEventPageWAdditional:
         assert result is not None and result.domain == "zzz"
 
     def test_decode_typed_none_when_no_event(self) -> None:
-        assert EventPageW(EventPage(header=PageHeader(sequence=1))).decode_typed(Cover) is None
+        assert (
+            EventPageW(EventPage(header=PageHeader(sequence=1))).decode_typed(Cover)
+            is None
+        )
 
 
 class TestCommandPageWAdditional:
@@ -751,7 +759,10 @@ class TestCommandPageWAdditional:
     def test_merge_strategy_default(self) -> None:
         from angzarr_client.proto.angzarr import MergeStrategy
 
-        assert CommandPageW(CommandPage()).merge_strategy() == MergeStrategy.MERGE_COMMUTATIVE
+        assert (
+            CommandPageW(CommandPage()).merge_strategy()
+            == MergeStrategy.MERGE_COMMUTATIVE
+        )
 
 
 class TestWrapperAttributeAccess:

@@ -38,9 +38,7 @@ class Router:
         self.name = name
         self._factories: list[tuple[type, Callable[[], Any]]] = []
 
-    def with_handler(
-        self, cls: type, factory: Callable[[], Any]
-    ) -> "Router":
+    def with_handler(self, cls: type, factory: Callable[[], Any]) -> "Router":
         """Register a handler class together with a zero-arg factory.
 
         ``cls`` must carry one of the five kind decorators

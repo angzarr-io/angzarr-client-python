@@ -231,7 +231,10 @@ def test_multiple_sagas_same_source_both_invoked_in_registration_order():
             )
 
     router = (
-        Router("sagas").with_handler(Fulfillment, lambda: Fulfillment()).with_handler(Shipping, lambda: Shipping()).build()
+        Router("sagas")
+        .with_handler(Fulfillment, lambda: Fulfillment())
+        .with_handler(Shipping, lambda: Shipping())
+        .build()
     )
     response = router.dispatch(_saga_request([OrderCreated(order_id="o-1")]))
 

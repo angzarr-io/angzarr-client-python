@@ -34,23 +34,17 @@ class PaymentBalance:
 # --------------------------------------------------------------------------
 
 
-@given(
-    'a command handler "Payment" for domain "payment" with stateful rejection'
-)
+@given('a command handler "Payment" for domain "payment" with stateful rejection')
 def _given_stateful(world):
     world.classes["__pending__"] = {"emit_count": 1, "emit_amount": None}
 
 
-@given(
-    'a command handler "Payment" for domain "payment" with two @rejected handlers'
-)
+@given('a command handler "Payment" for domain "payment" with two @rejected handlers')
 def _given_two_rejected(world):
     world.classes["__pending__"] = {}
 
 
-@given(
-    'a command handler "Payment" for domain "payment" with no rejection handlers'
-)
+@given('a command handler "Payment" for domain "payment" with no rejection handlers')
 def _given_no_rejected(world):
     @command_handler(domain="payment", state=PaymentBalance)
     class Payment:
@@ -71,6 +65,7 @@ def _build_payment_stateful_emit(world):
     @command_handler(domain="payment", state=PaymentBalance)
     class Payment:
         if world.classes.get("__applies__"):
+
             @applies(FundsDeposited)
             def apply(self, state, event):
                 state.bankroll = event.new_bankroll
@@ -117,6 +112,7 @@ def _add_workflow_failed_handler(world):
 def _maybe_build_two_handler_payment(world):
     pending = world.classes["__pending__"]
     if pending.get("funds_released") and pending.get("workflow_failed"):
+
         @command_handler(domain="payment", state=PaymentBalance)
         class Payment:
             @rejected("inventory", "ReserveStock")
@@ -145,9 +141,15 @@ def _given_router_built(world):
 # --------------------------------------------------------------------------
 
 
-@given(parsers.parse("a prior EventBook with a FundsDeposited event of bankroll {amount:d}"))
+@given(
+    parsers.parse(
+        "a prior EventBook with a FundsDeposited event of bankroll {amount:d}"
+    )
+)
 def _given_prior_deposited(world, amount):
-    world.prior_events = event_book([FundsDeposited(new_bankroll=amount)], domain="payment")
+    world.prior_events = event_book(
+        [FundsDeposited(new_bankroll=amount)], domain="payment"
+    )
 
 
 @given(parsers.parse("a prior EventBook whose next_sequence is {n:d}"))

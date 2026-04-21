@@ -154,7 +154,9 @@ def test_two_projectors_both_invoked_in_registration_order():
         def on(self, event):
             call_order.append(("B", event.order_id))
 
-    router = Router("prjs").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
+    router = (
+        Router("prjs").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
+    )
     router.dispatch(_event_book([OrderCreated(order_id="o-1")]))
 
     assert call_order == [("A", "o-1"), ("B", "o-1")]

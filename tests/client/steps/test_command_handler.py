@@ -7,7 +7,13 @@ from dataclasses import dataclass
 import grpc
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.router import Router, command_handler, applies, handles, state_factory
+from angzarr_client.router import (
+    Router,
+    command_handler,
+    applies,
+    handles,
+    state_factory,
+)
 from tests.client.steps._helpers import contextual_command, event_book
 from tests.fixtures import CompleteOrder, CreateOrder, OrderCompleted, OrderCreated
 
@@ -185,7 +191,9 @@ def _given_no_state_factory(world):
     world.classes["Order"] = Order
 
 
-@given("Order handles CreateOrder by emitting OrderCreated only when state.created is True")
+@given(
+    "Order handles CreateOrder by emitting OrderCreated only when state.created is True"
+)
 def _given_conditional_handler(world):
     cls = world.classes["Order"]
 

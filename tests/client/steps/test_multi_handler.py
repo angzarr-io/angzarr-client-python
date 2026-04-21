@@ -328,7 +328,9 @@ class _PMStateEmpty:
     pass
 
 
-@given('two process managers PMA and PMB both sourcing from "order" and handling OrderCreated')
+@given(
+    'two process managers PMA and PMB both sourcing from "order" and handling OrderCreated'
+)
 def _given_two_pms(world):
     call_log = world.call_log
 

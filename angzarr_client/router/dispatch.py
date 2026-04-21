@@ -338,9 +338,7 @@ def _build_fresh_state(instance: Any) -> Any:
     return state_type()
 
 
-def dispatch_saga(
-    factories: list[Factory], request: SagaHandleRequest
-) -> SagaResponse:
+def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaResponse:
     """Dispatch a source event through registered saga handlers.
 
     The trigger is the last event in ``request.source``; sagas whose
@@ -593,9 +591,7 @@ def dispatch_upcaster(
                 event_any.Unpack(old_evt)
                 new_evt = getattr(inst, method_name)(old_evt)
                 new_any = ProtoAny()
-                new_any.type_url = (
-                    TYPE_URL_PREFIX + new_evt.DESCRIPTOR.full_name
-                )
+                new_any.type_url = TYPE_URL_PREFIX + new_evt.DESCRIPTOR.full_name
                 new_any.value = new_evt.SerializeToString()
                 transformed = new_any
                 matched = True

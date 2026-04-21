@@ -30,9 +30,11 @@ class _S:
 @when(parsers.parse('I declare a @command_handler for domain "{domain}" without state'))
 def _cmd_handler_missing_state(world, domain):
     try:
+
         @command_handler(domain=domain)  # type: ignore[call-arg]
         class X:
             pass
+
     except CONFIG_ERRORS as exc:
         world.dispatch_exc = exc
 
@@ -40,9 +42,11 @@ def _cmd_handler_missing_state(world, domain):
 @when(parsers.parse('I declare a @saga named "{name}" from "{source}" without target'))
 def _saga_missing_target(world, name, source):
     try:
+
         @saga(name=name, source=source)  # type: ignore[call-arg]
         class X:
             pass
+
     except CONFIG_ERRORS as exc:
         world.dispatch_exc = exc
 
@@ -50,11 +54,13 @@ def _saga_missing_target(world, name, source):
 @when(parsers.parse('I declare a @process_manager for name "{name}" without pm_domain'))
 def _pm_missing_pm_domain(world, name):
     try:
+
         @process_manager(  # type: ignore[call-arg]
             name=name, sources=["a"], targets=["b"], state=_S
         )
         class X:
             pass
+
     except CONFIG_ERRORS as exc:
         world.dispatch_exc = exc
 
@@ -62,11 +68,13 @@ def _pm_missing_pm_domain(world, name):
 @when(parsers.parse('I declare a @process_manager for name "{name}" without sources'))
 def _pm_missing_sources(world, name):
     try:
+
         @process_manager(  # type: ignore[call-arg]
             name=name, pm_domain="p", targets=["b"], state=_S
         )
         class X:
             pass
+
     except CONFIG_ERRORS as exc:
         world.dispatch_exc = exc
 
@@ -74,11 +82,13 @@ def _pm_missing_sources(world, name):
 @when(parsers.parse('I declare a @process_manager for name "{name}" without targets'))
 def _pm_missing_targets(world, name):
     try:
+
         @process_manager(  # type: ignore[call-arg]
             name=name, pm_domain="p", sources=["a"], state=_S
         )
         class X:
             pass
+
     except CONFIG_ERRORS as exc:
         world.dispatch_exc = exc
 
@@ -86,9 +96,11 @@ def _pm_missing_targets(world, name):
 @when(parsers.parse('I declare a @projector named "{name}" without domains'))
 def _projector_missing_domains(world, name):
     try:
+
         @projector(name=name)  # type: ignore[call-arg]
         class X:
             pass
+
     except CONFIG_ERRORS as exc:
         world.dispatch_exc = exc
 
@@ -135,6 +147,6 @@ def _also_apply_applies(world, name):
 
 @then("the declaration raises a configuration error")
 def _then_config_error(world):
-    assert isinstance(world.dispatch_exc, CONFIG_ERRORS), (
-        f"expected TypeError or BuildError, got {type(world.dispatch_exc).__name__}"
-    )
+    assert isinstance(
+        world.dispatch_exc, CONFIG_ERRORS
+    ), f"expected TypeError or BuildError, got {type(world.dispatch_exc).__name__}"

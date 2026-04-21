@@ -80,7 +80,9 @@ def test_dispatch_routes_command_to_matching_handler():
         def on_create(self, cmd, state, seq):
             return OrderCreated(order_id=cmd.order_id, customer_id=cmd.customer_id)
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
 
     cmd = CreateOrder(order_id="o-1", customer_id="c-1", items=[])
     request = _make_contextual_command(cmd, domain="order")
@@ -98,7 +100,9 @@ def test_dispatch_packs_returned_event_with_correct_type_url():
         def on_create(self, cmd, state, seq):
             return OrderCreated(order_id=cmd.order_id, customer_id="x")
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
     request = _make_contextual_command(CreateOrder(order_id="o-1"), domain="order")
     response = router.dispatch(request)
 
@@ -116,7 +120,9 @@ def test_dispatch_passes_command_instance_to_handler():
             captured["cmd"] = cmd
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
     request = _make_contextual_command(
         CreateOrder(order_id="o-1", customer_id="c-1"), domain="order"
     )
@@ -137,7 +143,9 @@ def test_dispatch_passes_seq_from_prior_events():
             captured["seq"] = seq
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
 
     # Prior EventBook with next_sequence=3
     prior = EventBook()
@@ -160,7 +168,9 @@ def test_dispatch_passes_fresh_state_when_no_prior_events():
             captured["state"] = state
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
     router.dispatch(_make_contextual_command(CreateOrder(order_id="o-1")))
 
     assert isinstance(captured["state"], OrderState)
@@ -179,7 +189,9 @@ def test_unknown_command_type_raises_grpc_invalid_argument():
         def on_create(self, cmd, state, seq):
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
 
     # Send an OrderCompleted command — no @handles registered for it
     request = _make_contextual_command(OrderCompleted(order_id="o-1"), domain="order")
@@ -196,7 +208,9 @@ def test_unknown_domain_raises_grpc_invalid_argument():
         def on_create(self, cmd, state, seq):
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
 
     # Correct command type but wrong domain → no match
     request = _make_contextual_command(CreateOrder(order_id="o-1"), domain="shipping")
@@ -216,7 +230,9 @@ def test_single_event_return_yields_single_page():
         def on_create(self, cmd, state, seq):
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
     response = router.dispatch(_make_contextual_command(CreateOrder(order_id="o-1")))
 
     assert response.HasField("events")
@@ -237,7 +253,9 @@ def test_event_carries_incremented_sequence_from_seq_parameter():
         def on_create(self, cmd, state, seq):
             return OrderCreated(order_id=cmd.order_id)
 
-    router = Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
     prior = EventBook()
     prior.next_sequence = 7
     response = router.dispatch(

@@ -201,8 +201,7 @@ def test_dispatch_passes_through_unregistered_type():
 
     assert len(response.events) == 1
     assert (
-        response.events[0].event.type_url
-        == TYPE_URL_PREFIX + "inventory.StockReserved"
+        response.events[0].event.type_url == TYPE_URL_PREFIX + "inventory.StockReserved"
     )
 
 
@@ -214,9 +213,7 @@ def test_dispatch_preserves_page_header_and_timestamp():
             return OrderCreated(order_id=old.order_id)
 
     router = Router("upcaster-order").with_handler(OrderUpcaster, OrderUpcaster).build()
-    page = _page(
-        OrderCreatedV1(order_id="o-1"), sequence=42, created_at_seconds=1234
-    )
+    page = _page(OrderCreatedV1(order_id="o-1"), sequence=42, created_at_seconds=1234)
     response = router.dispatch(_request([page]))
 
     assert response.events[0].header.sequence == 42
@@ -274,16 +271,15 @@ def test_dispatch_skips_handler_with_different_domain():
                 player_id=old.player_id, display_name=old.display_name
             )
 
-    router = Router("upcaster-player").with_handler(PlayerUpcaster, PlayerUpcaster).build()
+    router = (
+        Router("upcaster-player").with_handler(PlayerUpcaster, PlayerUpcaster).build()
+    )
     # Request targets "order" domain — player handler must be skipped even
     # though it has an @upcasts method matching a proto type.
     page = _page(OrderCreatedV1(order_id="o-1"))
     response = router.dispatch(_request([page], domain="order"))
 
-    assert (
-        response.events[0].event.type_url
-        == TYPE_URL_PREFIX + "order.OrderCreatedV1"
-    )
+    assert response.events[0].event.type_url == TYPE_URL_PREFIX + "order.OrderCreatedV1"
 
 
 def test_dispatch_passthrough_with_empty_upcaster():
@@ -298,10 +294,7 @@ def test_dispatch_passthrough_with_empty_upcaster():
     response = router.dispatch(_request([page]))
 
     assert len(response.events) == 1
-    assert (
-        response.events[0].event.type_url
-        == TYPE_URL_PREFIX + "order.OrderCreatedV1"
-    )
+    assert response.events[0].event.type_url == TYPE_URL_PREFIX + "order.OrderCreatedV1"
 
 
 # --------------------------------------------------------------------------
@@ -330,9 +323,7 @@ def test_upcaster_grpc_adapter_delegates_to_router():
     context.abort.assert_not_called()
     assert isinstance(response, UpcastResponse)
     assert len(response.events) == 1
-    assert (
-        response.events[0].event.type_url == TYPE_URL_PREFIX + "order.OrderCreated"
-    )
+    assert response.events[0].event.type_url == TYPE_URL_PREFIX + "order.OrderCreated"
 
 
 def test_upcaster_grpc_adapter_translates_exception_to_internal():

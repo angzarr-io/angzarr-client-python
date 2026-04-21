@@ -163,7 +163,9 @@ def test_multiple_rejection_handlers_both_invoked_in_registration_order():
             call_order.append("B")
             return FundsReleased(amount=200, reason="from-B")
 
-    router = Router("agg").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
+    router = (
+        Router("agg").with_handler(A, lambda: A()).with_handler(B, lambda: B()).build()
+    )
 
     notif = _notification_for(ReserveStock(order_id="o-1"), target_domain="inventory")
     response = router.dispatch(_request_with_notification(notif))

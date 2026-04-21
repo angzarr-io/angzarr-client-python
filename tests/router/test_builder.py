@@ -56,7 +56,11 @@ def test_with_handler_returns_self_for_chaining():
 
 
 def test_with_handler_chain_registers_multiple():
-    r = Router("x").with_handler(Player, lambda: Player()).with_handler(Player, lambda: Player())
+    r = (
+        Router("x")
+        .with_handler(Player, lambda: Player())
+        .with_handler(Player, lambda: Player())
+    )
     assert len(r._factories) == 2
 
 

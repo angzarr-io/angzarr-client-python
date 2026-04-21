@@ -54,7 +54,9 @@ def _given_command_handler(world, name, domain, state_name):
     Handler.__name__ = name
     world.classes[name] = Handler
     router = world.classes.get("__router__") or Router("test")
-    world.classes["__router__"] = router.with_handler(Handler, lambda cls=Handler: cls())
+    world.classes["__router__"] = router.with_handler(
+        Handler, lambda cls=Handler: cls()
+    )
 
 
 @given(
@@ -66,11 +68,7 @@ def _given_another_command_handler(world, name, domain, state_name):
     _given_command_handler(world, name, domain, state_name)
 
 
-@given(
-    parsers.parse(
-        'a saga "{name}" translating from "{source}" to "{target}"'
-    )
-)
+@given(parsers.parse('a saga "{name}" translating from "{source}" to "{target}"'))
 def _given_saga(world, name, source, target):
     @saga(name=name, source=source, target=target)
     class Saga:
@@ -84,7 +82,9 @@ def _given_saga(world, name, source, target):
     world.classes["__router__"] = router.with_handler(Saga, lambda cls=Saga: cls())
 
 
-@given("two command handlers Alpha and Beta for domain \"order\" both handling CreateOrder")
+@given(
+    'two command handlers Alpha and Beta for domain "order" both handling CreateOrder'
+)
 def _given_two_duplicate_handlers(world):
     @command_handler(domain="order", state=OrderState)
     class Alpha:
