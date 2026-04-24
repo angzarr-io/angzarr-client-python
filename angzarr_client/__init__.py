@@ -16,6 +16,7 @@ from .compensation import (
     RejectionHandlerResponse,
     delegate_to_framework,
     emit_compensation_events,
+    is_notification,
     pm_delegate_to_framework,
     pm_emit_compensation_events,
 )
@@ -102,12 +103,32 @@ from .router.server import (
     UpcasterGrpc,
 )
 from .server import (
+    ServerConfig,
     cleanup_socket,
     configure_logging,
     create_server,
     get_transport_config,
+    run_command_handler_server,
+    run_process_manager_server,
+    run_projector_server,
+    run_saga_server,
     run_server,
+    run_upcaster_server,
 )
+from .testing import (
+    DEFAULT_TEST_NAMESPACE,
+    ScenarioContext,
+    make_command_book,
+    make_command_page,
+    make_cover,
+    make_event_book,
+    make_event_page,
+    make_timestamp,
+    uuid_for,
+    uuid_obj_for,
+    uuid_str_for,
+)
+from .testing import pack_event as testing_pack_event
 from .validation import (
     require_exists,
     require_non_negative,
@@ -215,7 +236,26 @@ __all__ = [
     "get_transport_config",
     "create_server",
     "run_server",
+    "run_command_handler_server",
+    "run_saga_server",
+    "run_process_manager_server",
+    "run_projector_server",
+    "run_upcaster_server",
+    "ServerConfig",
     "cleanup_socket",
+    # Testing helpers (mirror angzarr_client::testing in Rust)
+    "DEFAULT_TEST_NAMESPACE",
+    "ScenarioContext",
+    "make_cover",
+    "make_event_page",
+    "make_event_book",
+    "make_command_page",
+    "make_command_book",
+    "make_timestamp",
+    "testing_pack_event",
+    "uuid_for",
+    "uuid_str_for",
+    "uuid_obj_for",
     # Validation
     "require_exists",
     "require_not_exists",
@@ -246,6 +286,7 @@ __all__ = [
     "RejectionHandlerResponse",
     "delegate_to_framework",
     "emit_compensation_events",
+    "is_notification",
     "pm_delegate_to_framework",
     "pm_emit_compensation_events",
     # Destinations

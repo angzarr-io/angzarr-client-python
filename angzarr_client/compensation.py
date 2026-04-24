@@ -57,8 +57,13 @@ Usage in ProcessManager:
 
 from dataclasses import dataclass
 
+from .helpers import TYPE_URL_PREFIX
 from .proto.angzarr import command_handler_pb2 as command_handler
 from .proto.angzarr import types_pb2 as types
+
+# Matches the Rust-side wire_name(NOTIFICATION_TYPE_NAME): the internal
+# package prefix `angzarr_client.proto.` is stripped, leaving `angzarr.Notification`.
+_NOTIFICATION_WIRE_NAME = "angzarr.Notification"
 
 
 @dataclass
@@ -300,3 +305,13 @@ def pm_emit_compensation_events(
             reason=reason,
         ),
     )
+
+
+def is_notification(type_url: str) -> bool:
+    """Check if a type URL refers to a rejection Notification.
+
+    Cross-language alias for Rust's `is_notification(type_url)`. Useful for
+    dispatch code that needs to branch on "is this a notification?" without
+    unpacking the Any payload.
+    """
+    return type_url == f"{TYPE_URL_PREFIX}{_NOTIFICATION_WIRE_NAME}"
