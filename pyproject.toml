@@ -69,6 +69,9 @@ filterwarnings = [
     "ignore:Unknown pytest.mark.C-:pytest.PytestUnknownMarkWarning",
     "ignore:Unknown pytest.mark.EU-:pytest.PytestUnknownMarkWarning",
     "ignore:Unknown pytest.mark.EA-:pytest.PytestUnknownMarkWarning",
+    # Category tags on merge_strategy.feature.
+    "ignore:Unknown pytest.mark.merge_:pytest.PytestUnknownMarkWarning",
+    "ignore:Unknown pytest.mark.edge_case:pytest.PytestUnknownMarkWarning",
 ]
 
 [tool.mutmut]
