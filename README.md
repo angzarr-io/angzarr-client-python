@@ -7,7 +7,7 @@ sidebar_label: Python
 
 # angzarr-client
 
-Python client library for Angzarr CQRS/ES framework.
+Python client library for the Angzarr CQRS/ES framework.
 
 :::tip Unified Documentation
 For cross-language API reference with side-by-side comparisons, see the [SDK Documentation](/sdks).
@@ -19,304 +19,218 @@ For cross-language API reference with side-by-side comparisons, see the [SDK Doc
 pip install angzarr-client
 ```
 
-## Client Usage
-
-### Contracts
-
-```gherkin file=client/features/aggregate_client.feature start=docs:start:aggregate_client_contract end=docs:end:aggregate_client_contract
-```
-
-> Source: [`aggregate_client.feature`](../features/aggregate_client.feature)
-
-```gherkin file=client/features/query_client.feature start=docs:start:query_client_contract end=docs:end:query_client_contract
-```
-
-> Source: [`query_client.feature`](../features/query_client.feature)
+## Quick Start
 
 ```python
 from angzarr_client import DomainClient
+from uuid import uuid4
 
-# Connect to a domain's aggregate coordinator
-client = DomainClient("localhost:1310")
+client = DomainClient.connect("localhost:1310")
 
 # Build and execute a command
-response = client.command("order", root_id) \
-    .with_command("CreateOrder", create_order_msg) \
+order_id = uuid4()
+response = (
+    client.command_handler
+    .command("order", order_id)
+    .with_command("type.googleapis.com/examples.CreateOrder", create_order_msg)
     .execute()
+)
 
 # Query events
-events = client.query("order", root_id) \
-    .get_event_book()
+events = client.query.query("order", order_id).get_event_book()
 ```
 
-## Aggregate Implementation
+## Handler Kinds
 
-Two approaches for implementing aggregates:
+Handler classes are declared with class decorators. No base class is required — the decorator stamps metadata the router reads at build time.
 
-### 1. Rich Domain Model (Recommended)
+| Kind | Decorator | Purpose |
+|------|-----------|---------|
+| Command handler | `@command_handler(domain, state)` | Validate commands, emit events |
+| Saga | `@saga(name, source, target)` | Translate source-domain events into target-domain commands |
+| Process manager | `@process_manager(name, pm_domain, sources, targets, state)` | Stateful multi-domain orchestrator |
+| Projector | `@projector(name, domains)` | Side-effect fan-out over event books |
+| Upcaster | `@upcaster(name, domain)` | Transform legacy event versions in place |
 
-Use `Aggregate` ABC with `@handles` decorator for OO-style aggregates:
+Method markers inside the class:
+
+| Marker | Applies to | Role |
+|--------|-----------|------|
+| `@handles(MessageType)` | Any kind | Register a handler for an incoming message |
+| `@applies(EventType)` | command_handler, process_manager | Mutate state during replay |
+| `@rejected(domain, command)` | command_handler, saga, process_manager | Receive a rejection notification and emit compensation |
+| `@state_factory` | command_handler, process_manager | Override `state()` default for initial state |
+| `@upcasts(from, to)` | upcaster | Transform one event type into another |
+
+### Command-handler example
 
 ```python
-from angzarr_client import Aggregate, handles
+from dataclasses import dataclass
+from angzarr_client import command_handler, handles, applies
 from angzarr_client.errors import CommandRejectedError
 
 @dataclass
-class _PlayerState:
+class PlayerState:
     player_id: str = ""
     bankroll: int = 0
 
-class Player(Aggregate[_PlayerState]):
-    domain = "player"  # Required
+@command_handler(domain="player", state=PlayerState)
+class Player:
+    def __init__(self, db_pool):
+        self.db_pool = db_pool
 
-    def _create_empty_state(self) -> _PlayerState:
-        return _PlayerState()
-
-    def _apply_event(self, state: _PlayerState, event_any) -> None:
-        if event_any.type_url.endswith("PlayerRegistered"):
-            event = PlayerRegistered()
-            event_any.Unpack(event)
-            state.player_id = event.player_id
+    @applies(PlayerRegistered)
+    def apply_registered(self, state: PlayerState, evt: PlayerRegistered) -> None:
+        state.player_id = evt.player_id
 
     @handles(RegisterPlayer)
-    def register(self, cmd: RegisterPlayer) -> PlayerRegistered:
-        if self.exists:
-            raise CommandRejectedError("Player already exists")
-        return PlayerRegistered(player_id=cmd.player_id, ...)
-
-    @handles(DepositFunds)
-    def deposit(self, cmd: DepositFunds) -> FundsDeposited:
+    def register(self, cmd: RegisterPlayer, state: PlayerState, seq: int) -> EventBook:
+        if state.player_id:
+            raise CommandRejectedError.precondition_failed("player already exists")
+        # build and return the event book
         ...
-
-    @property
-    def exists(self) -> bool:
-        return bool(self._get_state().player_id)
 ```
 
-**Features:**
-- `@handles(CommandType)` validates type hints at decoration time
-- Dispatch table built automatically at class definition
-- `domain` attribute required, enforced at class creation
-- Abstract methods `_create_empty_state()` and `_apply_event()` enforced
+## Router
 
-**gRPC Server:**
-```python
-from angzarr_client import run_aggregate_server
-
-run_aggregate_server(Player, "50303")
-```
-
-### 2. Function-Based (CommandRouter)
-
-Use `CommandRouter` with standalone handler functions:
+One builder, one entry point:
 
 ```python
-from angzarr_client import CommandRouter
-from angzarr_client.proto.angzarr import types_pb2 as types
+from angzarr_client import Router
+from angzarr_client.router import CommandHandlerGrpc
+from angzarr_client import run_server
+from angzarr_client.proto.angzarr import command_handler_pb2_grpc
 
-def rebuild_state(event_book: types.EventBook) -> PlayerState:
-    state = PlayerState()
-    if event_book:
-        for page in event_book.pages:
-            apply_event(state, page.event)
-    return state
-
-def handle_register(cb, cmd_any, state, seq) -> types.EventBook:
-    cmd = RegisterPlayer()
-    cmd_any.Unpack(cmd)
-    if state.exists:
-        raise CommandRejectedError("Player already exists")
-    event = PlayerRegistered(player_id=cmd.player_id, ...)
-    return pack_event(event, seq)
-
-router = CommandRouter("player", rebuild_state) \
-    .on("RegisterPlayer", handle_register) \
-    .on("DepositFunds", handle_deposit)
-```
-
-**gRPC Server:**
-```python
-from angzarr_client import run_aggregate_server
-
-run_aggregate_server(router, "50303")
-```
-
-### Comparison
-
-| Aspect | Rich Domain Model | Function-Based |
-|--------|------------------|----------------|
-| Pattern | OO, encapsulated | Procedural, explicit |
-| State | Internal, lazy rebuild | External, passed in |
-| Commands | Method per command | Function per command |
-| Validation | `@handles` decorator | Manual type unpacking |
-| Topology | Auto from `domain` + `@handles` | Auto from `CommandRouter.on()` |
-
-## Testing Aggregates
-
-Both patterns support unit testing without infrastructure:
-
-```python
-# Rich Domain Model
-def test_register_creates_player():
-    player = Player()  # Empty event book
-    event = player.register(RegisterPlayer(player_id="alice"))
-    assert event.player_id == "alice"
-    assert player.exists
-
-# With prior state (rehydration)
-def test_deposit_increases_bankroll():
-    event_book = build_event_book([PlayerRegistered(...)])
-    player = Player(event_book)
-    event = player.deposit(DepositFunds(amount=100))
-    assert player.bankroll == 100
-```
-
-## Error Handling
-
-### Contract
-
-```gherkin file=client/features/error_handling.feature start=docs:start:error_handling_contract end=docs:end:error_handling_contract
-```
-
-> Source: [`error_handling.feature`](../features/error_handling.feature)
-
-```python
-from angzarr_client.errors import GRPCError, ConnectionError, ClientError
-
-try:
-    response = client.aggregate.handle(command)
-except GRPCError as e:
-    if e.is_not_found():
-        # Aggregate doesn't exist
-        pass
-    elif e.is_precondition_failed():
-        # Sequence mismatch (optimistic locking failure)
-        pass
-    elif e.is_invalid_argument():
-        # Invalid command arguments
-        pass
-except ConnectionError as e:
-    # Network/transport error
-    pass
-```
-
-## Speculative Execution
-
-Test commands without persisting to the event store:
-
-```python
-from angzarr_client import SpeculativeClient
-from angzarr_client.proto.angzarr import SpeculateAggregateRequest
-
-client = SpeculativeClient.connect("localhost:1310")
-
-# Build speculative request with temporal state
-request = SpeculateAggregateRequest(
-    command=command_book,
-    events=prior_events
+built = (
+    Router("agg-player")
+    .with_handler(Player, lambda: Player(db_pool))
+    .with_handler(Hand, lambda: Hand(rng))
+    .build()
 )
 
-# Execute without persistence
-response = client.aggregate(request)
-
-# Inspect projected events
-for page in response.events.pages:
-    print(f"Would produce: {page.event.type_url}")
-
-client.close()
+# Wrap the runtime router in the matching gRPC adapter, then serve it.
+servicer = CommandHandlerGrpc(built)
+run_server(
+    command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server,
+    servicer,
+    service_name="CommandHandler",
+    domain="player",
+)
 ```
 
-## Client Types
+The factory callable runs once per dispatch, so each request gets a fresh handler instance. Close over shared deps (`lambda: Player(db_pool)`) or hand in a pool-checkout callable.
+
+`Router.build()` returns a `CommandHandlerRouter / SagaRouter / ProcessManagerRouter / ProjectorRouter / UpcasterRouter` based on the kinds present. Mixing kinds in one router raises `BuildError("cannot mix ...")`.
+
+## Clients
 
 | Client | Purpose |
 |--------|---------|
-| `QueryClient` | Query events from aggregates |
-| `AggregateClient` | Send commands to aggregates |
-| `SpeculativeClient` | Dry-run commands, test projectors/sagas |
-| `DomainClient` | Combined query + aggregate for a domain |
-| `Client` | Full client with all capabilities |
+| `CommandHandlerClient` | Send commands to a coordinator |
+| `QueryClient` | Fetch event books |
+| `SpeculativeClient` | Dry-run commands without persisting |
+| `DomainClient` | Bundle of all three, scoped to a domain |
 
-## Error Types
+All four carry a `connect(endpoint, retry=None)` classmethod, a `from_channel(channel)` for caller-managed channels, and a `from_env(env_var, default)` helper.
 
-| Error | Description |
-|-------|-------------|
-| `ClientError` | Base class for all errors |
-| `CommandRejectedError` | Business logic rejection |
-| `GRPCError` | gRPC transport failure (has introspection methods) |
-| `ConnectionError` | Connection failure |
-| `TransportError` | Transport-level failure |
-| `InvalidArgumentError` | Invalid input |
-| `InvalidTimestampError` | Timestamp parse failure |
-
-## Saga/PM Implementation
-
-### Sagas
-
-Stateless event translators (events → commands):
+## Error handling
 
 ```python
-from angzarr_client import SagaRouter, SagaDomainHandler
+from angzarr_client.errors import ClientError, GRPCError, ConnectionError
 
-class OrderFulfillmentHandler(SagaDomainHandler):
-    def event_types(self) -> list[str]:
-        return ["OrderCreated"]
-
-    def handle(self, source: EventBook, event: Any, destinations: Destinations):
-        # Translate event to command
-        cmd = CreateReservation(order_id=event.order_id)
-        seq = destinations.sequence_for("inventory")
-        return SagaHandlerResponse(commands=[stamp(cmd, seq)])
-
-router = SagaRouter("saga-order-inventory", "order", handler)
+try:
+    response = client.command_handler.handle(cmd)
+except GRPCError as e:
+    if e.is_precondition_failed():
+        # Sequence mismatch (optimistic locking)
+        ...
+    elif e.is_not_found():
+        # Aggregate missing
+        ...
+    elif e.is_invalid_argument():
+        # Bad input
+        ...
+except ConnectionError:
+    # Transport failure
+    ...
 ```
 
-### Process Managers
+`ClientError` is the base exception. `GRPCError / ConnectionError / TransportError / InvalidArgumentError / InvalidTimestampError / CommandRejectedError` inherit from it. All instances expose `is_not_found() / is_precondition_failed() / is_invalid_argument() / is_connection_error()` predicates. `CommandRejectedError` adds named factory methods — `precondition_failed(msg)`, `invalid_argument(msg)`, `not_found(msg)`.
 
-Stateful multi-domain orchestrators:
+## Retry
 
 ```python
-from angzarr_client import ProcessManagerRouter
+from angzarr_client import ExponentialBackoffRetry
 
-class BuyInPmHandler(ProcessManagerDomainHandler):
-    def event_types(self) -> list[str]:
-        return ["BuyInRequested", "PlayerSeated", "SeatingRejected"]
+policy = ExponentialBackoffRetry(
+    max_attempts=5,
+    max_delay=2.0,
+    on_retry=lambda i, e: print(f"retry {i}: {e}"),
+)
 
-    def prepare(self, trigger, state, event) -> list[Cover]:
-        # Declare destinations needed
-        return [Cover(domain="table", root=event.table_root)]
-
-    def handle(self, trigger, state, event, destinations: Destinations):
-        # Emit commands or facts
-        seq = destinations.sequence_for("table")
-        return ProcessManagerResponse(commands=[cmd], facts=[])
-
-router = ProcessManagerRouter("pmg-buy-in", "pmg-buy-in", rebuild_state)
-    .domain("player", BuyInPmHandler())
-    .domain("table", BuyInPmHandler())
+result = policy.execute(lambda: try_something())
 ```
 
-### Saga/PM Design Philosophy
+Defaults match the cross-language spec: 10 attempts, 100 ms → 5 s with jitter. `RetryPolicy` is an alias for `ExponentialBackoffRetry`.
 
-**Sagas and PMs are coordinators, NOT decision makers.**
+## Coming from Rust?
 
-| Output | When to Use |
+Everything maps. The shape differs; the names and semantics don't.
+
+| Concept | Rust | Python |
+|---------|------|--------|
+| Kind declaration | `#[command_handler(domain = "p", state = PlayerState)]` attribute macro on `impl` | `@command_handler(domain="p", state=PlayerState)` class decorator |
+| Method marker | `#[handles(Cmd)]` | `@handles(Cmd)` |
+| Router | `Router::new("x").with_handler::<H, _>(factory)` (type inferred) | `Router("x").with_handler(cls, factory)` (cls passed explicitly) |
+| Factory | `\|\| Player::new(db.clone())` | `lambda: Player(db)` |
+| Handler state | Struct instance from factory closure | Class instance |
+| Cover accessors | Extension trait methods: `cover.domain()`, `cover.correlation_id()`, … (via `CoverExt`) | Free functions: `domain(cover)`, `correlation_id(cover)`, … |
+| Event book helpers | Extension trait methods: `book.next_sequence()` (via `EventBookExt`) | Free functions: `next_sequence(book)` |
+| Wrapper objects | Extension trait method directly: `cover.domain()` | `CoverW(cover).domain()` wrapper |
+| Error surface | `thiserror` enum `ClientError { Connection, Transport, Grpc, InvalidArgument, InvalidTimestamp }` with `is_*` predicate methods | Exception hierarchy: `ClientError → GRPCError / ConnectionError / …` |
+| Rejection factories | `CommandRejectedError::precondition_failed(msg)` | `CommandRejectedError.precondition_failed(msg)` |
+| Retry | `ExponentialBackoffRetry::default().with_max_attempts(5)` | `ExponentialBackoffRetry(max_attempts=5)` |
+| Retry callback | `.with_on_retry(\|i, e\| ...)` | `on_retry=lambda i, e: ...` |
+| Compensation options | `delegate_to_framework(reason)` **or** `delegate_to_framework_with_options(reason, emit, send_to_dead_letter, escalate, abort)` (two-function idiom) | `delegate_to_framework(reason, send_to_dead_letter=True)` (kwargs) |
+| Type-URL match | `type_url_matches(url, name)` (primary) — `type_url_matches_exact` is Python-compat alias | `type_url_matches(url, name)` (primary) |
+
+## Saga / PM design philosophy
+
+**Sagas and PMs are coordinators, not decision makers.**
+
+| Output | When to use |
 |--------|-------------|
-| **Commands** (preferred) | Normal flow - aggregate validates and decides |
-| **Facts** | Inject external data aggregate can't derive |
+| Commands (preferred) | Normal flow — the target aggregate validates and decides |
+| Facts | Inject external data the target aggregate can't derive |
 
-**Key Principles:**
-1. **Don't rebuild destination state** - Use `Destinations` for sequences only
-2. **Let aggregates decide** - Business logic in aggregates, not coordinators
-3. **Prefer commands with sync mode** - Use `SyncMode.SIMPLE` for immediate feedback
-4. **Use facts sparingly** - Only for external data injection
+Key principles:
+
+1. **Don't rebuild destination state** — use `Destinations` for sequences only.
+2. **Let aggregates decide** — business logic in aggregates, not coordinators.
+3. **Prefer commands with sync mode** — use `SyncMode.SIMPLE` for immediate feedback.
+4. **Use facts sparingly** — only for external data injection.
+
+## Speculative execution
+
+Test commands without persisting to the event store.
+
+```python
+from angzarr_client import SpeculativeClient
+from angzarr_client.proto.angzarr import SpeculateCommandHandlerRequest
+
+client = SpeculativeClient.connect("localhost:1310")
+request = SpeculateCommandHandlerRequest(
+    command=command_book,
+    events=prior_events,
+)
+response = client.command_handler(request)
+```
 
 ## License
 
 BSD-3-Clause
 
 ## Development
-
-### Setup
 
 Install git hooks (requires [lefthook](https://github.com/evilmartians/lefthook)):
 
@@ -329,9 +243,10 @@ This configures a pre-commit hook that auto-formats code before each commit.
 ### Recipes
 
 ```bash
-just -l              # List all available recipes
-just build           # Build the library
-just test            # Run tests
-just fmt             # Check formatting
-just fmt-fix         # Auto-format code
+just -l              # list recipes
+just build           # build the package
+just test            # run pytest + BDD
+just fmt             # ruff + black check
+just fmt-fix         # auto-format
+just mutation-test   # mutmut (80% kill-rate threshold)
 ```
