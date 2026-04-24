@@ -10,10 +10,8 @@ pre-commit:
     fmt:
       run: just fmt-fix
       stage_fixed: true
-    # Plain pytest only (skips tests/client, which has pre-existing BDD
-    # failures). Swap in `just test` once those are fixed.
     test:
-      run: just test-pytest
+      run: just test
 
 pre-push:
   parallel: false
