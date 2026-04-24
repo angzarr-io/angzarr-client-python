@@ -101,7 +101,6 @@ from .router.server import (
     SagaGrpc,
     UpcasterGrpc,
 )
-from .saga_context import SagaContext
 from .server import (
     cleanup_socket,
     configure_logging,
@@ -249,8 +248,6 @@ __all__ = [
     "emit_compensation_events",
     "pm_delegate_to_framework",
     "pm_emit_compensation_events",
-    # Saga context
-    "SagaContext",
     # Destinations
     "Destinations",
 ]
