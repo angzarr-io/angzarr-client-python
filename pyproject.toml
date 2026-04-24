@@ -69,6 +69,9 @@ filterwarnings = [
     "ignore:Unknown pytest.mark.C-:pytest.PytestUnknownMarkWarning",
     "ignore:Unknown pytest.mark.EU-:pytest.PytestUnknownMarkWarning",
     "ignore:Unknown pytest.mark.EA-:pytest.PytestUnknownMarkWarning",
+    # Category tags on merge_strategy.feature.
+    "ignore:Unknown pytest.mark.merge_:pytest.PytestUnknownMarkWarning",
+    "ignore:Unknown pytest.mark.edge_case:pytest.PytestUnknownMarkWarning",
 ]
 
 [tool.mutmut]
@@ -83,7 +86,6 @@ paths_to_mutate = [
     "angzarr_client/identity.py",
     "angzarr_client/protoname.py",
     "angzarr_client/retry.py",
-    "angzarr_client/saga_context.py",
     "angzarr_client/server.py",
     "angzarr_client/validation.py",
     "angzarr_client/wrappers.py",
