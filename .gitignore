@@ -5,6 +5,10 @@ __pycache__/
 *.so
 .Python
 build/
+
+# Sphinx docs build output and autoapi-generated reference pages
+docs/_build/
+docs/autoapi/
 develop-eggs/
 dist/
 downloads/
