@@ -8,6 +8,7 @@ from angzarr_client.compensation import (
     RejectionHandlerResponse,
     delegate_to_framework,
     emit_compensation_events,
+    is_notification,
     pm_delegate_to_framework,
     pm_emit_compensation_events,
 )
@@ -239,3 +240,18 @@ class TestResponseDataclasses:
         r = PMRevocationResponse()
         assert r.process_events is None
         assert r.revocation is None
+
+
+class TestIsNotification:
+    def test_matches_canonical_notification_url(self) -> None:
+        assert is_notification("type.googleapis.com/angzarr.Notification") is True
+
+    def test_rejects_unrelated_type_url(self) -> None:
+        assert is_notification("type.googleapis.com/examples.Foo") is False
+
+    def test_rejects_empty_string(self) -> None:
+        assert is_notification("") is False
+
+    def test_case_sensitive(self) -> None:
+        # Wire names are case-sensitive; same payload path as Rust's wire_name.
+        assert is_notification("type.googleapis.com/angzarr.notification") is False

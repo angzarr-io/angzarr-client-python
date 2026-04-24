@@ -214,3 +214,46 @@ class TestCleanupSocket:
 
         monkeypatch.setattr(os, "remove", explode)
         srv.cleanup_socket(str(sock))  # must not raise
+
+
+class TestServerConfig:
+    def test_default_port_and_no_uds(self) -> None:
+        cfg = srv.ServerConfig()
+        assert cfg.port == 50052
+        assert cfg.uds_path is None
+
+    def test_from_env_default_when_empty(self) -> None:
+        cfg = srv.ServerConfig.from_env(default_port=1234)
+        assert cfg.port == 1234
+        assert cfg.uds_path is None
+
+    def test_from_env_port(self, monkeypatch) -> None:
+        monkeypatch.setenv("PORT", "9999")
+        cfg = srv.ServerConfig.from_env()
+        assert cfg.port == 9999
+        assert cfg.uds_path is None
+
+    def test_from_env_grpc_port_fallback(self, monkeypatch) -> None:
+        monkeypatch.setenv("GRPC_PORT", "8888")
+        cfg = srv.ServerConfig.from_env()
+        assert cfg.port == 8888
+
+    def test_from_env_uds_mode(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
+        monkeypatch.setenv("SERVICE_NAME", "business")
+        monkeypatch.setenv("DOMAIN", "player")
+        cfg = srv.ServerConfig.from_env()
+        assert cfg.uds_path == str(tmp_path / "business-player.sock")
+
+    def test_from_env_uds_partial_env_falls_back_to_tcp(self, monkeypatch) -> None:
+        # UDS mode requires all three env vars; missing any → TCP.
+        monkeypatch.setenv("UDS_BASE_PATH", "/tmp/x")
+        monkeypatch.setenv("SERVICE_NAME", "business")
+        cfg = srv.ServerConfig.from_env(default_port=7777)
+        assert cfg.uds_path is None
+        assert cfg.port == 7777
+
+    def test_from_env_invalid_port_falls_back(self, monkeypatch) -> None:
+        monkeypatch.setenv("PORT", "not-a-number")
+        cfg = srv.ServerConfig.from_env(default_port=2222)
+        assert cfg.port == 2222

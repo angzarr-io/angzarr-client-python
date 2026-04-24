@@ -6,6 +6,7 @@ Supports both TCP and Unix Domain Socket (UDS) transports for gRPC servers.
 import os
 from collections.abc import Callable
 from concurrent import futures
+from dataclasses import dataclass
 
 import grpc
 import structlog
@@ -170,3 +171,147 @@ def cleanup_socket(socket_path: str) -> None:
             os.remove(socket_path)
         except OSError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Cross-language parity: ServerConfig + per-kind runner wrappers.
+# Mirror the shapes exposed by `angzarr_client::server` on the Rust side so
+# cross-language docs and examples translate directly.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ServerConfig:
+    """Configuration for a gRPC server.
+
+    Cross-language alias for Rust's `ServerConfig { port, uds_path }`.
+    Construct from environment via :meth:`from_env` or instantiate directly.
+    """
+
+    port: int = 50052
+    """Port to listen on (TCP mode)."""
+
+    uds_path: str | None = None
+    """Unix domain socket path (UDS mode). When set, takes precedence over port."""
+
+    @classmethod
+    def from_env(cls, default_port: int = 50052) -> "ServerConfig":
+        """Read config from environment variables.
+
+        UDS mode (standalone) when `UDS_BASE_PATH`, `SERVICE_NAME`, and `DOMAIN`
+        are all set: socket path becomes `{UDS_BASE_PATH}/{SERVICE_NAME}-{DOMAIN}.sock`.
+
+        Otherwise TCP mode with port read from `PORT` or `GRPC_PORT`, falling
+        back to `default_port`.
+        """
+        base_path = os.environ.get("UDS_BASE_PATH")
+        service_name = os.environ.get("SERVICE_NAME")
+        domain = os.environ.get("DOMAIN")
+        if base_path and service_name and domain:
+            socket_path = os.path.join(base_path, f"{service_name}-{domain}.sock")
+            return cls(port=default_port, uds_path=socket_path)
+
+        port_str = os.environ.get("PORT") or os.environ.get("GRPC_PORT")
+        try:
+            port = int(port_str) if port_str else default_port
+        except ValueError:
+            port = default_port
+        return cls(port=port, uds_path=None)
+
+
+def _run_kind_server(
+    router,
+    grpc_adapter_cls,
+    add_servicer_fn,
+    pb2_grpc_service_name: str,
+    domain: str,
+    default_port: int,
+) -> None:
+    """Shared plumbing for the per-kind `run_*_server` wrappers."""
+    servicer = grpc_adapter_cls(router)
+    run_server(
+        add_servicer_fn,
+        servicer,
+        service_name=pb2_grpc_service_name,
+        domain=domain,
+        default_port=str(default_port),
+    )
+
+
+def run_command_handler_server(
+    router, domain: str = "", default_port: int = 50052
+) -> None:
+    """Run a command handler gRPC server. Mirrors Rust's `run_command_handler_server`."""
+    from .proto.angzarr import command_handler_pb2_grpc
+    from .router.server import CommandHandlerGrpc
+
+    _run_kind_server(
+        router,
+        CommandHandlerGrpc,
+        command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server,
+        "CommandHandlerService",
+        domain,
+        default_port,
+    )
+
+
+def run_saga_server(router, domain: str = "", default_port: int = 50052) -> None:
+    """Run a saga gRPC server. Mirrors Rust's `run_saga_server`."""
+    from .proto.angzarr import saga_pb2_grpc
+    from .router.server import SagaGrpc
+
+    _run_kind_server(
+        router,
+        SagaGrpc,
+        saga_pb2_grpc.add_SagaServiceServicer_to_server,
+        "SagaService",
+        domain,
+        default_port,
+    )
+
+
+def run_process_manager_server(
+    router, domain: str = "", default_port: int = 50052
+) -> None:
+    """Run a process manager gRPC server. Mirrors Rust's `run_process_manager_server`."""
+    from .proto.angzarr import process_manager_pb2_grpc
+    from .router.server import ProcessManagerGrpc
+
+    _run_kind_server(
+        router,
+        ProcessManagerGrpc,
+        process_manager_pb2_grpc.add_ProcessManagerServiceServicer_to_server,
+        "ProcessManagerService",
+        domain,
+        default_port,
+    )
+
+
+def run_projector_server(router, domain: str = "", default_port: int = 50052) -> None:
+    """Run a projector gRPC server. Mirrors Rust's `run_projector_server`."""
+    from .proto.angzarr import projector_pb2_grpc
+    from .router.server import ProjectorGrpc
+
+    _run_kind_server(
+        router,
+        ProjectorGrpc,
+        projector_pb2_grpc.add_ProjectorServiceServicer_to_server,
+        "ProjectorService",
+        domain,
+        default_port,
+    )
+
+
+def run_upcaster_server(router, domain: str = "", default_port: int = 50052) -> None:
+    """Run an upcaster gRPC server. Mirrors Rust's `run_upcaster_server`."""
+    from .proto.angzarr import upcaster_pb2_grpc
+    from .router.server import UpcasterGrpc
+
+    _run_kind_server(
+        router,
+        UpcasterGrpc,
+        upcaster_pb2_grpc.add_UpcasterServiceServicer_to_server,
+        "UpcasterService",
+        domain,
+        default_port,
+    )
