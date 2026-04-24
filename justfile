@@ -34,6 +34,18 @@ lint:
 coverage:
     uv run --extra dev pytest tests/ --cov=angzarr_client --cov-report=term-missing --cov-report=html
 
+# Build Sphinx HTML docs into docs/_build/html.
+# --keep-going finishes generation even when some xrefs are ambiguous
+# (autoapi emits cross-references for TypeVars like `T` that appear in
+# multiple modules; those warnings are cosmetic in the rendered output).
+docs:
+    uv run --extra docs sphinx-build -b html --keep-going docs docs/_build/html
+
+# Serve the built docs locally
+docs-serve:
+    @echo "Open http://localhost:8000 — Ctrl-C to stop"
+    python3 -m http.server --directory docs/_build/html 8000
+
 # Run mutation testing (80% kill rate threshold)
 mutation-test:
     #!/usr/bin/env bash
