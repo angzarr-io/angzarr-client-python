@@ -74,9 +74,7 @@ def _given_server_returns_grpc_error(state: _State) -> None:
 
 @given("the aggregate does not exist")
 def _given_aggregate_not_exists(state: _State) -> None:
-    state.current_error = _grpc_error(
-        grpc.StatusCode.NOT_FOUND, "aggregate not found"
-    )
+    state.current_error = _grpc_error(grpc.StatusCode.NOT_FOUND, "aggregate not found")
 
 
 @given(parsers.parse("the server aggregate is at sequence {seq:d}"))
@@ -115,9 +113,7 @@ def _given_any_client_error(state: _State) -> None:
 
 @given("a gRPC error with status NOT_FOUND")
 def _given_grpc_not_found(state: _State) -> None:
-    state.current_error = _grpc_error(
-        grpc.StatusCode.NOT_FOUND, "resource not found"
-    )
+    state.current_error = _grpc_error(grpc.StatusCode.NOT_FOUND, "resource not found")
 
 
 @given("a connection error")
@@ -431,16 +427,12 @@ def _then_not_found_has_is_not_found(state: _State) -> None:
 
 @then("connection error should have is_not_found false")
 def _then_connection_has_is_not_found_false(state: _State) -> None:
-    assert not _find(
-        state, lambda e: isinstance(e, ConnectionError)
-    ).is_not_found()
+    assert not _find(state, lambda e: isinstance(e, ConnectionError)).is_not_found()
 
 
 @then("INTERNAL gRPC error should have is_not_found false")
 def _then_internal_has_is_not_found_false(state: _State) -> None:
-    assert not _find(
-        state, _is_grpc_code(grpc.StatusCode.INTERNAL)
-    ).is_not_found()
+    assert not _find(state, _is_grpc_code(grpc.StatusCode.INTERNAL)).is_not_found()
 
 
 @then("FAILED_PRECONDITION gRPC error should have is_precondition_failed true")
@@ -487,16 +479,12 @@ def _then_not_found_invalid_argument_false(state: _State) -> None:
 
 @then("connection error should have is_connection_error true")
 def _then_connection_is_connection_true(state: _State) -> None:
-    assert _find(
-        state, lambda e: isinstance(e, ConnectionError)
-    ).is_connection_error()
+    assert _find(state, lambda e: isinstance(e, ConnectionError)).is_connection_error()
 
 
 @then("transport error should have is_connection_error true")
 def _then_transport_is_connection_true(state: _State) -> None:
-    assert _find(
-        state, lambda e: isinstance(e, TransportError)
-    ).is_connection_error()
+    assert _find(state, lambda e: isinstance(e, TransportError)).is_connection_error()
 
 
 @then("gRPC error should have is_connection_error false")
@@ -510,9 +498,7 @@ def _then_grpc_is_connection_false(state: _State) -> None:
 
 @then("connection errors should be retryable")
 def _then_connection_retryable(state: _State) -> None:
-    assert _find(
-        state, lambda e: isinstance(e, ConnectionError)
-    ).is_connection_error()
+    assert _find(state, lambda e: isinstance(e, ConnectionError)).is_connection_error()
 
 
 @then("UNAVAILABLE gRPC errors should be retryable")

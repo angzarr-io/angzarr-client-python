@@ -99,9 +99,7 @@ def _then_saga_target(state: _State, target: str) -> None:
         r' "(?P<up_name>[^"]+)" in domain "(?P<domain>[^"]+)"'
     )
 )
-def _given_upcaster_class(
-    state: _State, name: str, up_name: str, domain: str
-) -> None:
+def _given_upcaster_class(state: _State, name: str, up_name: str, domain: str) -> None:
     @upcaster(name=up_name, domain=domain)
     class UpcasterCls:
         pass

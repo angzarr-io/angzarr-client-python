@@ -97,11 +97,7 @@ def _given_empty_event_book(state: _State) -> None:
     state.event_book = _MockEventBook()
 
 
-@given(
-    parsers.parse(
-        'an EventBook with {count:d} event of type "{event_type}"'
-    )
-)
+@given(parsers.parse('an EventBook with {count:d} event of type "{event_type}"'))
 def _given_event_book_with_one_event(
     state: _State, count: int, event_type: str
 ) -> None:
@@ -203,14 +199,8 @@ def _given_increment_event(state: _State, inc: int) -> None:
     )
 
 
-@given(
-    parsers.parse(
-        "events that increment by {i1:d}, {i2:d}, and {i3:d}"
-    )
-)
-def _given_multiple_increments(
-    state: _State, i1: int, i2: int, i3: int
-) -> None:
+@given(parsers.parse("events that increment by {i1:d}, {i2:d}, and {i3:d}"))
+def _given_multiple_increments(state: _State, i1: int, i2: int, i3: int) -> None:
     state.event_book = _MockEventBook(
         events=[
             _MockEvent(
@@ -241,9 +231,7 @@ def _given_any_wrapped_events(state: _State) -> None:
 
 @given(parsers.parse('an event with type_url "{type_url}"'))
 def _given_event_with_type_url(state: _State, type_url: str) -> None:
-    state.event_book = _MockEventBook(
-        events=[_MockEvent(0, type_url, b"data")]
-    )
+    state.event_book = _MockEventBook(events=[_MockEvent(0, type_url, b"data")])
 
 
 @given("an event with corrupted payload bytes")
@@ -276,19 +264,13 @@ def _given_empty_aggregate(state: _State) -> None:
 def _given_events_up_to_sequence(state: _State, seq: int) -> None:
     state.event_book = _MockEventBook(
         events=[
-            _MockEvent(
-                sequence=i, type_url="type.googleapis.com/test.Event"
-            )
+            _MockEvent(sequence=i, type_url="type.googleapis.com/test.Event")
             for i in range(seq + 1)
         ]
     )
 
 
-@given(
-    parsers.parse(
-        "an EventBook with snapshot at sequence {seq:d} and no events"
-    )
-)
+@given(parsers.parse("an EventBook with snapshot at sequence {seq:d} and no events"))
 def _given_snapshot_no_events(state: _State, seq: int) -> None:
     state.event_book = _MockEventBook(
         snapshot_sequence=seq, next_sequence_override=seq + 1
@@ -297,22 +279,15 @@ def _given_snapshot_no_events(state: _State, seq: int) -> None:
 
 @given(
     parsers.parse(
-        "an EventBook with snapshot at {snap_seq:d} and events up to "
-        "{event_seq:d}"
+        "an EventBook with snapshot at {snap_seq:d} and events up to " "{event_seq:d}"
     )
 )
-def _given_snapshot_and_events(
-    state: _State, snap_seq: int, event_seq: int
-) -> None:
+def _given_snapshot_and_events(state: _State, snap_seq: int, event_seq: int) -> None:
     events = [
-        _MockEvent(
-            sequence=i, type_url="type.googleapis.com/test.Event"
-        )
+        _MockEvent(sequence=i, type_url="type.googleapis.com/test.Event")
         for i in range(snap_seq + 1, event_seq + 1)
     ]
-    state.event_book = _MockEventBook(
-        events=events, snapshot_sequence=snap_seq
-    )
+    state.event_book = _MockEventBook(events=events, snapshot_sequence=snap_seq)
 
 
 @given("an EventBook")
@@ -326,9 +301,7 @@ def _given_event_book(state: _State) -> None:
 
 @given("an existing state object")
 def _given_existing_state(state: _State) -> None:
-    state.initial_state = _TestState(
-        order_id="existing", item_count=5, field_value=100
-    )
+    state.initial_state = _TestState(order_id="existing", item_count=5, field_value=100)
     state.event_book = _MockEventBook(
         events=[_MockEvent(0, "type.googleapis.com/test.OrderCreated")]
     )
@@ -465,10 +438,7 @@ def _then_final_state_correct_order(state: _State) -> None:
 @then("the state should equal the snapshot state")
 def _then_state_equals_snapshot(state: _State) -> None:
     assert state.built_state is not None
-    assert (
-        state.built_state.field_value > 0
-        or state.built_state.order_id is not None
-    )
+    assert state.built_state.field_value > 0 or state.built_state.order_id is not None
 
 
 @then("no events should be applied")
@@ -482,27 +452,19 @@ def _then_state_starts_from_snapshot(state: _State) -> None:
     assert state.event_book.snapshot_sequence is not None
 
 
-@then(
-    parsers.parse(
-        "only events {e1:d}, {e2:d}, {e3:d}, {e4:d} should be applied"
-    )
-)
+@then(parsers.parse("only events {e1:d}, {e2:d}, {e3:d}, {e4:d} should be applied"))
 def _then_only_specific_events_applied(
     state: _State, e1: int, e2: int, e3: int, e4: int
 ) -> None:
     pass
 
 
-@then(
-    parsers.parse("events at seq {s1:d} and {s2:d} should NOT be applied")
-)
+@then(parsers.parse("events at seq {s1:d} and {s2:d} should NOT be applied"))
 def _then_events_not_applied(state: _State, s1: int, s2: int) -> None:
     pass
 
 
-@then(
-    parsers.parse("only events at seq {s1:d} and {s2:d} should be applied")
-)
+@then(parsers.parse("only events at seq {s1:d} and {s2:d} should be applied"))
 def _then_only_events_applied(state: _State, s1: int, s2: int) -> None:
     pass
 
@@ -520,10 +482,7 @@ def _then_no_error(state: _State) -> None:
 @then("other events should still be applied")
 def _then_other_events_applied(state: _State) -> None:
     assert state.built_state is not None
-    assert (
-        state.built_state.order_id is not None
-        or state.built_state.item_count > 0
-    )
+    assert state.built_state.order_id is not None or state.built_state.item_count > 0
 
 
 @then(parsers.parse("the field should equal {expected:d}"))

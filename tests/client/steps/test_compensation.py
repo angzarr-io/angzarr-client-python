@@ -229,13 +229,9 @@ def _given_ctx_for_rejected(comp_world: _World) -> None:
 
 
 @given(
-    parsers.parse(
-        'a CompensationContext from "{domain}" aggregate at sequence {seq:d}'
-    )
+    parsers.parse('a CompensationContext from "{domain}" aggregate at sequence {seq:d}')
 )
-def _given_ctx_from_domain_seq(
-    comp_world: _World, domain: str, seq: int
-) -> None:
+def _given_ctx_from_domain_seq(comp_world: _World, domain: str, seq: int) -> None:
     cmd, origin = _make_saga_command("fulfillment", "order-fulfillment", domain, seq)
     comp_world.rejected_command = cmd
     comp_world.saga_origin = origin
@@ -255,9 +251,7 @@ def _given_ctx_from_saga(comp_world: _World, saga_name: str) -> None:
 
 
 @given(
-    parsers.re(
-        r'a CompensationContext from "(?P<domain>[^"]+)" aggregate root "[^"]+"'
-    )
+    parsers.re(r'a CompensationContext from "(?P<domain>[^"]+)" aggregate root "[^"]+"')
 )
 def _given_ctx_from_domain_root(comp_world: _World, domain: str) -> None:
     cmd, origin = _make_saga_command("fulfillment", "order-fulfillment", domain, 5)
@@ -375,9 +369,7 @@ def _when_precondition_fails(comp_world: _World) -> None:
 
 @when("a PM command is rejected")
 def _when_pm_rejected(comp_world: _World) -> None:
-    cmd, origin = _make_saga_command(
-        "fulfillment", "pmg-order-workflow", "orders", 5
-    )
+    cmd, origin = _make_saga_command("fulfillment", "pmg-order-workflow", "orders", 5)
     comp_world.rejection_reason = "pm command rejected"
     comp_world.compensation_context = _CompensationContext.from_rejection(
         cmd, "pm command rejected", origin
@@ -539,9 +531,7 @@ def _then_chain_preserved(comp_world: _World) -> None:
 
 @then("root cause can be traced through the chain")
 def _then_trace_root(comp_world: _World) -> None:
-    assert (
-        comp_world.compensation_context.saga_origin.triggering_domain != ""
-    )
+    assert comp_world.compensation_context.saga_origin.triggering_domain != ""
 
 
 @then("the router should build a CompensationContext")

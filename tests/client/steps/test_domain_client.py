@@ -56,11 +56,7 @@ def _given_handler(state: _State, domain: str) -> None:
 # --- Given ------------------------------------------------------------------
 
 
-@given(
-    parsers.parse(
-        'an aggregate "{domain}" with root "{root}" has {count:d} events'
-    )
-)
+@given(parsers.parse('an aggregate "{domain}" with root "{root}" has {count:d} events'))
 def _given_aggregate_with_events(
     state: _State, domain: str, root: str, count: int
 ) -> None:
@@ -136,11 +132,7 @@ def _when_close(state: _State) -> None:
     state.connected = False
 
 
-@when(
-    parsers.parse(
-        'I create a DomainClient from environment variable "{var_name}"'
-    )
-)
+@when(parsers.parse('I create a DomainClient from environment variable "{var_name}"'))
 def _when_create_from_env(state: _State, var_name: str) -> None:
     state.created = True
     state.connected = True

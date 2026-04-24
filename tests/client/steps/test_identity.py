@@ -109,11 +109,7 @@ def _then_uuid_equals(identity_world: IdentityWorld, expected: str) -> None:
     assert str(actual) == expected, f"expected {expected}, got {actual}"
 
 
-@then(
-    parsers.parse(
-        'INVENTORY_PRODUCT_NAMESPACE equals the UUID "{expected}"'
-    )
-)
+@then(parsers.parse('INVENTORY_PRODUCT_NAMESPACE equals the UUID "{expected}"'))
 def _then_namespace_equals(expected: str) -> None:
     assert str(ac.INVENTORY_PRODUCT_NAMESPACE) == expected
 

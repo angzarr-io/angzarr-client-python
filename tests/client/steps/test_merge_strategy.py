@@ -119,13 +119,9 @@ def _given_concurrent_increments(state: _State) -> None:
     ]
 
 
-@given(
-    parsers.re(r'a set aggregate containing \[(?P<items>[^\]]+)\]')
-)
+@given(parsers.re(r"a set aggregate containing \[(?P<items>[^\]]+)\]"))
 def _given_set_aggregate(state: _State, items: str) -> None:
-    state.set_items = [
-        s.strip().strip('"') for s in items.split(",") if s.strip()
-    ]
+    state.set_items = [s.strip().strip('"') for s in items.split(",") if s.strip()]
 
 
 @given(parsers.parse('two concurrent AddItem commands for "{item}":'))
@@ -171,9 +167,7 @@ def _given_commands_for_same_aggregate(state: _State) -> None:
     state.commands = [
         _MockCommand(merge_strategy=_Strategy.STRICT, target_sequence=1),
         _MockCommand(merge_strategy=_Strategy.COMMUTATIVE, target_sequence=1),
-        _MockCommand(
-            merge_strategy=_Strategy.AGGREGATE_HANDLES, target_sequence=1
-        ),
+        _MockCommand(merge_strategy=_Strategy.AGGREGATE_HANDLES, target_sequence=1),
     ]
 
 
@@ -330,9 +324,7 @@ def _when_command_uses_strategy(state: _State, strategy: str) -> None:
 
 @when(parsers.parse("a STRICT command targets sequence {seq:d}"))
 def _when_strict_targets_sequence(state: _State, seq: int) -> None:
-    state.command = _MockCommand(
-        merge_strategy=_Strategy.STRICT, target_sequence=seq
-    )
+    state.command = _MockCommand(merge_strategy=_Strategy.STRICT, target_sequence=seq)
     if seq == state.next_sequence:
         state.command_succeeded = True
 
@@ -458,13 +450,11 @@ def _then_second_idempotent(state: _State) -> None:
     assert state.concurrent_results[1][0]
 
 
-@then(parsers.re(r'the set contains \[(?P<items>.+)\]'))
+@then(parsers.re(r"the set contains \[(?P<items>.+)\]"))
 def _then_set_contains(state: _State, items: str) -> None:
     if "cherry" not in state.set_items:
         state.set_items.append("cherry")
-    expected = [
-        s.strip().strip('"') for s in items.split(",") if s.strip()
-    ]
+    expected = [s.strip().strip('"') for s in items.split(",") if s.strip()]
     for item in expected:
         assert item in state.set_items, (item, state.set_items)
 
@@ -476,7 +466,7 @@ def _then_response_status(state: _State, status: str) -> None:
     assert state.error_status == status
 
 
-@then(parsers.re(r'the behavior is (?P<behavior>.+)'))
+@then(parsers.re(r"the behavior is (?P<behavior>.+)"))
 def _then_behavior_is(state: _State, behavior: str) -> None:
     pass
 

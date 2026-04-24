@@ -66,11 +66,7 @@ def _given_speculative_client(state: _State) -> None:
 # --- Given: aggregates ------------------------------------------------------
 
 
-@given(
-    parsers.parse(
-        'an aggregate "{domain}" with root "{root}" has {count:d} events'
-    )
-)
+@given(parsers.parse('an aggregate "{domain}" with root "{root}" has {count:d} events'))
 def _given_aggregate_with_events(
     state: _State, domain: str, root: str, count: int
 ) -> None:
@@ -81,9 +77,7 @@ def _given_aggregate_with_events(
 
 
 @given(
-    parsers.parse(
-        'an aggregate "{domain}" with root "{root}" in state "{agg_state}"'
-    )
+    parsers.parse('an aggregate "{domain}" with root "{root}" in state "{agg_state}"')
 )
 def _given_aggregate_in_state(
     state: _State, domain: str, root: str, agg_state: str
@@ -101,15 +95,11 @@ def _given_aggregate(state: _State, domain: str, root: str) -> None:
 
 @given(parsers.parse('events for "{domain}" root "{root}"'))
 def _given_events_for(state: _State, domain: str, root: str) -> None:
-    state.aggregates[f"{domain}:{root}"] = [
-        _MockEvent(sequence=0, event_type="Event")
-    ]
+    state.aggregates[f"{domain}:{root}"] = [_MockEvent(sequence=0, event_type="Event")]
 
 
 @given(parsers.parse('{count:d} events for "{domain}" root "{root}"'))
-def _given_n_events_for(
-    state: _State, count: int, domain: str, root: str
-) -> None:
+def _given_n_events_for(state: _State, count: int, domain: str, root: str) -> None:
     state.aggregates[f"{domain}:{root}"] = [
         _MockEvent(sequence=i, event_type="Event") for i in range(count)
     ]
@@ -132,8 +122,7 @@ def _given_events_without_correlation(state: _State) -> None:
 
 @given(
     parsers.parse(
-        'a speculative aggregate "{domain}" with root "{root}" has '
-        '{count:d} events'
+        'a speculative aggregate "{domain}" with root "{root}" has ' "{count:d} events"
     )
 )
 def _given_speculative_aggregate(
@@ -154,13 +143,9 @@ def _given_service_unavailable(state: _State) -> None:
 
 
 @when(
-    parsers.parse(
-        'I speculatively execute a command against "{domain}" root "{root}"'
-    )
+    parsers.parse('I speculatively execute a command against "{domain}" root "{root}"')
 )
-def _when_speculative_execute_against(
-    state: _State, domain: str, root: str
-) -> None:
+def _when_speculative_execute_against(state: _State, domain: str, root: str) -> None:
     state.speculative_result = _SpeculativeResult(
         events=[_MockEvent(sequence=0, event_type="SpeculativeEvent")]
     )
@@ -332,10 +317,7 @@ def _then_fail_validation(state: _State) -> None:
 
 @then("no events should be produced")
 def _then_no_events_produced(state: _State) -> None:
-    assert (
-        state.speculative_result is None
-        or not state.speculative_result.events
-    )
+    assert state.speculative_result is None or not state.speculative_result.events
 
 
 @then("an edition should be created for the speculation")

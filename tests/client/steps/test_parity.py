@@ -91,6 +91,4 @@ def _then_predicate_exposed(predicate: str) -> None:
             continue
         if not hasattr(cls, predicate):
             missing.append(f"{cls_name}.{predicate} missing")
-    assert not missing, (
-        f'Predicate "{predicate}" missing on: {missing}'
-    )
+    assert not missing, f'Predicate "{predicate}" missing on: {missing}'

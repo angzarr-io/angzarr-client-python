@@ -48,6 +48,7 @@ def _given_upcaster_class(
     state: _State, cls_name: str, up_name: str, domain: str
 ) -> None:
     try:
+
         @upcaster(name=up_name, domain=domain)
         class UpcasterCls:
             pass
@@ -66,6 +67,7 @@ def _given_upcaster_class(
 )
 def _given_upcasts_method(state: _State, from_name: str, to_name: str) -> None:
     try:
+
         @upcasts(_FromType, _ToType)
         def upgrade(old):
             return old
@@ -78,6 +80,7 @@ def _given_upcasts_method(state: _State, from_name: str, to_name: str) -> None:
 @given("a method declared as a state factory")
 def _given_state_factory_method(state: _State) -> None:
     try:
+
         @state_factory
         def empty_state():
             return object()

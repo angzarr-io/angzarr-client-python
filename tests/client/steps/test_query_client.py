@@ -70,17 +70,11 @@ def _given_aggregate(state: _State, domain: str, root: str) -> None:
     state.aggregates[f"{domain}:{root}"] = _MockEventBook()
 
 
-@given(
-    parsers.parse(
-        'an aggregate "{domain}" with root "{root}" has {count:d} events'
-    )
-)
+@given(parsers.parse('an aggregate "{domain}" with root "{root}" has {count:d} events'))
 def _given_aggregate_with_events(
     state: _State, domain: str, root: str, count: int
 ) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook(
-        events=_default_events(count)
-    )
+    state.aggregates[f"{domain}:{root}"] = _MockEventBook(events=_default_events(count))
 
 
 @given(
@@ -102,12 +96,8 @@ def _given_aggregate_with_specific_event(
         'an aggregate "{domain}" with root "{root}" has events at known timestamps'
     )
 )
-def _given_aggregate_with_timestamps(
-    state: _State, domain: str, root: str
-) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook(
-        events=_default_events(5)
-    )
+def _given_aggregate_with_timestamps(state: _State, domain: str, root: str) -> None:
+    state.aggregates[f"{domain}:{root}"] = _MockEventBook(events=_default_events(5))
 
 
 @given(
@@ -126,12 +116,8 @@ def _given_aggregate_in_edition(
         'an aggregate "{domain}" with root "{root}" has {count:d} events in main'
     )
 )
-def _given_aggregate_in_main(
-    state: _State, domain: str, root: str, count: int
-) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook(
-        events=_default_events(count)
-    )
+def _given_aggregate_in_main(state: _State, domain: str, root: str, count: int) -> None:
+    state.aggregates[f"{domain}:{root}"] = _MockEventBook(events=_default_events(count))
 
 
 @given(
@@ -151,7 +137,7 @@ def _given_aggregate_in_edition_count(
 @given(
     parsers.parse(
         'an aggregate "{domain}" with root "{root}" has a snapshot at sequence '
-        '{snap_seq:d} and {total:d} events'
+        "{snap_seq:d} and {total:d} events"
     )
 )
 def _given_aggregate_with_snapshot(
@@ -162,11 +148,7 @@ def _given_aggregate_with_snapshot(
     )
 
 
-@given(
-    parsers.parse(
-        'events with correlation ID "{cid}" exist in multiple aggregates'
-    )
-)
+@given(parsers.parse('events with correlation ID "{cid}" exist in multiple aggregates'))
 def _given_correlated_events(state: _State, cid: str) -> None:
     state.correlation_events[cid] = [
         _MockEventBook(
@@ -199,9 +181,7 @@ def _when_query_events(state: _State, domain: str, root: str) -> None:
 
 
 @when(
-    parsers.parse(
-        'I query events for "{domain}" root "{root}" from sequence {start:d}'
-    )
+    parsers.parse('I query events for "{domain}" root "{root}" from sequence {start:d}')
 )
 def _when_query_from_sequence(
     state: _State, domain: str, root: str, start: int
@@ -222,7 +202,7 @@ def _when_query_from_sequence(
 @when(
     parsers.parse(
         'I query events for "{domain}" root "{root}" from sequence {start:d} '
-        'to {end:d}'
+        "to {end:d}"
     )
 )
 def _when_query_range(
@@ -242,13 +222,9 @@ def _when_query_range(
 
 
 @when(
-    parsers.parse(
-        'I query events for "{domain}" root "{root}" as of sequence {seq:d}'
-    )
+    parsers.parse('I query events for "{domain}" root "{root}" as of sequence {seq:d}')
 )
-def _when_query_as_of_sequence(
-    state: _State, domain: str, root: str, seq: int
-) -> None:
+def _when_query_as_of_sequence(state: _State, domain: str, root: str, seq: int) -> None:
     key = f"{domain}:{root}"
     book = state.aggregates.get(key)
     if book is None:
@@ -275,17 +251,11 @@ def _when_query_as_of_time(
 
 
 @when(
-    parsers.parse(
-        'I query events for "{domain}" root "{root}" in edition "{edition}"'
-    )
+    parsers.parse('I query events for "{domain}" root "{root}" in edition "{edition}"')
 )
-def _when_query_in_edition(
-    state: _State, domain: str, root: str, edition: str
-) -> None:
+def _when_query_in_edition(state: _State, domain: str, root: str, edition: str) -> None:
     key = f"{domain}:{root}:{edition}"
-    state.result = state.aggregates.get(
-        key, _MockEventBook(edition=edition)
-    )
+    state.result = state.aggregates.get(key, _MockEventBook(edition=edition))
 
 
 @when(parsers.parse('I query events by correlation ID "{cid}"'))

@@ -127,11 +127,7 @@ def _then_error_socket_not_found(state: _State) -> None:
 # --- Environment variable ---------------------------------------------------
 
 
-@given(
-    parsers.re(
-        r'environment variable "(?P<name>[^"]+)" set to "(?P<value>[^"]*)"'
-    )
-)
+@given(parsers.re(r'environment variable "(?P<name>[^"]+)" set to "(?P<value>[^"]*)"'))
 def _given_env_var_set(state: _State, name: str, value: str) -> None:
     state.env_vars[name] = value
 

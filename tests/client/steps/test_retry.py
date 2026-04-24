@@ -69,7 +69,9 @@ def _given_policy(state: _State, n: int) -> None:
     )
 
 
-@given(parsers.parse("an operation that fails {fail_count:d} times then returns {value:d}"))
+@given(
+    parsers.parse("an operation that fails {fail_count:d} times then returns {value:d}")
+)
 def _given_op_fails_then(state: _State, fail_count: int, value: int) -> None:
     def op():
         state.call_count += 1

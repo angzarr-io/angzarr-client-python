@@ -116,18 +116,12 @@ def _given_cover_for_root(state: _State, domain: str) -> None:
     state.cover = make_cover(domain, state.derived_root, "")
 
 
-@when(
-    "I call make_event_book with that cover, no pages, and no explicit next_sequence"
-)
+@when("I call make_event_book with that cover, no pages, and no explicit next_sequence")
 def _when_make_event_book(state: _State) -> None:
     state.event_book = make_event_book(state.cover, pages=[])
 
 
-@then(
-    parsers.parse(
-        "the resulting event book has next_sequence equal to {seq:d}"
-    )
-)
+@then(parsers.parse("the resulting event book has next_sequence equal to {seq:d}"))
 def _then_event_book_next_sequence(state: _State, seq: int) -> None:
     assert state.event_book.next_sequence == seq
 
@@ -137,9 +131,7 @@ def _then_event_book_next_sequence(state: _State, seq: int) -> None:
         'a ScenarioContext with domain "{domain}" and root bytes for "{name}"'
     )
 )
-def _given_scenario_context(
-    state: _State, domain: str, name: str
-) -> None:
+def _given_scenario_context(state: _State, domain: str, name: str) -> None:
     ctx = ScenarioContext()
     ctx.domain = domain
     ctx.root = uuid_for(name)

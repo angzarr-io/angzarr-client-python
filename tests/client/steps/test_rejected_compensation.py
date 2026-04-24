@@ -40,9 +40,7 @@ class _PaymentState:
 # --- Given — variant markers ------------------------------------------------
 
 
-@given(
-    'a command handler "Payment" for domain "payment" with stateful rejection'
-)
+@given('a command handler "Payment" for domain "payment" with stateful rejection')
 def _given_stateful(world):
     world.classes["__variant__"] = "stateful"
     world.classes["__applies__"] = False
@@ -53,9 +51,7 @@ def _given_two_rejected(world):
     world.classes["__variant__"] = "double"
 
 
-@given(
-    'a command handler "Payment" for domain "payment" with no rejection handlers'
-)
+@given('a command handler "Payment" for domain "payment" with no rejection handlers')
 def _given_no_rejected(world):
     @command_handler(domain="payment", state=_PaymentState)
     class Payment:
@@ -152,9 +148,7 @@ def _given_router_built(world):
     cls = world.classes["Payment"]
     inst = cls()
     world.handlers.append(inst)
-    world.router = (
-        Router("agg").with_handler(type(inst), lambda i=inst: i).build()
-    )
+    world.router = Router("agg").with_handler(type(inst), lambda i=inst: i).build()
 
 
 # --- Given — prior EventBook ------------------------------------------------
@@ -193,13 +187,9 @@ def _given_prior_next_seq(world, seq: int):
 )
 def _when_notification_dispatched(world, cmd_kind: str, target: str):
     ctors = {
-        "ReserveStock": lambda: ReserveStock(
-            order_id="o-1", sku="sku-1", quantity=1
-        ),
+        "ReserveStock": lambda: ReserveStock(order_id="o-1", sku="sku-1", quantity=1),
         "ProcessPayment": lambda: ProcessPayment(order_id="o-1"),
-        "CreateShipment": lambda: CreateShipment(
-            order_id="o-1", address="addr"
-        ),
+        "CreateShipment": lambda: CreateShipment(order_id="o-1", address="addr"),
     }
     cmd = ctors[cmd_kind]()
     notif = notification_for(cmd, target_domain=target)

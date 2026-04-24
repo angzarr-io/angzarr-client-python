@@ -175,9 +175,7 @@ def _given_command_response_no_events(state: _State) -> None:
 
 
 @given(parsers.parse('{count:d} events all of type "{event_type}"'))
-def _given_n_events_of_type(
-    state: _State, count: int, event_type: str
-) -> None:
+def _given_n_events_of_type(state: _State, count: int, event_type: str) -> None:
     state.events_list = [
         _make_event(
             sequence=i,
@@ -320,8 +318,7 @@ def _when_decode_by_type(state: _State) -> None:
 @when(parsers.parse('I filter for "{event_type}" events'))
 def _when_filter_for_type(state: _State, event_type: str) -> None:
     state.events_list = [
-        e for e in state.events_list
-        if e.type_url and e.type_url.endswith(event_type)
+        e for e in state.events_list if e.type_url and e.type_url.endswith(event_type)
     ]
 
 

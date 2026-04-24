@@ -66,11 +66,7 @@ def _given_new_aggregate(state: _State, domain: str) -> None:
     state.aggregates[f"{domain}:{state.root}"] = 0
 
 
-@given(
-    parsers.parse(
-        'an aggregate "{domain}" with root "{root}" at sequence {seq:d}'
-    )
-)
+@given(parsers.parse('an aggregate "{domain}" with root "{root}" at sequence {seq:d}'))
 def _given_aggregate_at_sequence(
     state: _State, domain: str, root: str, seq: int
 ) -> None:
@@ -88,9 +84,7 @@ def _given_aggregate(state: _State, domain: str, root: str) -> None:
     state.aggregates[f"{domain}:{root}"] = 0
 
 
-@given(
-    parsers.parse('no aggregate exists for domain "{domain}" root "{root}"')
-)
+@given(parsers.parse('no aggregate exists for domain "{domain}" root "{root}"'))
 def _given_no_aggregate(state: _State, domain: str, root: str) -> None:
     state.domain = domain
     state.root = root
@@ -121,9 +115,7 @@ def _given_service_slow(state: _State) -> None:
 
 
 @when(parsers.parse('I execute a "{cmd_type}" command with data "{data}"'))
-def _when_execute_command_with_data(
-    state: _State, cmd_type: str, data: str
-) -> None:
+def _when_execute_command_with_data(state: _State, cmd_type: str, data: str) -> None:
     state.command_type = cmd_type
     state.command_data = data
     state.command_succeeded = True
@@ -135,9 +127,7 @@ def _when_execute_command_with_data(
 
 
 @when(parsers.parse('I execute a "{cmd_type}" command at sequence {seq:d}'))
-def _when_execute_named_at_sequence(
-    state: _State, cmd_type: str, seq: int
-) -> None:
+def _when_execute_named_at_sequence(state: _State, cmd_type: str, seq: int) -> None:
     state.command_type = cmd_type
     key = f"{state.domain}:{state.root}"
     current_seq = state.aggregates.get(key, 0)
@@ -176,14 +166,8 @@ def _when_concurrent_commands(state: _State) -> None:
     state.concurrent_results.append(False)
 
 
-@when(
-    parsers.parse(
-        'I query the current sequence for "{domain}" root "{root}"'
-    )
-)
-def _when_query_current_sequence(
-    state: _State, domain: str, root: str
-) -> None:
+@when(parsers.parse('I query the current sequence for "{domain}" root "{root}"'))
+def _when_query_current_sequence(state: _State, domain: str, root: str) -> None:
     state.current_sequence = state.aggregates.get(f"{domain}:{root}")
 
 
@@ -276,9 +260,7 @@ def _when_execute_with_timeout(state: _State, timeout: int) -> None:
         'I execute a "{cmd_type}" command for root "{root}" at sequence {seq:d}'
     )
 )
-def _when_execute_for_root(
-    state: _State, cmd_type: str, root: str, seq: int
-) -> None:
+def _when_execute_for_root(state: _State, cmd_type: str, root: str, seq: int) -> None:
     state.root = root
     if seq == 0:
         state.command_succeeded = True
@@ -385,9 +367,7 @@ def _then_error_unknown_domain(state: _State) -> None:
 
 
 @then(parsers.parse("events should have sequences {s1:d}, {s2:d}, {s3:d}"))
-def _then_events_have_sequences(
-    state: _State, s1: int, s2: int, s3: int
-) -> None:
+def _then_events_have_sequences(state: _State, s1: int, s2: int, s3: int) -> None:
     assert len(state.events_returned) == 3
     assert state.events_returned[0][1] == s1
     assert state.events_returned[1][1] == s2
