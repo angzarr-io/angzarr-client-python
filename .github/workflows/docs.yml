@@ -49,6 +49,12 @@ jobs:
       - name: Build Sphinx HTML
         run: just docs
 
+      # Configure the custom domain. GitHub Pages reads this file on deploy
+      # and serves the site at the domain specified; the DNS CNAME
+      # `python.angzarr.io → angzarr-io.github.io` handles routing.
+      - name: Write CNAME
+        run: echo "python.angzarr.io" > docs/_build/html/CNAME
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
