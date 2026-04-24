@@ -13,10 +13,6 @@ pre-commit:
     test:
       run: just test
 
-pre-push:
-  parallel: false
-  commands:
-    # Gate the 80% mutation kill rate. Bypass with LEFTHOOK=0 git push.
-    mutation:
-      tags: slow
-      run: just mutation-test
+# Mutation testing runs on a weekly schedule
+# (.github/workflows/mutation.yml) rather than gating every push.
+# Invoke manually with `just mutation-test` when needed.

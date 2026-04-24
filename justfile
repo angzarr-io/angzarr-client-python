@@ -21,6 +21,15 @@ test-pytest:
 # Full suite
 test: test-pytest test-client-unit
 
+# Full suite with verbose output (matches Rust's `just test-verbose`)
+test-verbose:
+    uv run --extra dev pytest tests/ -v -s
+
+# Lint only (ruff). `fmt` already runs black --check + ruff check; this is
+# a cross-language alias matching Rust's `just lint` = `cargo clippy -D warnings`.
+lint:
+    uv run ruff check .
+
 # Run tests with coverage
 coverage:
     uv run --extra dev pytest tests/ --cov=angzarr_client --cov-report=term-missing --cov-report=html
