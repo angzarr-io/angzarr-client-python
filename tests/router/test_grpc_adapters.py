@@ -136,6 +136,75 @@ def test_command_handler_grpc_translates_dispatch_error_to_invalid_argument():
     assert code == grpc.StatusCode.INVALID_ARGUMENT
 
 
+def _abort_code_for(exc_to_raise: Exception) -> grpc.StatusCode:
+    """Drive a CommandHandlerGrpc dispatch with `exc_to_raise` and return the
+    gRPC status code the adapter chose."""
+
+    @command_handler(domain="order", state=State)
+    class Agg:
+        @handles(CreateOrder)
+        def on(self, cmd, state, seq):
+            raise exc_to_raise
+
+    router = Router("agg").with_handler(Agg, lambda: Agg()).build()
+    servicer = CommandHandlerGrpc(router)
+    ctx = Mock(spec=grpc.ServicerContext)
+    servicer.Handle(_contextual_command(CreateOrder(order_id="o-1")), ctx)
+    ctx.abort.assert_called_once()
+    code, _ = ctx.abort.call_args[0]
+    return code
+
+
+def test_command_rejected_error_invalid_argument_status_maps_to_invalid_argument():
+    # Previously collapsed every CommandRejectedError to FAILED_PRECONDITION,
+    # losing the rejection's own status_code. Mirrors Rust's From<CommandRejectedError>.
+    err = CommandRejectedError.invalid_argument("bad input")
+    assert _abort_code_for(err) == grpc.StatusCode.INVALID_ARGUMENT
+
+
+def test_command_rejected_error_not_found_status_maps_to_not_found():
+    err = CommandRejectedError.not_found("missing aggregate")
+    assert _abort_code_for(err) == grpc.StatusCode.NOT_FOUND
+
+
+def test_invalid_argument_error_maps_to_invalid_argument():
+    from angzarr_client.errors import InvalidArgumentError
+
+    assert _abort_code_for(InvalidArgumentError("bad")) == grpc.StatusCode.INVALID_ARGUMENT
+
+
+def test_invalid_timestamp_error_maps_to_invalid_argument():
+    from angzarr_client.errors import InvalidTimestampError
+
+    assert _abort_code_for(InvalidTimestampError("not rfc3339")) == grpc.StatusCode.INVALID_ARGUMENT
+
+
+def test_connection_error_maps_to_unavailable():
+    from angzarr_client.errors import ConnectionError as AngzarrConnectionError
+
+    assert _abort_code_for(AngzarrConnectionError("dns")) == grpc.StatusCode.UNAVAILABLE
+
+
+def test_transport_error_maps_to_unavailable():
+    from angzarr_client.errors import TransportError
+
+    assert _abort_code_for(TransportError(RuntimeError("eof"))) == grpc.StatusCode.UNAVAILABLE
+
+
+def test_grpc_error_passes_through_upstream_code():
+    import grpc
+    from angzarr_client.errors import GRPCError
+
+    class _RpcErr(grpc.RpcError):
+        def code(self):
+            return grpc.StatusCode.RESOURCE_EXHAUSTED
+
+        def details(self):
+            return "rate limited"
+
+    assert _abort_code_for(GRPCError(_RpcErr())) == grpc.StatusCode.RESOURCE_EXHAUSTED
+
+
 # --------------------------------------------------------------------------
 # SagaGrpc adapter
 # --------------------------------------------------------------------------

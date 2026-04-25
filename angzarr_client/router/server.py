@@ -21,7 +21,14 @@ from typing import Any
 
 import grpc
 
-from angzarr_client.errors import CommandRejectedError
+from angzarr_client.errors import (
+    CommandRejectedError,
+    ConnectionError,
+    GRPCError,
+    InvalidArgumentError,
+    InvalidTimestampError,
+    TransportError,
+)
 from angzarr_client.proto.angzarr import (
     command_handler_pb2,
     command_handler_pb2_grpc,
@@ -39,11 +46,30 @@ from .dispatch import DispatchError
 
 
 def _translate_and_abort(context: grpc.ServicerContext, exc: Exception) -> None:
-    """Map a dispatch-layer exception to a gRPC status and abort the RPC."""
+    """Map a dispatch-layer exception to a gRPC status and abort the RPC.
+
+    Mirrors the Rust client's ``client_error_to_status`` so the same logical
+    failure surfaces the same gRPC code on either side of the wire.
+    """
     if isinstance(exc, CommandRejectedError):
-        context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
+        # Honor the rejection's own status_code rather than collapsing to
+        # FAILED_PRECONDITION — INVALID_ARGUMENT and NOT_FOUND rejections
+        # carry retry-stopping semantics that callers rely on.
+        code_map = {
+            "INVALID_ARGUMENT": grpc.StatusCode.INVALID_ARGUMENT,
+            "NOT_FOUND": grpc.StatusCode.NOT_FOUND,
+        }
+        code = code_map.get(exc.status_code, grpc.StatusCode.FAILED_PRECONDITION)
+        context.abort(code, str(exc))
     elif isinstance(exc, DispatchError):
         context.abort(exc.code(), exc.details())
+    elif isinstance(exc, GRPCError):
+        # Pass the upstream gRPC status through unchanged.
+        context.abort(exc.code, exc.details)
+    elif isinstance(exc, (InvalidArgumentError, InvalidTimestampError)):
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+    elif isinstance(exc, (ConnectionError, TransportError)):
+        context.abort(grpc.StatusCode.UNAVAILABLE, str(exc))
     else:
         # Unknown exceptions bubble up as INTERNAL.
         context.abort(grpc.StatusCode.INTERNAL, str(exc))
