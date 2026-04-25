@@ -57,6 +57,13 @@ def test_pack_events_empty_returns_empty_pages():
     assert book.cover.root.value == b"test-root"
 
 
+def test_pack_event_default_type_url_prefix_is_standard():
+    event = Timestamp(seconds=1000)
+    book = pack_event(_cover(), event, seq=0)
+
+    assert book.pages[0].event.type_url.startswith("type.googleapis.com/")
+
+
 def test_pack_event_custom_type_url_prefix():
     event = Timestamp(seconds=1000)
     book = pack_event(_cover(), event, seq=0, type_url_prefix="type.custom/")

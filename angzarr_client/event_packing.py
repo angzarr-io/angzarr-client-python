@@ -75,7 +75,7 @@ def pack_event(
     cover: angzarr.Cover,
     event: Message,
     seq: int,
-    type_url_prefix: str = "type.examples/",
+    type_url_prefix: str = "type.googleapis.com/",
 ) -> angzarr.EventBook:
     """Pack a single protobuf event into an EventBook.
 
@@ -107,7 +107,7 @@ def pack_events(
     cover: angzarr.Cover,
     events: list[Message],
     start_seq: int,
-    type_url_prefix: str = "type.examples/",
+    type_url_prefix: str = "type.googleapis.com/",
 ) -> angzarr.EventBook:
     """Pack multiple protobuf events into an EventBook with sequential numbering.
 
