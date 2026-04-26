@@ -33,6 +33,15 @@ class _BuiltRouterBase:
         self.name = name
         self._factories: list[Factory] = list(factories)
 
+    def output_domains(self) -> list[str]:
+        """Domains this router emits commands to.
+
+        Read from each registered handler class's ``__angzarr_meta__``.
+        Default is empty — only sagas (``target``) and process managers
+        (``targets``) override.
+        """
+        return []
+
 
 class CommandHandlerRouter(_BuiltRouterBase, Generic[S]):
     """Runtime router dispatching commands to registered @command_handler instances."""
@@ -53,6 +62,15 @@ class SagaRouter(_BuiltRouterBase):
 
         return dispatch_saga(self._factories, request)
 
+    def output_domains(self) -> list[str]:
+        seen: list[str] = []
+        for cls, _factory in self._factories:
+            meta = getattr(cls, "__angzarr_meta__", {})
+            target = meta.get("target")
+            if target and target not in seen:
+                seen.append(target)
+        return seen
+
 
 class ProcessManagerRouter(_BuiltRouterBase, Generic[S]):
     """Runtime router dispatching events to registered @process_manager instances."""
@@ -62,6 +80,15 @@ class ProcessManagerRouter(_BuiltRouterBase, Generic[S]):
         from .dispatch import dispatch_process_manager
 
         return dispatch_process_manager(self._factories, request)
+
+    def output_domains(self) -> list[str]:
+        seen: list[str] = []
+        for cls, _factory in self._factories:
+            meta = getattr(cls, "__angzarr_meta__", {})
+            for target in meta.get("targets", []):
+                if target and target not in seen:
+                    seen.append(target)
+        return seen
 
 
 class ProjectorRouter(_BuiltRouterBase):
