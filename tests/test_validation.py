@@ -45,6 +45,23 @@ class TestRequirePositive:
         with pytest.raises(CommandRejectedError):
             require_positive(-1, "error")
 
+    def test_accepts_float(self):
+        """P3.1 / audit finding #14: matches Rust's `<T: PartialOrd>`."""
+        require_positive(0.5, "error")
+        with pytest.raises(CommandRejectedError):
+            require_positive(0.0, "error")
+        with pytest.raises(CommandRejectedError):
+            require_positive(-0.001, "error")
+
+    def test_accepts_decimal(self):
+        from decimal import Decimal
+
+        require_positive(Decimal("0.01"), "error")
+        with pytest.raises(CommandRejectedError):
+            require_positive(Decimal("0"), "error")
+        with pytest.raises(CommandRejectedError):
+            require_positive(Decimal("-1"), "error")
+
 
 class TestRequireNonNegative:
     def test_passes(self):
@@ -54,6 +71,17 @@ class TestRequireNonNegative:
     def test_fails(self):
         with pytest.raises(CommandRejectedError):
             require_non_negative(-1, "error")
+
+    def test_accepts_float_and_decimal(self):
+        from decimal import Decimal
+
+        require_non_negative(0.0, "error")
+        require_non_negative(0.5, "error")
+        require_non_negative(Decimal("0"), "error")
+        with pytest.raises(CommandRejectedError):
+            require_non_negative(-0.001, "error")
+        with pytest.raises(CommandRejectedError):
+            require_non_negative(Decimal("-0.5"), "error")
 
 
 class TestRequireNotEmpty:

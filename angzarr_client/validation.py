@@ -4,9 +4,17 @@ Eliminates repeated validation boilerplate across aggregate handlers.
 """
 
 from collections.abc import Sequence
-from typing import Any
+from decimal import Decimal
+from typing import Any, Union
 
 from .errors import CommandRejectedError
+
+# Numeric types accepted by `require_positive` / `require_non_negative`.
+# Mirrors Rust's generic `<T: PartialOrd>` bound which accepts any
+# orderable numeric type — Python's nearest analog is the union of
+# the standard numeric tower (`int | float | Decimal`). P3.1 / audit
+# finding #14.
+_Numeric = Union[int, float, Decimal]
 
 
 def require_exists(field: str, error_msg: str) -> None:
@@ -25,14 +33,21 @@ def require_not_exists(field: str, error_msg: str) -> None:
         raise CommandRejectedError(error_msg)
 
 
-def require_positive(value: int, error_msg: str) -> None:
-    """Require that a value is greater than zero."""
+def require_positive(value: _Numeric, error_msg: str) -> None:
+    """Require that a value is greater than zero.
+
+    Accepts `int`, `float`, or `Decimal` — matches Rust's
+    `<T: PartialOrd>` generic bound (`validation.rs:47`).
+    """
     if value <= 0:
         raise CommandRejectedError.invalid_argument(error_msg)
 
 
-def require_non_negative(value: int, error_msg: str) -> None:
-    """Require that a value is zero or greater."""
+def require_non_negative(value: _Numeric, error_msg: str) -> None:
+    """Require that a value is zero or greater.
+
+    Accepts `int`, `float`, or `Decimal` — see :func:`require_positive`.
+    """
     if value < 0:
         raise CommandRejectedError.invalid_argument(error_msg)
 
