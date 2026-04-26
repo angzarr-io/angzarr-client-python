@@ -255,6 +255,21 @@ class TestCommandRejectedErrorPredicates:
         assert err.is_precondition_failed() is False
         assert err.is_invalid_argument() is False
 
+    def test_is_a_client_error(self) -> None:
+        """CommandRejectedError IS-A ClientError so callers can catch the
+        base class and still get rejection-specific predicates without
+        casting. P2.3 cross-language taxonomy contract — Rust mirrors
+        this with a ClientError::Rejected variant + From impl."""
+        from angzarr_client.errors import CommandRejectedError
+
+        err = CommandRejectedError.not_found("missing")
+        assert isinstance(err, ClientError)
+        # Polymorphic predicate access via the base type still routes
+        # to the rejection's status_code.
+        as_base: ClientError = err
+        assert as_base.is_not_found() is True
+        assert as_base.is_precondition_failed() is False
+
 
 class TestInvalidTimestampError:
     """Tests for InvalidTimestampError."""
