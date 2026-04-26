@@ -33,6 +33,19 @@ class _BuiltRouterBase:
         self.name = name
         self._factories: list[Factory] = list(factories)
 
+    def handler_count(self) -> int:
+        """Number of factories registered on this runtime router.
+
+        Mirrors Rust's `handler_count()` exposed on every kind-specific
+        router via the `impl_handler_count!` macro
+        (`runtime.rs:454-468`). P3.2 / audit finding.
+        """
+        return len(self._factories)
+
+    def __len__(self) -> int:
+        """Pythonic alias for :meth:`handler_count`. ``len(router)``."""
+        return self.handler_count()
+
     def output_domains(self) -> list[str]:
         """Domains this router emits commands to.
 

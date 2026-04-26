@@ -83,6 +83,24 @@ def test_build_multiple_command_handlers_returns_command_handler_router():
     assert isinstance(router, CommandHandlerRouter)
 
 
+def test_handler_count_returns_number_of_factories():
+    """P3.2 / audit finding: parity with Rust's `handler_count()`
+    on every kind-specific runtime router (`runtime.rs:454-468`)."""
+    one = Router("x").with_handler(Player, lambda: Player()).build()
+    assert one.handler_count() == 1
+    assert len(one) == 1  # __len__ alias
+
+    three = (
+        Router("x")
+        .with_handler(Player, Player)
+        .with_handler(Player, Player)
+        .with_handler(Player, Player)
+        .build()
+    )
+    assert three.handler_count() == 3
+    assert len(three) == 3
+
+
 def test_build_saga_returns_saga_router():
     router = Router("x").with_handler(OrderSaga, lambda: OrderSaga()).build()
     assert isinstance(router, SagaRouter)
