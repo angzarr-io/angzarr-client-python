@@ -193,6 +193,25 @@ Everything maps. The shape differs; the names and semantics don't.
 | Retry callback | `.with_on_retry(\|i, e\| ...)` | `on_retry=lambda i, e: ...` |
 | Compensation options | `delegate_to_framework(reason)` **or** `delegate_to_framework_with_options(reason, emit, send_to_dead_letter, escalate, abort)` (two-function idiom) | `delegate_to_framework(reason, send_to_dead_letter=True)` (kwargs) |
 | Type-URL match | `type_url_matches(url, name)` (primary) — `type_url_matches_exact` is Python-compat alias | `type_url_matches(url, name)` (primary) |
+| Destinations query | `destinations.has_domain(d)` (canonical) — `has_sequence` is a `#[deprecated]` alias | `destinations.has_domain(d)` |
+| Destinations iteration | `destinations.domains()` — insertion-preserving via `IndexMap` | `destinations.domains` — insertion-preserving via `dict` |
+| `CommandBuilder.execute` | `async fn execute() -> Result<CommandResponse>` — `with_sync_mode(SyncMode)` for non-default modes | `def execute(sync_mode=SyncMode.SYNC_MODE_ASYNC) -> CommandResponse` (sync) |
+| `decode_event` | `decode_event(event, full_type_name)` — exact match (not suffix) | `decode_event(page, full_type_name, msg_class)` — exact match |
+| Validation primitives | `require_positive<T: PartialOrd>(value, msg)` — generic | `require_positive(value: int|float|Decimal, msg)` |
+
+## Things that intentionally differ (not bugs)
+
+These are language-natural patterns that the audit flagged for
+documentation rather than convergence (per audit P3.3 and P4):
+
+- **Async vs sync `execute()`** — Rust is async (tonic-only); Python is
+  sync (gRPC sync stub). Use Rust's `.await` or Python's blocking call.
+- **Per-RPC timeout** — Python `handle_command(request, timeout=...)`
+  passes timeout to the gRPC call; Rust uses tonic's request-level
+  metadata mechanism. Set on the call site, not on the builder.
+- **`unpack` / `try_unpack` style** — Rust returns `Result<T, …>` /
+  `Option<T>`; Python raises `ValueError` / returns `None`. Same
+  semantics, idiomatic per language.
 
 ## Saga / PM design philosophy
 
