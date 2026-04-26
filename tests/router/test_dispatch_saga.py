@@ -289,3 +289,80 @@ def test_saga_trigger_is_last_event_in_source_book():
 
     assert seen_ids == ["last"]
     assert len(response.commands) == 0
+
+
+# --------------------------------------------------------------------------
+# Malformed input — P2.5 / audit finding #12
+# --------------------------------------------------------------------------
+
+
+def test_saga_dispatch_raises_on_missing_source():
+    """Per audit P2.5: malformed input raises DispatchError(INVALID_ARGUMENT)
+    matching Rust's `extract_saga_event_type_url`. Previously Python
+    silently returned an empty SagaResponse."""
+    import grpc
+    import pytest
+
+    from angzarr_client.router.dispatch import DispatchError
+
+    @saga(name="s", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            return None
+
+    router = Router("sagas").with_handler(S, lambda: S()).build()
+    request = SagaHandleRequest()  # source field unset
+
+    with pytest.raises(DispatchError) as exc:
+        router.dispatch(request)
+    assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert "missing saga source" in exc.value.details()
+
+
+def test_saga_dispatch_raises_on_empty_pages():
+    import grpc
+    import pytest
+
+    from angzarr_client.router.dispatch import DispatchError
+
+    @saga(name="s", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            return None
+
+    router = Router("sagas").with_handler(S, lambda: S()).build()
+    request = SagaHandleRequest()
+    request.source.cover.CopyFrom(Cover(domain="order"))
+    # No pages
+
+    with pytest.raises(DispatchError) as exc:
+        router.dispatch(request)
+    assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert "empty saga source" in exc.value.details()
+
+
+def test_saga_dispatch_raises_on_missing_event_payload():
+    import grpc
+    import pytest
+
+    from angzarr_client.router.dispatch import DispatchError
+
+    @saga(name="s", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            return None
+
+    router = Router("sagas").with_handler(S, lambda: S()).build()
+    request = SagaHandleRequest()
+    request.source.cover.CopyFrom(Cover(domain="order"))
+    page = request.source.pages.add()
+    page.header.sequence = 0
+    # No event nor external payload
+
+    with pytest.raises(DispatchError) as exc:
+        router.dispatch(request)
+    assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert "missing event payload" in exc.value.details()

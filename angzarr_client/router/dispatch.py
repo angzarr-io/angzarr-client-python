@@ -346,19 +346,37 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
     ``@handles(Evt)`` matches the trigger's proto type are all invoked
     in registration order. Emitted commands + fact books are merged.
     """
+    # Raise on malformed input to match Rust's
+    # `extract_saga_event_type_url` (`runtime.rs:301-317`). Silent return
+    # would let the framework move on, but the audit (P2.5 / finding
+    # #12) flagged the divergence: malformed requests indicate either a
+    # framework bug or a wire-protocol violation, neither of which
+    # should be silently absorbed by the dispatcher. Per audit decision
+    # 2026-04-25 (explicit failure over tolerance).
+    if not request.HasField("source"):
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT, "missing saga source"
+        )
     source = request.source
     source_cover = source.cover if source.HasField("cover") else None
     source_domain = source_cover.domain if source_cover is not None else ""
     if not source.pages:
-        return SagaResponse()
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT, "empty saga source"
+        )
 
     trigger = source.pages[-1]
     if not trigger.HasField("event"):
-        return SagaResponse()
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT, "missing event payload"
+        )
 
     type_url = trigger.event.type_url
     if not type_url or not type_url.startswith(TYPE_URL_PREFIX):
-        return SagaResponse()
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            f"saga trigger has invalid type_url: {type_url!r}",
+        )
     suffix = type_url[len(TYPE_URL_PREFIX) :]
 
     destinations = Destinations.from_proto(request.destination_sequences)
