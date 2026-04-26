@@ -436,12 +436,17 @@ def parse_timestamp(rfc3339: str) -> Timestamp:
 # Event decoding
 
 
-def decode_event(page: EventPage, type_suffix: str, msg_class) -> object | None:
+def decode_event(page: EventPage, full_type_name: str, msg_class) -> object | None:
     """Attempt to decode an event payload if the type URL matches.
 
     Args:
         page: The event page to decode
-        type_suffix: The expected type URL suffix
+        full_type_name: The fully-qualified protobuf type name (e.g.
+            ``"orders.OrderCreated"``, ``"google.protobuf.Duration"``).
+            NOT a suffix — exact equality against
+            ``TYPE_URL_PREFIX + full_type_name`` is required, mirroring
+            Rust's `decode_event` (`builder.rs:285`). Suffix matching
+            is rejected as a contract per PARITY_AUDIT.md finding #25.
         msg_class: The protobuf message class to decode into
 
     Returns:
@@ -449,7 +454,7 @@ def decode_event(page: EventPage, type_suffix: str, msg_class) -> object | None:
     """
     if page is None or not page.HasField("event"):
         return None
-    if not type_url_matches(page.event.type_url, type_suffix):
+    if not type_url_matches(page.event.type_url, full_type_name):
         return None
     try:
         msg = msg_class()

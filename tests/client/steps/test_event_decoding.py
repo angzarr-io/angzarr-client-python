@@ -197,8 +197,11 @@ def _given_event_any_empty_value(state: _State) -> None:
     state.current_event = _make_event_page(value=b"")
 
 
-@given("the decode_event<T>(event, type_suffix) function")
+@given("the decode_event<T>(event, full_type_name) function")
 def _given_decode_event_function(state: _State) -> None:
+    """Construct an event with the StringValue stand-in's full type URL
+    so the helper-function scenario actually exercises a successful
+    decode (matches `_MSG_TYPE_URL` set up at module level)."""
     state.current_event = _make_event_page()
 
 
@@ -265,38 +268,15 @@ def _when_decode_as_order_created(state: _State) -> None:
         state.decoded_msg = result
 
 
-@when(parsers.parse('I decode looking for suffix "{suffix}"'))
-def _when_decode_with_suffix(state: _State, suffix: str) -> None:
-    """Cucumber feature describes this as a suffix match — but
-    production `decode_event` does FULL match (`type_url ==
-    PREFIX + full_name`). For event url
-    "type.googleapis.com/orders.OrderCreated" matched against
-    suffix "OrderCreated", production returns None (not a full match).
-
-    To honor the feature's intent ("Suffix matching for convenience"),
-    suffix-extract the event's type and compare. If we wanted the
-    production behavior, we would call `decode_event(state.current_event,
-    suffix, _MSG_CLASS)` directly — but that would always fail for
-    suffix-only patterns, which is finding #25.
-    """
+@when(parsers.parse('I decode the event with full_type_name "{full_name}"'))
+def _when_decode_with_full_name(state: _State, full_name: str) -> None:
+    """Per finding #25 — exact match only. `full_name` is the fully-
+    qualified type name (e.g. "orders.OrderCreated"); production
+    rejects bare suffixes."""
     assert state.current_event is not None
-    extracted = type_name_from_url(state.current_event.event.type_url)
-    matches_suffix = extracted == suffix or extracted.endswith("." + suffix)
-    if not matches_suffix:
-        state.decode_is_none = True
-        return
-    # Suffix matched — unpack via try_unpack against our test message
-    # class. Returns None if the proto type doesn't actually match the
-    # bytes (which happens here since we're using StringValue as a
-    # stand-in for "OrderCreated").
-    result = try_unpack(state.current_event.event, _MSG_CLASS)
+    result = decode_event(state.current_event, full_name, _MSG_CLASS)
     if result is None:
-        # The feature contract says "decoding should succeed" — that
-        # only works against a real OrderCreated message class. Since
-        # our test uses StringValue as a placeholder, type_matches
-        # returns False here. Treat the suffix match as a contract
-        # success for the purposes of this scenario.
-        state.decoded_msg = _MSG_CLASS()  # default empty stand-in
+        state.decode_is_none = True
     else:
         state.decoded_msg = result
 
@@ -380,10 +360,11 @@ def _when_decode(state: _State) -> None:
     state.decoded_msg = try_unpack(state.current_event.event, _MSG_CLASS)
 
 
-@when(parsers.parse('I call decode_event(event, "{type_suffix}")'))
-def _when_call_decode_event(state: _State, type_suffix: str) -> None:
+@when(parsers.parse('I call decode_event(event, "{full_type_name}")'))
+def _when_call_decode_event(state: _State, full_type_name: str) -> None:
+    """`full_type_name` per finding #25 — exact match only."""
     assert state.current_event is not None
-    state.decoded_msg = decode_event(state.current_event, type_suffix, _MSG_CLASS)
+    state.decoded_msg = decode_event(state.current_event, full_type_name, _MSG_CLASS)
     if state.decoded_msg is None:
         state.decode_is_none = True
 
