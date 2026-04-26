@@ -128,6 +128,10 @@ class QueryBuilder:
         self._domain = domain
         self._root = root
         self._correlation_id: str | None = None
+        # Single selection slot — matches Rust's `selection: Option<Selection>`
+        # so chained range/as_of_sequence/as_of_time setters last-wins
+        # instead of leaving stale state behind. P2.2-style "single slot,
+        # overwrite on each call" — see PARITY_AUDIT.md finding #23.
         self._range: SequenceRange | None = None
         self._temporal: TemporalQuery | None = None
         self._edition: str | None = None
@@ -148,26 +152,46 @@ class QueryBuilder:
     with_edition = edition
 
     def range(self, lower: int) -> "QueryBuilder":
-        """Query a range of sequences from lower (inclusive)."""
+        """Query a range of sequences from lower (inclusive).
+
+        Last-selection-wins: clears any previously-set temporal
+        selection so chained calls like `.as_of_sequence(10).range(5)`
+        produce a Query with only the range. Mirrors Rust's
+        `builder.rs:165` single-slot semantics (PARITY_AUDIT.md
+        finding #23).
+        """
         self._range = SequenceRange(lower=lower)
+        self._temporal = None
         return self
 
     def range_to(self, lower: int, upper: int) -> "QueryBuilder":
-        """Query a range of sequences with upper bound (inclusive)."""
+        """Query a range of sequences with upper bound (inclusive).
+
+        Last-selection-wins (see :meth:`range`).
+        """
         self._range = SequenceRange(lower=lower, upper=upper)
+        self._temporal = None
         return self
 
     def as_of_sequence(self, seq: int) -> "QueryBuilder":
-        """Query state as of a specific sequence number."""
+        """Query state as of a specific sequence number.
+
+        Last-selection-wins: clears any previously-set range selection.
+        """
         self._temporal = TemporalQuery(as_of_sequence=seq)
+        self._range = None
         return self
 
     def as_of_time(self, rfc3339: str) -> "QueryBuilder":
-        """Query state as of a specific timestamp (RFC3339 format)."""
+        """Query state as of a specific timestamp (RFC3339 format).
+
+        Last-selection-wins: clears any previously-set range selection.
+        """
         try:
             ts = parse_timestamp(rfc3339)
             self._temporal = TemporalQuery()
             self._temporal.as_of_time.CopyFrom(ts)
+            self._range = None
         except Exception as e:
             self._err = e
         return self
