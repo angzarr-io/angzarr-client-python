@@ -433,6 +433,32 @@ class DomainClient:
         return cls(channel, owns_channel=False)
 
     @classmethod
+    def from_clients(
+        cls,
+        command_handler: CommandHandlerClient,
+        query: QueryClient,
+        speculative: SpeculativeClient,
+    ) -> "DomainClient":
+        """Compose a DomainClient from already-constructed wrapped clients.
+
+        Bypasses channel construction — the wrapped clients hold their
+        own channels (or are duck-typed test doubles). The DomainClient
+        does not own the channel; ``close()`` is a no-op for the
+        composed instance.
+
+        Used by cucumber/unit tests to inject recording mocks without
+        spinning up a gRPC server (PARITY_AUDIT.md plan item P1.12.e /
+        finding #24).
+        """
+        instance = cls.__new__(cls)
+        instance.command_handler = command_handler
+        instance.query = query
+        instance.speculative = speculative
+        instance._channel = None
+        instance._owns_channel = False
+        return instance
+
+    @classmethod
     def for_domain(
         cls, domain: str, mode: TransportMode | None = None
     ) -> "DomainClient":
