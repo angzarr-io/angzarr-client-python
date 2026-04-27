@@ -163,12 +163,10 @@ def _serve(state: _World, query: Query) -> EventBook:
     if query.HasField("range"):
         lo = query.range.lower
         hi = query.range.upper if query.range.HasField("upper") else None
-        # NOTE: cucumber scenario "Range query with upper bound" says
-        # "3 to 7" = 4 events, i.e. EXCLUSIVE upper. But both languages'
-        # `range_to(lower, upper)` docstrings say "(inclusive)".
-        # Following the cucumber's intent here; the docstring/contract
-        # mismatch is logged as PARITY_AUDIT.md finding #27.
-        events = [e for e in events if e.sequence >= lo and (hi is None or e.sequence < hi)]
+        # Inclusive upper bound — matches the `range_to(lower, upper)`
+        # docstrings on both languages and the cucumber feature
+        # "Range query with upper bound (inclusive)" (resolved finding #27).
+        events = [e for e in events if e.sequence >= lo and (hi is None or e.sequence <= hi)]
     elif query.HasField("temporal"):
         if query.temporal.HasField("as_of_sequence"):
             cap = query.temporal.as_of_sequence
