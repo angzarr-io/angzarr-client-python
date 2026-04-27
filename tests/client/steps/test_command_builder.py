@@ -441,17 +441,26 @@ def _then_root(state: _World, expected: str) -> None:
     assert len(state.built.cover.root.value) > 0
 
 
-@then("the caller did not specify an explicit root")
-def _then_caller_no_explicit_root(state: _World) -> None:
-    """The scenario went through `command_new`, which doesn't take a root.
-
-    Whether the materialized CommandBook has root unset (Rust) or
-    auto-generated (Python) is per-language pending PARITY_AUDIT.md
-    plan item P2.4a / finding #20. This assertion only pins that the
-    caller did not pass a root.
-    """
+@then("the built command should have an auto-generated UUID root")
+def _then_command_has_auto_root(state: _World) -> None:
+    """P2.4a / finding #20 closed: command_new auto-generates a UUID v4
+    for the root. The materialized CommandBook's cover must have a
+    populated 16-byte root."""
     assert state.built is not None
+    assert state.built.cover.HasField("root")
+    assert len(state.built.cover.root.value) == 16
+    # has_root tracks scenario INTENT — the caller didn't pass a root
+    # explicitly; command_new filled it in.
     assert not state.has_root
+
+
+@then("the auto-generated root should be a valid UUID")
+def _then_auto_root_is_valid_uuid(state: _World) -> None:
+    """A fresh UUID v4 — 16 bytes parseable as a UUID with version 4."""
+    assert state.built is not None
+    raw = bytes(state.built.cover.root.value)
+    parsed = UUID(bytes=raw)
+    assert parsed.version == 4, f"command_new must produce UUID v4, got {parsed.version}"
 
 
 @then(parsers.parse('the built command should have type URL containing "{needle}"'))
@@ -568,10 +577,11 @@ def _then_receive_builder(state: _World) -> None:
     assert state.built.cover.HasField("root")
 
 
-@then("I should receive a CommandBuilder for that domain (root convention is per-language)")
-def _then_receive_builder_for_domain(state: _World) -> None:
-    """The shortcut returned a builder; root materialization is
-    per-language per P2.4a / finding #20."""
+@then("I should receive a CommandBuilder for that domain and an auto-generated root")
+def _then_receive_builder_for_domain_and_root(state: _World) -> None:
+    """P2.4a / finding #20 closed: command_new auto-generates UUID v4."""
     assert state.builder_issued
     assert state.built is not None
     assert state.built.cover.domain
+    assert state.built.cover.HasField("root")
+    assert len(state.built.cover.root.value) == 16
