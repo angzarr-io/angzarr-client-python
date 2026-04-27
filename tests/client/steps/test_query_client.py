@@ -1,80 +1,209 @@
 """Step defs for features/client/query_client.feature.
 
-Simulation-style port mirroring tests/steps/query_client.rs in the Rust
-client. The real angzarr_client.client.QueryClient is exercised at the
-unit level; this BDD tier pins cross-language contract shape for range
-queries, temporal queries, edition isolation, correlation lookups, and
-snapshot integration.
+Calls real `angzarr_client.client.QueryClient` via the new
+`from_stub(...)` injection seam (P1.12.e). The recording
+`tests.client.steps._fakes.RecordingStub` plays the EventQueryService:
+inspects each Query's selection (range / temporal / correlation_id /
+edition) and returns synthesized EventBooks. Real client construction,
+query-encoding, and error-classification paths run end-to-end.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
+from uuid import UUID
 
+import grpc
 import pytest
+from google.protobuf.any_pb2 import Any as ProtoAny
+from google.protobuf.wrappers_pb2 import StringValue
 from pytest_bdd import given, parsers, scenarios, then, when
+
+from angzarr_client.client import QueryClient
+from angzarr_client.errors import GRPCError
+from angzarr_client.helpers import TYPE_URL_PREFIX
+from angzarr_client.proto.angzarr import (
+    EventBook,
+    EventPage,
+    Query,
+    Snapshot,
+)
+
+from ._fakes import RecordingStub, StubRpcError
 
 scenarios("query_client.feature")
 
 
+# ---------------------------------------------------------------------------
+# In-memory aggregate store the stub queries against
+# ---------------------------------------------------------------------------
+
+
 @dataclass
-class _MockEvent:
+class _StoredEvent:
     sequence: int
-    event_type: str
-    payload: str
+    type_name: str  # e.g. "OrderCreated"
+    payload: str   # encoded into a StringValue
 
 
 @dataclass
-class _MockEventBook:
-    events: list[_MockEvent] = field(default_factory=list)
-    snapshot_sequence: int | None = None
-    edition: str | None = None
+class _StoredBook:
+    events: list[_StoredEvent] = field(default_factory=list)
+    snapshot_sequence: Optional[int] = None
+    edition: Optional[str] = None
 
 
-@dataclass
-class _State:
-    client_connected: bool = False
-    service_available: bool = True
-    aggregates: dict[str, _MockEventBook] = field(default_factory=dict)
-    correlation_events: dict[str, list[_MockEventBook]] = field(default_factory=dict)
-    result: _MockEventBook | None = None
-    error: str | None = None
+def _root_uuid(literal: str) -> UUID:
+    try:
+        return UUID(literal)
+    except ValueError:
+        import uuid as _u
+
+        return _u.uuid5(_u.NAMESPACE_DNS, literal)
 
 
-@pytest.fixture
-def state() -> _State:
-    return _State()
+def _make_event_page(evt: _StoredEvent) -> EventPage:
+    page = EventPage()
+    page.header.sequence = evt.sequence
+    any_msg = ProtoAny()
+    any_msg.type_url = f"{TYPE_URL_PREFIX}orders.{evt.type_name}"
+    any_msg.value = StringValue(value=evt.payload).SerializeToString()
+    page.event.CopyFrom(any_msg)
+    return page
 
 
-def _default_events(count: int) -> list[_MockEvent]:
+def _build_event_book(
+    cover, stored: _StoredBook, events: list[_StoredEvent]
+) -> EventBook:
+    book = EventBook()
+    book.cover.CopyFrom(cover)
+    if stored.snapshot_sequence is not None:
+        snap = Snapshot()
+        snap.sequence = stored.snapshot_sequence
+        book.snapshot.CopyFrom(snap)
+    for evt in events:
+        book.pages.append(_make_event_page(evt))
+    return book
+
+
+def _default_events(count: int) -> list[_StoredEvent]:
     return [
-        _MockEvent(sequence=i, event_type="Event", payload=f"data-{i}")
+        _StoredEvent(sequence=i, type_name="Event", payload=f"data-{i}")
         for i in range(count)
     ]
 
 
-# --- Background -------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# World — the real QueryClient + the stub's in-memory store
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _World:
+    stub: RecordingStub = field(default_factory=RecordingStub)
+    client: Optional[QueryClient] = None
+    aggregates: dict[tuple[str, str], _StoredBook] = field(default_factory=dict)
+    edition_aggregates: dict[tuple[str, str, str], _StoredBook] = field(default_factory=dict)
+    correlation_books: dict[str, list[_StoredBook]] = field(default_factory=dict)
+    last_book: Optional[EventBook] = None
+    last_error: Optional[Exception] = None
+    service_available: bool = True
+
+
+@pytest.fixture
+def state() -> _World:
+    return _World()
+
+
+def _ensure_client(state: _World) -> QueryClient:
+    if state.client is None:
+        # Wire a default GetEventBook responder that consults the world's
+        # aggregate store. Tests can override per-scenario with the
+        # `service unavailable` step → switches to an error.
+        state.stub.responses["GetEventBook"] = lambda query, **kw: _serve(
+            state, query
+        )
+        state.stub.responses["GetEvents"] = lambda query, **kw: iter(
+            [_serve(state, query)]
+        )
+        state.client = QueryClient.from_stub(state.stub)
+    return state.client
+
+
+def _serve(state: _World, query: Query) -> EventBook:
+    """Look up the matching stored book in the world and apply the
+    query's selection filter. Mirrors the coordinator's contract."""
+    domain = query.cover.domain
+    root_hex = (
+        query.cover.root.value.hex() if query.cover.HasField("root") else ""
+    )
+    correlation = query.cover.correlation_id
+
+    # Correlation lookup wins when set without root.
+    if correlation and not root_hex:
+        books = state.correlation_books.get(correlation, [])
+        merged_events: list[_StoredEvent] = []
+        for b in books:
+            merged_events.extend(b.events)
+        return _build_event_book(query.cover, _StoredBook(), merged_events)
+
+    # Edition lookup
+    edition_name = query.cover.edition.name if query.cover.HasField("edition") else ""
+    if edition_name:
+        stored = state.edition_aggregates.get((domain, root_hex, edition_name))
+    else:
+        stored = state.aggregates.get((domain, root_hex))
+
+    if stored is None:
+        return _build_event_book(query.cover, _StoredBook(), [])
+
+    # Apply selection filter
+    events = list(stored.events)
+    if query.HasField("range"):
+        lo = query.range.lower
+        hi = query.range.upper if query.range.HasField("upper") else None
+        # NOTE: cucumber scenario "Range query with upper bound" says
+        # "3 to 7" = 4 events, i.e. EXCLUSIVE upper. But both languages'
+        # `range_to(lower, upper)` docstrings say "(inclusive)".
+        # Following the cucumber's intent here; the docstring/contract
+        # mismatch is logged as PARITY_AUDIT.md finding #27.
+        events = [e for e in events if e.sequence >= lo and (hi is None or e.sequence < hi)]
+    elif query.HasField("temporal"):
+        if query.temporal.HasField("as_of_sequence"):
+            cap = query.temporal.as_of_sequence
+            events = [e for e in events if e.sequence <= cap]
+        # as_of_time: we don't simulate time; return all for the test
+    return _build_event_book(query.cover, stored, events)
+
+
+# ---------------------------------------------------------------------------
+# Background
+# ---------------------------------------------------------------------------
 
 
 @given("a QueryClient connected to the test backend")
-def _given_client(state: _State) -> None:
-    state.client_connected = True
-    state.service_available = True
+def _given_client(state: _World) -> None:
+    _ensure_client(state)
 
 
-# --- Given: aggregates ------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Given: aggregates
+# ---------------------------------------------------------------------------
 
 
 @given(parsers.parse('an aggregate "{domain}" with root "{root}"'))
-def _given_aggregate(state: _State, domain: str, root: str) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook()
+def _given_aggregate(state: _World, domain: str, root: str) -> None:
+    state.aggregates[(domain, _root_uuid(root).bytes.hex())] = _StoredBook()
 
 
 @given(parsers.parse('an aggregate "{domain}" with root "{root}" has {count:d} events'))
 def _given_aggregate_with_events(
-    state: _State, domain: str, root: str, count: int
+    state: _World, domain: str, root: str, count: int
 ) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook(events=_default_events(count))
+    state.aggregates[(domain, _root_uuid(root).bytes.hex())] = _StoredBook(
+        events=_default_events(count)
+    )
 
 
 @given(
@@ -84,10 +213,10 @@ def _given_aggregate_with_events(
     )
 )
 def _given_aggregate_with_specific_event(
-    state: _State, domain: str, root: str, event_type: str, data: str
+    state: _World, domain: str, root: str, event_type: str, data: str
 ) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook(
-        events=[_MockEvent(sequence=0, event_type=event_type, payload=data)]
+    state.aggregates[(domain, _root_uuid(root).bytes.hex())] = _StoredBook(
+        events=[_StoredEvent(sequence=0, type_name=event_type, payload=data)]
     )
 
 
@@ -96,19 +225,23 @@ def _given_aggregate_with_specific_event(
         'an aggregate "{domain}" with root "{root}" has events at known timestamps'
     )
 )
-def _given_aggregate_with_timestamps(state: _State, domain: str, root: str) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook(events=_default_events(5))
+def _given_aggregate_with_timestamps(
+    state: _World, domain: str, root: str
+) -> None:
+    state.aggregates[(domain, _root_uuid(root).bytes.hex())] = _StoredBook(
+        events=_default_events(5)
+    )
 
 
 @given(
     parsers.parse('an aggregate "{domain}" with root "{root}" in edition "{edition}"')
 )
 def _given_aggregate_in_edition(
-    state: _State, domain: str, root: str, edition: str
+    state: _World, domain: str, root: str, edition: str
 ) -> None:
-    state.aggregates[f"{domain}:{root}:{edition}"] = _MockEventBook(
-        events=_default_events(3), edition=edition
-    )
+    state.edition_aggregates[
+        (domain, _root_uuid(root).bytes.hex(), edition)
+    ] = _StoredBook(events=_default_events(3), edition=edition)
 
 
 @given(
@@ -116,8 +249,12 @@ def _given_aggregate_in_edition(
         'an aggregate "{domain}" with root "{root}" has {count:d} events in main'
     )
 )
-def _given_aggregate_in_main(state: _State, domain: str, root: str, count: int) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook(events=_default_events(count))
+def _given_aggregate_in_main(
+    state: _World, domain: str, root: str, count: int
+) -> None:
+    state.aggregates[(domain, _root_uuid(root).bytes.hex())] = _StoredBook(
+        events=_default_events(count)
+    )
 
 
 @given(
@@ -127,11 +264,11 @@ def _given_aggregate_in_main(state: _State, domain: str, root: str, count: int) 
     )
 )
 def _given_aggregate_in_edition_count(
-    state: _State, domain: str, root: str, count: int, edition: str
+    state: _World, domain: str, root: str, count: int, edition: str
 ) -> None:
-    state.aggregates[f"{domain}:{root}:{edition}"] = _MockEventBook(
-        events=_default_events(count), edition=edition
-    )
+    state.edition_aggregates[
+        (domain, _root_uuid(root).bytes.hex(), edition)
+    ] = _StoredBook(events=_default_events(count), edition=edition)
 
 
 @given(
@@ -141,62 +278,87 @@ def _given_aggregate_in_edition_count(
     )
 )
 def _given_aggregate_with_snapshot(
-    state: _State, domain: str, root: str, snap_seq: int, total: int
+    state: _World, domain: str, root: str, snap_seq: int, total: int
 ) -> None:
-    state.aggregates[f"{domain}:{root}"] = _MockEventBook(
+    state.aggregates[(domain, _root_uuid(root).bytes.hex())] = _StoredBook(
         events=_default_events(total), snapshot_sequence=snap_seq
     )
 
 
 @given(parsers.parse('events with correlation ID "{cid}" exist in multiple aggregates'))
-def _given_correlated_events(state: _State, cid: str) -> None:
-    state.correlation_events[cid] = [
-        _MockEventBook(
+def _given_correlated_events(state: _World, cid: str) -> None:
+    state.correlation_books[cid] = [
+        _StoredBook(
             events=[
-                _MockEvent(sequence=0, event_type="OrderCreated", payload="data"),
-                _MockEvent(sequence=1, event_type="OrderUpdated", payload="data"),
+                _StoredEvent(sequence=0, type_name="OrderCreated", payload="data"),
+                _StoredEvent(sequence=1, type_name="OrderUpdated", payload="data"),
             ]
         ),
-        _MockEventBook(
-            events=[_MockEvent(sequence=0, event_type="Reserved", payload="data")]
+        _StoredBook(
+            events=[_StoredEvent(sequence=0, type_name="Reserved", payload="data")]
         ),
     ]
 
 
 @given("the query service is unavailable")
-def _given_service_unavailable(state: _State) -> None:
+def _given_service_unavailable(state: _World) -> None:
     state.service_available = False
+    state.stub.errors["GetEventBook"] = StubRpcError(
+        grpc.StatusCode.UNAVAILABLE, "service unavailable"
+    )
+    state.stub.errors["GetEvents"] = StubRpcError(
+        grpc.StatusCode.UNAVAILABLE, "service unavailable"
+    )
 
 
-# --- When -------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# When
+# ---------------------------------------------------------------------------
+
+
+def _do_query(state: _World, query: Query) -> None:
+    client = _ensure_client(state)
+    try:
+        state.last_book = client.get_event_book(query)
+    except Exception as e:  # noqa: BLE001
+        state.last_error = e
+
+
+def _make_query(domain: str, root: str, **kwargs) -> Query:
+    """Build a real Query proto from scenario inputs."""
+    from angzarr_client.builder import QueryBuilder
+
+    class _DummyQClient:
+        def get_event_book(self, q, timeout=None):
+            raise RuntimeError("not used — we only need the builder's build()")
+
+    builder = QueryBuilder(_DummyQClient(), domain, _root_uuid(root))  # type: ignore[arg-type]
+    if (lo := kwargs.get("lower")) is not None:
+        if (hi := kwargs.get("upper")) is not None:
+            builder = builder.range_to(lo, hi)
+        else:
+            builder = builder.range(lo)
+    if (seq := kwargs.get("as_of_sequence")) is not None:
+        builder = builder.as_of_sequence(seq)
+    if (rfc := kwargs.get("as_of_time")) is not None:
+        builder = builder.as_of_time(rfc)
+    if (edition := kwargs.get("edition")) is not None:
+        builder = builder.edition(edition)
+    return builder.build()
 
 
 @when(parsers.parse('I query events for "{domain}" root "{root}"'))
-def _when_query_events(state: _State, domain: str, root: str) -> None:
-    if not state.service_available:
-        state.error = "Connection error"
-        return
-    key = f"{domain}:{root}"
-    state.result = state.aggregates.get(key, _MockEventBook())
+def _when_query_events(state: _World, domain: str, root: str) -> None:
+    _do_query(state, _make_query(domain, root))
 
 
 @when(
     parsers.parse('I query events for "{domain}" root "{root}" from sequence {start:d}')
 )
 def _when_query_from_sequence(
-    state: _State, domain: str, root: str, start: int
+    state: _World, domain: str, root: str, start: int
 ) -> None:
-    key = f"{domain}:{root}"
-    book = state.aggregates.get(key)
-    if book is None:
-        state.result = _MockEventBook()
-        return
-    filtered = [e for e in book.events if e.sequence >= start]
-    state.result = _MockEventBook(
-        events=filtered,
-        snapshot_sequence=book.snapshot_sequence,
-        edition=book.edition,
-    )
+    _do_query(state, _make_query(domain, root, lower=start))
 
 
 @when(
@@ -206,36 +368,18 @@ def _when_query_from_sequence(
     )
 )
 def _when_query_range(
-    state: _State, domain: str, root: str, start: int, end: int
+    state: _World, domain: str, root: str, start: int, end: int
 ) -> None:
-    key = f"{domain}:{root}"
-    book = state.aggregates.get(key)
-    if book is None:
-        state.result = _MockEventBook()
-        return
-    filtered = [e for e in book.events if start <= e.sequence < end]
-    state.result = _MockEventBook(
-        events=filtered,
-        snapshot_sequence=book.snapshot_sequence,
-        edition=book.edition,
-    )
+    _do_query(state, _make_query(domain, root, lower=start, upper=end))
 
 
 @when(
     parsers.parse('I query events for "{domain}" root "{root}" as of sequence {seq:d}')
 )
-def _when_query_as_of_sequence(state: _State, domain: str, root: str, seq: int) -> None:
-    key = f"{domain}:{root}"
-    book = state.aggregates.get(key)
-    if book is None:
-        state.result = _MockEventBook()
-        return
-    filtered = [e for e in book.events if e.sequence <= seq]
-    state.result = _MockEventBook(
-        events=filtered,
-        snapshot_sequence=book.snapshot_sequence,
-        edition=book.edition,
-    )
+def _when_query_as_of_sequence(
+    state: _World, domain: str, root: str, seq: int
+) -> None:
+    _do_query(state, _make_query(domain, root, as_of_sequence=seq))
 
 
 @when(
@@ -244,134 +388,156 @@ def _when_query_as_of_sequence(state: _State, domain: str, root: str, seq: int) 
     )
 )
 def _when_query_as_of_time(
-    state: _State, domain: str, root: str, timestamp: str
+    state: _World, domain: str, root: str, timestamp: str
 ) -> None:
-    key = f"{domain}:{root}"
-    state.result = state.aggregates.get(key, _MockEventBook())
+    _do_query(state, _make_query(domain, root, as_of_time=timestamp))
 
 
 @when(
     parsers.parse('I query events for "{domain}" root "{root}" in edition "{edition}"')
 )
-def _when_query_in_edition(state: _State, domain: str, root: str, edition: str) -> None:
-    key = f"{domain}:{root}:{edition}"
-    state.result = state.aggregates.get(key, _MockEventBook(edition=edition))
+def _when_query_in_edition(
+    state: _World, domain: str, root: str, edition: str
+) -> None:
+    _do_query(state, _make_query(domain, root, edition=edition))
 
 
 @when(parsers.parse('I query events by correlation ID "{cid}"'))
-def _when_query_by_correlation(state: _State, cid: str) -> None:
-    books = state.correlation_events.get(cid)
-    if books is None:
-        state.result = _MockEventBook()
-        return
-    combined: list[_MockEvent] = []
-    for b in books:
-        combined.extend(b.events)
-    state.result = _MockEventBook(events=combined)
+def _when_query_by_correlation(state: _World, cid: str) -> None:
+    from angzarr_client.builder import QueryBuilder
+
+    class _Dummy:
+        def get_event_book(self, q, timeout=None):
+            raise RuntimeError()
+
+    query = (
+        QueryBuilder(_Dummy(), "any-domain")  # type: ignore[arg-type]
+        .by_correlation_id(cid)
+        .build()
+    )
+    _do_query(state, query)
 
 
 @when("I query events with empty domain")
-def _when_query_empty_domain(state: _State) -> None:
-    state.error = "Invalid argument: empty domain"
+def _when_query_empty_domain(state: _World) -> None:
+    """Empty-domain validation lives client-side — Python's QueryBuilder
+    + Query don't reject this, the server would. We synthesize the
+    matching INVALID_ARGUMENT on the stub."""
+    state.stub.errors["GetEventBook"] = StubRpcError(
+        grpc.StatusCode.INVALID_ARGUMENT, "empty domain"
+    )
+    _do_query(state, _make_query("", "00000000-0000-0000-0000-000000000000"))
 
 
 @when("I attempt to query events")
-def _when_attempt_query(state: _State) -> None:
-    if not state.service_available:
-        state.error = "Connection error"
+def _when_attempt_query(state: _World) -> None:
+    _do_query(state, _make_query("any", "00000000-0000-0000-0000-000000000000"))
 
 
-# --- Then -------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Then
+# ---------------------------------------------------------------------------
 
 
 @then(parsers.parse("I should receive an EventBook with {count:d} events"))
-def _then_receive_events(state: _State, count: int) -> None:
-    assert state.result is not None
-    assert len(state.result.events) == count
+def _then_receive_events(state: _World, count: int) -> None:
+    assert state.last_book is not None, str(state.last_error)
+    assert len(state.last_book.pages) == count
 
 
 @then(parsers.parse("the next_sequence should be {seq:d}"))
-def _then_next_sequence(state: _State, seq: int) -> None:
-    assert state.result is not None
-    assert len(state.result.events) == seq
+def _then_next_sequence(state: _World, seq: int) -> None:
+    """The mock doesn't populate `next_sequence` (server computes it).
+    The cucumber's intent is "events span 0..seq-1"; assert the page
+    count matches."""
+    assert state.last_book is not None
+    assert len(state.last_book.pages) == seq
 
 
 @then(parsers.parse("events should be in sequence order {start:d} to {end:d}"))
-def _then_events_in_order(state: _State, start: int, end: int) -> None:
-    assert state.result is not None
-    for i, event in enumerate(state.result.events):
-        assert event.sequence == start + i
+def _then_events_in_order(state: _World, start: int, end: int) -> None:
+    assert state.last_book is not None
+    for i, page in enumerate(state.last_book.pages):
+        assert page.header.sequence == start + i
 
 
 @then(parsers.parse('the first event should have type "{event_type}"'))
-def _then_first_event_type(state: _State, event_type: str) -> None:
-    assert state.result is not None
-    assert state.result.events
-    assert state.result.events[0].event_type == event_type
+def _then_first_event_type(state: _World, event_type: str) -> None:
+    assert state.last_book is not None
+    assert state.last_book.pages
+    assert event_type in state.last_book.pages[0].event.type_url
 
 
 @then(parsers.parse('the first event should have payload "{payload}"'))
-def _then_first_event_payload(state: _State, payload: str) -> None:
-    assert state.result is not None
-    assert state.result.events
-    assert state.result.events[0].payload == payload
+def _then_first_event_payload(state: _World, payload: str) -> None:
+    assert state.last_book is not None
+    assert state.last_book.pages
+    msg = StringValue()
+    msg.ParseFromString(state.last_book.pages[0].event.value)
+    assert msg.value == payload
 
 
 @then(parsers.parse("the first event should have sequence {seq:d}"))
-def _then_first_event_sequence(state: _State, seq: int) -> None:
-    assert state.result is not None
-    assert state.result.events
-    assert state.result.events[0].sequence == seq
+def _then_first_event_sequence(state: _World, seq: int) -> None:
+    assert state.last_book is not None
+    assert state.last_book.pages
+    assert state.last_book.pages[0].header.sequence == seq
 
 
 @then(parsers.parse("the last event should have sequence {seq:d}"))
-def _then_last_event_sequence(state: _State, seq: int) -> None:
-    assert state.result is not None
-    assert state.result.events
-    assert state.result.events[-1].sequence == seq
+def _then_last_event_sequence(state: _World, seq: int) -> None:
+    assert state.last_book is not None
+    assert state.last_book.pages
+    assert state.last_book.pages[-1].header.sequence == seq
 
 
 @then("I should receive events up to that timestamp")
-def _then_receive_events_up_to_timestamp(state: _State) -> None:
-    assert state.result is not None
+def _then_receive_events_up_to_timestamp(state: _World) -> None:
+    assert state.last_book is not None
 
 
 @then("I should receive events from that edition only")
-def _then_receive_events_from_edition(state: _State) -> None:
-    assert state.result is not None
+def _then_receive_events_from_edition(state: _World) -> None:
+    assert state.last_book is not None
+    assert len(state.last_book.pages) > 0
 
 
 @then("I should receive events from all correlated aggregates")
-def _then_receive_correlated_events(state: _State) -> None:
-    assert state.result is not None
-    assert state.result.events
+def _then_receive_correlated_events(state: _World) -> None:
+    assert state.last_book is not None
+    assert state.last_book.pages
 
 
 @then("I should receive no events")
-def _then_receive_no_events(state: _State) -> None:
-    assert state.result is not None
-    assert not state.result.events
+def _then_receive_no_events(state: _World) -> None:
+    assert state.last_book is not None
+    assert not state.last_book.pages
 
 
 @then("the EventBook should include the snapshot")
-def _then_event_book_includes_snapshot(state: _State) -> None:
-    assert state.result is not None
-    assert state.result.snapshot_sequence is not None
+def _then_event_book_includes_snapshot(state: _World) -> None:
+    assert state.last_book is not None
+    assert state.last_book.HasField("snapshot")
 
 
 @then(parsers.parse("the returned snapshot should be at sequence {seq:d}"))
-def _then_snapshot_at_sequence(state: _State, seq: int) -> None:
-    assert state.result is not None
-    assert state.result.snapshot_sequence == seq
+def _then_snapshot_at_sequence(state: _World, seq: int) -> None:
+    assert state.last_book is not None
+    assert state.last_book.snapshot.sequence == seq
 
 
 @then("the operation should fail with invalid argument error")
-def _then_fail_invalid_argument(state: _State) -> None:
-    assert state.error is not None
-    assert "invalid" in state.error.lower()
+def _then_fail_invalid_argument(state: _World) -> None:
+    assert state.last_error is not None
+    assert isinstance(state.last_error, GRPCError)
+    assert state.last_error.code == grpc.StatusCode.INVALID_ARGUMENT
 
 
 @then("the operation should fail with connection error")
-def _then_fail_connection_error(state: _State) -> None:
-    assert state.error is not None
-    assert "connection" in state.error.lower()
+def _then_fail_connection_error(state: _World) -> None:
+    assert state.last_error is not None
+    # `service unavailable` is mapped to GRPCError(UNAVAILABLE) here;
+    # the production GRPCError.is_connection_error() returns True for
+    # UNAVAILABLE — that's the cross-language contract.
+    assert isinstance(state.last_error, GRPCError)
+    assert state.last_error.is_connection_error()

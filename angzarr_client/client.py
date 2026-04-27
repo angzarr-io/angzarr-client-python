@@ -147,6 +147,21 @@ class QueryClient:
         endpoint = os.environ.get(env_var, default)
         return cls.connect(endpoint)
 
+    @classmethod
+    def from_stub(cls, stub) -> "QueryClient":
+        """Compose a QueryClient from a pre-built gRPC stub.
+
+        Bypasses channel construction so tests can inject a fake stub
+        (see `tests/_fakes.py::RecordingStub`) without opening a
+        socket. The returned client does not own a channel; ``close()``
+        is a no-op (PARITY_AUDIT.md plan item P1.12.e / finding #24).
+        """
+        instance = cls.__new__(cls)
+        instance._stub = stub
+        instance._channel = None
+        instance._owns_channel = False
+        return instance
+
     def get_event_book(self, query: Query, timeout: float | None = None) -> EventBook:
         """Retrieve a single EventBook for the query.
 
@@ -231,6 +246,19 @@ class CommandHandlerClient:
         """Connect using an environment variable with fallback."""
         endpoint = os.environ.get(env_var, default)
         return cls.connect(endpoint)
+
+    @classmethod
+    def from_stub(cls, stub) -> "CommandHandlerClient":
+        """Compose a CommandHandlerClient from a pre-built gRPC stub.
+
+        See :meth:`QueryClient.from_stub` for the test-only seam used
+        to inject `tests/_fakes.py::RecordingStub`. P1.12.e / finding #24.
+        """
+        instance = cls.__new__(cls)
+        instance._stub = stub
+        instance._channel = None
+        instance._owns_channel = False
+        return instance
 
     def handle(
         self, command: CommandBook, timeout: float | None = None
@@ -348,6 +376,30 @@ class SpeculativeClient:
         """Connect using an environment variable with fallback."""
         endpoint = os.environ.get(env_var, default)
         return cls.connect(endpoint)
+
+    @classmethod
+    def from_stubs(
+        cls,
+        command_handler_stub,
+        saga_stub,
+        projector_stub,
+        pm_stub,
+    ) -> "SpeculativeClient":
+        """Compose a SpeculativeClient from pre-built gRPC stubs.
+
+        Bypasses channel construction; the four stubs back the four
+        speculative methods (`command_handler`, `saga`, `projector`,
+        `process_manager`). Test-only seam — see
+        `tests/_fakes.py::RecordingStub`. P1.12.e / finding #24.
+        """
+        instance = cls.__new__(cls)
+        instance._command_handler_stub = command_handler_stub
+        instance._saga_stub = saga_stub
+        instance._projector_stub = projector_stub
+        instance._pm_stub = pm_stub
+        instance._channel = None
+        instance._owns_channel = False
+        return instance
 
     def command_handler(
         self,
