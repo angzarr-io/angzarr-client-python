@@ -188,14 +188,21 @@ def edition_name_or_default(e: Edition | None) -> str:
     return e.name
 
 
-def divergence_for(e: Edition | None, domain_name: str) -> int:
-    """Return the divergence sequence for a domain, or -1 if not found."""
+def divergence_for(e: Edition | None, domain_name: str) -> int | None:
+    """Return the divergence sequence for a domain, or ``None`` if not found.
+
+    Audit finding #49: previously returned ``-1`` as a sentinel, which
+    leaked the type-system distinction between "no divergence" and
+    "divergence at sequence -1" (the latter can't happen — sequences
+    are non-negative — but the signature didn't enforce it). Aligned
+    with Rust's ``Option<u32>`` shape.
+    """
     if e is None:
-        return -1
+        return None
     for d in e.divergences:
         if d.domain == domain_name:
             return d.sequence
-    return -1
+    return None
 
 
 # EventBook helpers

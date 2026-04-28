@@ -354,16 +354,21 @@ class TestEditionHelpers:
         assert divergence_for(ed, "orders") == 42
 
     def test_divergence_for_not_found(self) -> None:
-        """divergence_for returns -1 when not found."""
+        """divergence_for returns ``None`` when not found.
+
+        Audit #49: shifted from -1 sentinel to ``Optional[int]`` to match
+        Rust's ``Option<u32>`` and stop conflating "missing" with the
+        impossible "negative-sequence" case.
+        """
         ed = Edition(
             name="test",
             divergences=[DomainDivergence(domain="orders", sequence=42)],
         )
-        assert divergence_for(ed, "inventory") == -1
+        assert divergence_for(ed, "inventory") is None
 
     def test_divergence_for_none(self) -> None:
-        """divergence_for returns -1 for None edition."""
-        assert divergence_for(None, "orders") == -1
+        """divergence_for returns ``None`` for a ``None`` edition."""
+        assert divergence_for(None, "orders") is None
 
 
 class TestEventBookHelpers:
