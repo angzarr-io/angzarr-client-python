@@ -6,7 +6,6 @@ Wraps protobuf events into EventBook structures with cover, sequence, and timest
 from collections.abc import Sequence
 
 from google.protobuf.any_pb2 import Any
-from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from .helpers import now

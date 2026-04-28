@@ -110,6 +110,11 @@ also_copy = ["angzarr_client/"]
 exclude = [
     "angzarr_client/proto",
     "tests/",
+    # Submodule — owned by angzarr-project, contains symlinks
+    # (features/example/acceptance/environment.py → tests/example/acceptance/...)
+    # that resolve only inside the angzarr-project repo layout, not
+    # when checked out as a submodule here. Lint there, not here.
+    "angzarr-project/",
 ]
 
 [tool.black]
