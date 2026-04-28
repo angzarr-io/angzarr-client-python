@@ -83,16 +83,19 @@ class ScenarioContext:
             next_sequence=len(pages),
         )
 
-    def add_event(self, event_msg, type_url_prefix: str = "type.googleapis.com/"):
+    def add_event(self, event_msg):
         """Add an event to history.
 
-        Packs the event message and appends to the event list.
+        Packs the event message (deriving the type URL from
+        ``event_msg.DESCRIPTOR.full_name``) and appends to the event list.
+
+        Audit finding #47: the previous ``type_url_prefix`` arg is dropped —
+        the canonical URL is derived from the message descriptor.
 
         Args:
             event_msg: The protobuf event message to add
-            type_url_prefix: URL prefix for type identification
         """
-        self.events.append(pack_event(event_msg, type_url_prefix))
+        self.events.append(pack_event(event_msg))
 
     def clear_events(self):
         """Clear all events from history."""

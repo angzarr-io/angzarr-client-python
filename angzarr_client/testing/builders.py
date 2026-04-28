@@ -30,18 +30,24 @@ def make_timestamp() -> Timestamp:
     return _now()
 
 
-def pack_event(msg: Message, type_url_prefix: str = "type.googleapis.com/") -> ProtoAny:
-    """Pack a protobuf message into Any.
+def pack_event(msg: Message) -> ProtoAny:
+    """Pack a protobuf message into an `Any` with the canonical type URL.
 
-    Args:
-        msg: The protobuf message to pack
-        type_url_prefix: URL prefix for type identification
+    The type URL is derived from the message's descriptor
+    (``msg.DESCRIPTOR.full_name``) prefixed with the standard
+    ``type.googleapis.com/`` — per the `google.protobuf.Any` spec.
+
+    Audit finding #47 (Option C — drop the second arg, derive name from
+    the message): mirrors Rust's ``testing::builders::pack_event<M>(msg)``.
+    Removes the previous ``type_url_prefix`` parameter (which was a
+    typo-prone footgun and diverged in semantics from the Rust 2nd-arg
+    convention).
 
     Returns:
-        ProtoAny containing the packed message
+        ProtoAny containing the packed message.
     """
     event_any = ProtoAny()
-    event_any.Pack(msg, type_url_prefix=type_url_prefix)
+    event_any.Pack(msg)
     return event_any
 
 
