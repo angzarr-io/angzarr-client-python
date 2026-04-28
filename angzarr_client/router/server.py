@@ -4,8 +4,7 @@ Thin wrappers that plug a ``CommandHandlerRouter`` / ``SagaRouter`` /
 ``ProcessManagerRouter`` / ``ProjectorRouter`` / ``UpcasterRouter`` into
 the corresponding generated gRPC servicer class. Each adapter:
 
-  - Delegates the ``Handle`` (and ``HandleSync`` where applicable) RPC to
-    the router's ``.dispatch`` method.
+  - Delegates the ``Handle`` RPC to the router's ``.dispatch`` method.
   - Translates ``CommandRejectedError`` to gRPC ``FAILED_PRECONDITION``.
   - Translates ``DispatchError`` to its carried ``grpc.StatusCode``.
 
@@ -84,13 +83,6 @@ class CommandHandlerGrpc(command_handler_pb2_grpc.CommandHandlerServiceServicer)
         self._router = router
 
     def Handle(
-        self,
-        request: types.ContextualCommand,
-        context: grpc.ServicerContext,
-    ) -> command_handler_pb2.BusinessResponse:
-        return self._dispatch(request, context)
-
-    def HandleSync(
         self,
         request: types.ContextualCommand,
         context: grpc.ServicerContext,
