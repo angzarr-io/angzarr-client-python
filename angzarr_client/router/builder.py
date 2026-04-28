@@ -99,6 +99,44 @@ class Router:
             validate_handler(cls)
 
         (kind,) = kinds
+
+        # Audit finding #18 (formerly #51): at most one CommandHandler
+        # per (domain, command_type_url) within a Router. Saga / PM /
+        # projector / upcaster fan-out is unaffected.
+        #
+        # Cross-language contract (cucumber C-0065): each CH factory is
+        # invoked at most once at build time. Python could skip the
+        # factory call here (class attributes carry the metadata
+        # directly), but invoking it preserves the Rust contract — Rust
+        # MUST call the factory to introspect its `Handler::config()`,
+        # since the metadata isn't statically reachable on the
+        # type. Symmetric behavior keeps the cucumber assertion
+        # ("factory invocation count is 1") true on both sides.
+        if kind == "command_handler":
+            from ..helpers import full_type_url_for
+
+            seen: set[tuple[str, str]] = set()
+            for cls, factory in self._factories:
+                # Invoke the factory once for config introspection (parity
+                # with Rust). Discard the instance.
+                _ = factory()
+                meta = cls.__angzarr_meta__
+                domain = meta.get("domain", "")
+                for attr_name in dir(cls):
+                    method = getattr(cls, attr_name, None)
+                    handled_type = getattr(method, "__angzarr_handles__", None)
+                    if handled_type is None:
+                        continue
+                    type_url = full_type_url_for(handled_type)
+                    key = (domain, type_url)
+                    if key in seen:
+                        raise BuildError(
+                            f"duplicate command handler registration for "
+                            f"domain={domain!r} type_url={type_url!r} — "
+                            f"audit #18: multi-handler CH dispatch is forbidden"
+                        )
+                    seen.add(key)
+
         if kind == "command_handler":
             return CommandHandlerRouter(self._factories)
         if kind == "saga":

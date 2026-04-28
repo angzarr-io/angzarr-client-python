@@ -304,10 +304,26 @@ def _noop(world):
 @given("the saga router is built with SagaA then SagaB")
 def _given_saga_router_built(world):
     SagaA, SagaB = world.classes["SagaA"], world.classes["SagaB"]
+
+    # Audit #18 reframe (C-0087): the saga factory invocation counts
+    # are stashed on world.observed so the C-0087 saga-fan-out scenario
+    # can assert factory was invoked exactly once. Other scenarios
+    # ignore these counters.
+    world.observed.setdefault("saga_a_calls", 0)
+    world.observed.setdefault("saga_b_calls", 0)
+
+    def make_saga_a():
+        world.observed["saga_a_calls"] += 1
+        return SagaA()
+
+    def make_saga_b():
+        world.observed["saga_b_calls"] += 1
+        return SagaB()
+
     world.router = (
         Router("sagas")
-        .with_handler(SagaA, lambda: SagaA())
-        .with_handler(SagaB, lambda: SagaB())
+        .with_handler(SagaA, make_saga_a)
+        .with_handler(SagaB, make_saga_b)
         .build()
     )
 
@@ -524,3 +540,155 @@ def _then_alpha_calls(world, n):
 @then(parsers.parse("Beta's factory was invoked exactly {n:d} time"))
 def _then_beta_calls(world, n):
     assert world.observed["beta_calls"] == n, world.observed["beta_calls"]
+
+
+# --------------------------------------------------------------------------
+# Audit #18 (formerly #51): forbid multi-handler CH dispatch.
+# C-0010: Router rejects duplicate (domain, command_type).
+# C-0011: Cross-domain accept.
+# C-0012: Single CH with multiple handled types.
+# C-0087: Saga factory invocation count (reframed; CH variant deleted).
+# --------------------------------------------------------------------------
+
+
+@given("both handle CreateOrder")
+def _given_both_handle_create_order(world):
+    """Marker step for C-0010; the Alpha/Beta classes registered in the
+    earlier Given step both have ``@handles(CreateOrder)`` already.
+    """
+
+
+@given(parsers.parse('a command handler Alpha for domain "{domain}" handling CreateOrder'))
+def _given_cross_alpha(world, domain):
+    @command_handler(domain=domain, state=StateA)
+    class AlphaCross:
+        @handles(CreateOrder)
+        def on(self, cmd, state, seq):
+            return None
+
+    world.classes["AlphaCross"] = AlphaCross
+
+
+@given(parsers.parse('a command handler Beta for domain "{domain}" handling CreateOrder'))
+def _given_cross_beta(world, domain):
+    @command_handler(domain=domain, state=StateB)
+    class BetaCross:
+        @handles(CreateOrder)
+        def on(self, cmd, state, seq):
+            return None
+
+    world.classes["BetaCross"] = BetaCross
+
+
+@given(parsers.parse('a command handler Player for domain "{domain}" handling RegisterPlayer and DepositFunds'))
+def _given_player_two_types(world, domain):
+    # Use two stand-in protos. Reuse OrderCreated / OrderCompleted as
+    # distinct command types — the fixture set doesn't have
+    # RegisterPlayer / DepositFunds, but the only invariant tested is
+    # that the SAME class registers TWO different handled types in
+    # the same domain (which is allowed).
+    @command_handler(domain=domain, state=StateA)
+    class PlayerCH:
+        @handles(OrderCreated)
+        def on_register(self, cmd, state, seq):
+            return None
+
+        @handles(OrderCompleted)
+        def on_deposit(self, cmd, state, seq):
+            return None
+
+    world.classes["PlayerCH"] = PlayerCH
+
+
+@when("the router is built with Alpha then Beta")
+def _when_build_alpha_beta(world):
+    # C-0010: same-domain Alpha/Beta both with @handles(CreateOrder).
+    # The earlier `_given_alpha_beta` step only sets placeholder
+    # `None` entries (the multi-handler tests that previously needed
+    # Alpha/Beta deferred construction past the Background steps are
+    # gone). Construct fresh decorated classes inline so the duplicate-
+    # detection pass in Router.build() has real metadata to scan.
+    from angzarr_client.router import BuildError
+
+    @command_handler(domain="order", state=StateA)
+    class Alpha:
+        @handles(CreateOrder)
+        def on(self, cmd, state, seq):
+            return None
+
+    @command_handler(domain="order", state=StateB)
+    class Beta:
+        @handles(CreateOrder)
+        def on(self, cmd, state, seq):
+            return None
+
+    try:
+        Router("multi-ch-test").with_handler(Alpha, Alpha).with_handler(Beta, Beta).build()
+        world.observed["build_result"] = "ok"
+    except BuildError as e:
+        world.observed["build_result"] = "err"
+        world.observed["build_error"] = e
+
+
+@when("the router is built with Alpha then Beta across domains")
+def _when_build_alpha_beta_cross(world):
+    from angzarr_client.router import BuildError
+
+    Alpha = world.classes["AlphaCross"]
+    Beta = world.classes["BetaCross"]
+    try:
+        router = Router("multi-ch-cross").with_handler(Alpha, Alpha).with_handler(Beta, Beta).build()
+        world.observed["build_result"] = "ok"
+        world.observed["built_router"] = router
+    except BuildError as e:
+        world.observed["build_result"] = "err"
+        world.observed["build_error"] = e
+
+
+@when("the router is built with Player")
+def _when_build_player(world):
+    from angzarr_client.router import BuildError
+
+    Player = world.classes["PlayerCH"]
+    try:
+        router = Router("multi-ch-player").with_handler(Player, Player).build()
+        world.observed["build_result"] = "ok"
+        world.observed["built_router"] = router
+    except BuildError as e:
+        world.observed["build_result"] = "err"
+        world.observed["build_error"] = e
+
+
+@then(parsers.parse('build fails with DuplicateCommandHandler for domain "{domain}" and {cmd_type}'))
+def _then_build_fails_duplicate(world, domain, cmd_type):
+    assert world.observed["build_result"] == "err", world.observed
+    err_msg = str(world.observed["build_error"]).lower()
+    assert "duplicate" in err_msg, err_msg
+    assert domain in err_msg, err_msg
+    assert cmd_type.lower() in err_msg, err_msg
+
+
+@then("build succeeds with a CommandHandlerRouter")
+def _then_build_succeeds_ch(world):
+    from angzarr_client.router.runtime import CommandHandlerRouter
+
+    assert world.observed["build_result"] == "ok", world.observed.get("build_error")
+    assert isinstance(world.observed["built_router"], CommandHandlerRouter)
+
+
+# C-0087 reframed for saga fan-out.
+
+@given("each saga factory counts invocations")
+def _given_each_saga_factory_counts(world):
+    world.observed["saga_a_calls"] = 0
+    world.observed["saga_b_calls"] = 0
+
+
+@then(parsers.parse("SagaA's factory was invoked exactly {n:d} time"))
+def _then_saga_a_calls(world, n):
+    assert world.observed.get("saga_a_calls", 0) == n
+
+
+@then(parsers.parse("SagaB's factory was invoked exactly {n:d} time"))
+def _then_saga_b_calls(world, n):
+    assert world.observed.get("saga_b_calls", 0) == n

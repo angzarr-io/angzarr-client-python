@@ -1,12 +1,11 @@
-"""R9: sequence numbers increment monotonically across multi-handler dispatch.
+"""R9: sequence numbers increment from a single handler's emissions.
 
-Contract: if handler A is invoked with seq=5 and emits 2 events, handler B
-(next in registration order) is invoked with seq=7. Emitted pages carry
-sequences [5, 6] for A and [7] for B, monotonically increasing across the
-merged output.
-
-Single-handler seq behavior was already covered in R6; this round pins the
-across-handler contract.
+Audit finding #18 (formerly #51): multi-handler CommandHandler dispatch
+is forbidden — at most one CH per (domain, command_type) within a
+Router. This file used to pin the cross-handler sequence-merge contract
+(handler A emits N events at seq=k, handler B sees seq=k+N, etc.). With
+single-handler CH, that contract is moot; only the single-handler case
+below remains.
 """
 
 from __future__ import annotations
@@ -72,132 +71,9 @@ def _request_with_next_seq(
 # --------------------------------------------------------------------------
 
 
-def test_second_handler_sees_seq_advanced_by_first_emission():
-    seen = []
-
-    @command_handler(domain="order", state=S)
-    class First:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            seen.append(("first", seq))
-            # Emits 2 events
-            return (OrderCreated(order_id="a"), OrderCompleted(order_id="a"))
-
-    @command_handler(domain="order", state=S)
-    class Second:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            seen.append(("second", seq))
-            return OrderCreated(order_id="b")
-
-    router = (
-        Router("agg")
-        .with_handler(First, lambda: First())
-        .with_handler(Second, lambda: Second())
-        .build()
-    )
-    router.dispatch(_request_with_next_seq(5, CreateOrder(order_id="x")))
-
-    assert seen == [("first", 5), ("second", 7)]
-
-
-def test_third_handler_sees_seq_advanced_by_sum_of_prior_emissions():
-    seen = []
-
-    @command_handler(domain="order", state=S)
-    class A:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            seen.append(seq)
-            return OrderCreated(order_id="1")  # 1 event
-
-    @command_handler(domain="order", state=S)
-    class B:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            seen.append(seq)
-            return (
-                OrderCreated(order_id="2"),
-                OrderCompleted(order_id="2"),
-            )  # 2 events
-
-    @command_handler(domain="order", state=S)
-    class C:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            seen.append(seq)
-            return OrderCreated(order_id="3")
-
-    router = (
-        Router("agg")
-        .with_handler(A, lambda: A())
-        .with_handler(B, lambda: B())
-        .with_handler(C, lambda: C())
-        .build()
-    )
-    router.dispatch(_request_with_next_seq(10, CreateOrder(order_id="x")))
-
-    # A: 10 → emits 1 → B: 11 → emits 2 → C: 13
-    assert seen == [10, 11, 13]
-
-
-# --------------------------------------------------------------------------
-# Emitted pages carry monotonic seqs in merged output
-# --------------------------------------------------------------------------
-
-
-def test_emitted_pages_carry_monotonic_sequences():
-    @command_handler(domain="order", state=S)
-    class First:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            return (OrderCreated(order_id="a"), OrderCompleted(order_id="a"))
-
-    @command_handler(domain="order", state=S)
-    class Second:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            return OrderCreated(order_id="b")
-
-    router = (
-        Router("agg")
-        .with_handler(First, lambda: First())
-        .with_handler(Second, lambda: Second())
-        .build()
-    )
-    response = router.dispatch(_request_with_next_seq(5, CreateOrder(order_id="x")))
-
-    seqs = [p.header.sequence for p in response.events.pages]
-    assert seqs == [5, 6, 7]
-
-
-def test_handler_emitting_no_events_does_not_advance_seq():
-    seen = []
-
-    @command_handler(domain="order", state=S)
-    class First:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            seen.append(("first", seq))
-            return None
-
-    @command_handler(domain="order", state=S)
-    class Second:
-        @handles(CreateOrder)
-        def on(self, cmd, state, seq):
-            seen.append(("second", seq))
-            return OrderCreated(order_id="b")
-
-    router = (
-        Router("agg")
-        .with_handler(First, lambda: First())
-        .with_handler(Second, lambda: Second())
-        .build()
-    )
-    router.dispatch(_request_with_next_seq(42, CreateOrder(order_id="x")))
-
-    # First emitted nothing → seq unchanged.
-    assert seen == [("first", 42), ("second", 42)]
+# Audit #18: multi-handler CH dispatch is forbidden, so the four
+# cross-handler-sequence-threading tests previously here are removed.
+# Their contract is moot under single-handler-per-(domain, type).
 
 
 def test_single_handler_seq_matches_next_sequence():

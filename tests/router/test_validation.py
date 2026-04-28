@@ -107,15 +107,15 @@ def test_empty_projector_domains_list_rejected_at_build():
 
 
 # --------------------------------------------------------------------------
-# "Call both" — duplicate (domain, type) ACROSS instances is allowed
+# Audit #18 (formerly #51): duplicate (domain, type) ACROSS CommandHandlers
+# is now FORBIDDEN. Saga / PM / projector / upcaster fan-out is unaffected.
 # --------------------------------------------------------------------------
 
 
-def test_two_command_handlers_same_domain_same_type_allowed():
-    """Per design: multiple handlers for the same (domain, type) are supported.
-
-    Invocation order is registration order; emitted events merged across handlers.
-    (R8 tests the merge behavior; here we only assert build succeeds.)
+def test_two_command_handlers_same_domain_same_type_rejected():
+    """Audit finding #18: multi-handler CH dispatch is forbidden — the
+    builder must reject two CommandHandlers covering the same
+    (domain, command_type) pair within one Router.
     """
 
     @command_handler(domain="player", state=S)
@@ -138,13 +138,14 @@ def test_two_command_handlers_same_domain_same_type_allowed():
         def on(self, cmd, state, seq):
             pass
 
-    router = (
-        Router("x")
-        .with_handler(HandlerA, lambda: HandlerA())
-        .with_handler(HandlerB, lambda: HandlerB())
-        .build()
-    )
-    assert len(router._factories) == 2
+    with pytest.raises(BuildError) as excinfo:
+        (
+            Router("x")
+            .with_handler(HandlerA, lambda: HandlerA())
+            .with_handler(HandlerB, lambda: HandlerB())
+            .build()
+        )
+    assert "duplicate" in str(excinfo.value).lower()
 
 
 def test_two_sagas_same_source_same_event_allowed():
