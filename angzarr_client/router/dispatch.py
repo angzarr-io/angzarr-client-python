@@ -15,14 +15,8 @@ from typing import Any, Callable
 import grpc
 from google.protobuf.any_pb2 import Any as ProtoAny
 
-from ..error_codes import codes, keys, messages
-
-_LOG = logging.getLogger(__name__)
-
 from angzarr_client.destinations import Destinations
 from angzarr_client.helpers import TYPE_URL_PREFIX
-
-from .responses import ProcessManagerResponse
 from angzarr_client.proto.angzarr import (
     BusinessResponse,
     ContextualCommand,
@@ -37,6 +31,11 @@ from angzarr_client.proto.angzarr import (
     UpcastResponse,
 )
 from angzarr_client.proto.angzarr import types_pb2 as _types
+
+from ..error_codes import codes, keys, messages
+from .responses import ProcessManagerResponse
+
+_LOG = logging.getLogger(__name__)
 
 _NOTIFICATION_TYPE_URL = TYPE_URL_PREFIX + "angzarr_client.proto.angzarr.Notification"
 
