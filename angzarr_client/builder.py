@@ -44,7 +44,6 @@ class CommandBuilder:
         self._merge_strategy: MergeStrategy = MergeStrategy.MERGE_COMMUTATIVE
         self._type_url: str | None = None
         self._payload: bytes | None = None
-        self._err: Exception | None = None
 
     def with_correlation_id(self, id: str) -> "CommandBuilder":
         """Set the correlation ID for request tracing."""
@@ -74,8 +73,6 @@ class CommandBuilder:
 
     def build(self) -> CommandBook:
         """Build the CommandBook without executing."""
-        if self._err:
-            raise self._err
         if not self._type_url:
             raise InvalidArgumentError("command type_url not set")
         if self._payload is None:
@@ -135,7 +132,6 @@ class QueryBuilder:
         self._range: SequenceRange | None = None
         self._temporal: TemporalQuery | None = None
         self._edition: str | None = None
-        self._err: Exception | None = None
 
     def by_correlation_id(self, id: str) -> "QueryBuilder":
         """Query by correlation ID instead of root."""
@@ -186,20 +182,24 @@ class QueryBuilder:
         """Query state as of a specific timestamp (RFC3339 format).
 
         Last-selection-wins: clears any previously-set range selection.
+
+        Audit finding #34 (Option B — raise immediately): a malformed
+        ``rfc3339`` string raises ``InvalidTimestampError`` synchronously
+        rather than deferring to ``build()``. Previously the failure was
+        captured into a sticky ``_err`` field that survived subsequent
+        last-call-wins setters, making `qb.as_of_time("bad").as_of_sequence(5).build()`
+        raise the stale parse error. Mirrors Rust's
+        ``as_of_time(...) -> Result<Self>`` signature where the bad
+        call short-circuits at the call site.
         """
-        try:
-            ts = parse_timestamp(rfc3339)
-            self._temporal = TemporalQuery()
-            self._temporal.as_of_time.CopyFrom(ts)
-            self._range = None
-        except Exception as e:
-            self._err = e
+        ts = parse_timestamp(rfc3339)
+        self._temporal = TemporalQuery()
+        self._temporal.as_of_time.CopyFrom(ts)
+        self._range = None
         return self
 
     def build(self) -> Query:
         """Build the Query without executing."""
-        if self._err:
-            raise self._err
 
         cover = Cover(
             domain=self._domain,
