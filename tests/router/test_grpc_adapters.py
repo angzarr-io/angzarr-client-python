@@ -171,13 +171,18 @@ def test_command_rejected_error_not_found_status_maps_to_not_found():
 def test_invalid_argument_error_maps_to_invalid_argument():
     from angzarr_client.errors import InvalidArgumentError
 
-    assert _abort_code_for(InvalidArgumentError("bad")) == grpc.StatusCode.INVALID_ARGUMENT
+    assert (
+        _abort_code_for(InvalidArgumentError("bad")) == grpc.StatusCode.INVALID_ARGUMENT
+    )
 
 
 def test_invalid_timestamp_error_maps_to_invalid_argument():
     from angzarr_client.errors import InvalidTimestampError
 
-    assert _abort_code_for(InvalidTimestampError("not rfc3339")) == grpc.StatusCode.INVALID_ARGUMENT
+    assert (
+        _abort_code_for(InvalidTimestampError("not rfc3339"))
+        == grpc.StatusCode.INVALID_ARGUMENT
+    )
 
 
 def test_connection_error_maps_to_unavailable():
@@ -189,7 +194,10 @@ def test_connection_error_maps_to_unavailable():
 def test_transport_error_maps_to_unavailable():
     from angzarr_client.errors import TransportError
 
-    assert _abort_code_for(TransportError(RuntimeError("eof"))) == grpc.StatusCode.UNAVAILABLE
+    assert (
+        _abort_code_for(TransportError(RuntimeError("eof")))
+        == grpc.StatusCode.UNAVAILABLE
+    )
 
 
 def test_grpc_error_passes_through_upstream_code():

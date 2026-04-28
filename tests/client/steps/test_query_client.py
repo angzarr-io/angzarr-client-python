@@ -44,7 +44,7 @@ scenarios("query_client.feature")
 class _StoredEvent:
     sequence: int
     type_name: str  # e.g. "OrderCreated"
-    payload: str   # encoded into a StringValue
+    payload: str  # encoded into a StringValue
 
 
 @dataclass
@@ -104,7 +104,9 @@ class _World:
     stub: RecordingStub = field(default_factory=RecordingStub)
     client: Optional[QueryClient] = None
     aggregates: dict[tuple[str, str], _StoredBook] = field(default_factory=dict)
-    edition_aggregates: dict[tuple[str, str, str], _StoredBook] = field(default_factory=dict)
+    edition_aggregates: dict[tuple[str, str, str], _StoredBook] = field(
+        default_factory=dict
+    )
     correlation_books: dict[str, list[_StoredBook]] = field(default_factory=dict)
     last_book: Optional[EventBook] = None
     last_error: Optional[Exception] = None
@@ -121,9 +123,7 @@ def _ensure_client(state: _World) -> QueryClient:
         # Wire a default GetEventBook responder that consults the world's
         # aggregate store. Tests can override per-scenario with the
         # `service unavailable` step → switches to an error.
-        state.stub.responses["GetEventBook"] = lambda query, **kw: _serve(
-            state, query
-        )
+        state.stub.responses["GetEventBook"] = lambda query, **kw: _serve(state, query)
         state.stub.responses["GetEvents"] = lambda query, **kw: iter(
             [_serve(state, query)]
         )
@@ -135,9 +135,7 @@ def _serve(state: _World, query: Query) -> EventBook:
     """Look up the matching stored book in the world and apply the
     query's selection filter. Mirrors the coordinator's contract."""
     domain = query.cover.domain
-    root_hex = (
-        query.cover.root.value.hex() if query.cover.HasField("root") else ""
-    )
+    root_hex = query.cover.root.value.hex() if query.cover.HasField("root") else ""
     correlation = query.cover.correlation_id
 
     # Correlation lookup wins when set without root.
@@ -166,7 +164,9 @@ def _serve(state: _World, query: Query) -> EventBook:
         # Inclusive upper bound — matches the `range_to(lower, upper)`
         # docstrings on both languages and the cucumber feature
         # "Range query with upper bound (inclusive)" (resolved finding #27).
-        events = [e for e in events if e.sequence >= lo and (hi is None or e.sequence <= hi)]
+        events = [
+            e for e in events if e.sequence >= lo and (hi is None or e.sequence <= hi)
+        ]
     elif query.HasField("temporal"):
         if query.temporal.HasField("as_of_sequence"):
             cap = query.temporal.as_of_sequence
@@ -223,9 +223,7 @@ def _given_aggregate_with_specific_event(
         'an aggregate "{domain}" with root "{root}" has events at known timestamps'
     )
 )
-def _given_aggregate_with_timestamps(
-    state: _World, domain: str, root: str
-) -> None:
+def _given_aggregate_with_timestamps(state: _World, domain: str, root: str) -> None:
     state.aggregates[(domain, _root_uuid(root).bytes.hex())] = _StoredBook(
         events=_default_events(5)
     )
@@ -237,9 +235,9 @@ def _given_aggregate_with_timestamps(
 def _given_aggregate_in_edition(
     state: _World, domain: str, root: str, edition: str
 ) -> None:
-    state.edition_aggregates[
-        (domain, _root_uuid(root).bytes.hex(), edition)
-    ] = _StoredBook(events=_default_events(3), edition=edition)
+    state.edition_aggregates[(domain, _root_uuid(root).bytes.hex(), edition)] = (
+        _StoredBook(events=_default_events(3), edition=edition)
+    )
 
 
 @given(
@@ -247,9 +245,7 @@ def _given_aggregate_in_edition(
         'an aggregate "{domain}" with root "{root}" has {count:d} events in main'
     )
 )
-def _given_aggregate_in_main(
-    state: _World, domain: str, root: str, count: int
-) -> None:
+def _given_aggregate_in_main(state: _World, domain: str, root: str, count: int) -> None:
     state.aggregates[(domain, _root_uuid(root).bytes.hex())] = _StoredBook(
         events=_default_events(count)
     )
@@ -264,9 +260,9 @@ def _given_aggregate_in_main(
 def _given_aggregate_in_edition_count(
     state: _World, domain: str, root: str, count: int, edition: str
 ) -> None:
-    state.edition_aggregates[
-        (domain, _root_uuid(root).bytes.hex(), edition)
-    ] = _StoredBook(events=_default_events(count), edition=edition)
+    state.edition_aggregates[(domain, _root_uuid(root).bytes.hex(), edition)] = (
+        _StoredBook(events=_default_events(count), edition=edition)
+    )
 
 
 @given(
@@ -374,9 +370,7 @@ def _when_query_range(
 @when(
     parsers.parse('I query events for "{domain}" root "{root}" as of sequence {seq:d}')
 )
-def _when_query_as_of_sequence(
-    state: _World, domain: str, root: str, seq: int
-) -> None:
+def _when_query_as_of_sequence(state: _World, domain: str, root: str, seq: int) -> None:
     _do_query(state, _make_query(domain, root, as_of_sequence=seq))
 
 
@@ -394,9 +388,7 @@ def _when_query_as_of_time(
 @when(
     parsers.parse('I query events for "{domain}" root "{root}" in edition "{edition}"')
 )
-def _when_query_in_edition(
-    state: _World, domain: str, root: str, edition: str
-) -> None:
+def _when_query_in_edition(state: _World, domain: str, root: str, edition: str) -> None:
     _do_query(state, _make_query(domain, root, edition=edition))
 
 

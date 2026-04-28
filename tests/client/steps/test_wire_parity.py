@@ -49,11 +49,13 @@ def _parse_hex_bytes(s: str) -> bytes:
 @given(
     parsers.re(
         r'a CommandBook with cover\.domain "(?P<domain>[^"]+)" '
-        r'and cover\.root bytes (?P<root_hex>\S+) '
+        r"and cover\.root bytes (?P<root_hex>\S+) "
         r'and correlation_id "(?P<correlation_id>[^"]+)"'
     )
 )
-def given_commandbook(state: _State, domain: str, root_hex: str, correlation_id: str) -> None:
+def given_commandbook(
+    state: _State, domain: str, root_hex: str, correlation_id: str
+) -> None:
     book = types.CommandBook()
     book.cover.domain = domain
     book.cover.root.value = _parse_hex_range(root_hex)
@@ -76,11 +78,7 @@ def given_single_page(state: _State, type_url: str, payload_hex: str) -> None:
     page.command.CopyFrom(payload)
 
 
-@given(
-    parsers.re(
-        r'destination_sequences mapping "(?P<domain>[^"]+)" to (?P<seq>\d+)'
-    )
-)
+@given(parsers.re(r'destination_sequences mapping "(?P<domain>[^"]+)" to (?P<seq>\d+)'))
 def given_sequences(state: _State, domain: str, seq: str) -> None:
     state.sequences[domain] = int(seq)
 

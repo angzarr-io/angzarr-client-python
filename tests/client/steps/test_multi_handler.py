@@ -558,7 +558,9 @@ def _given_both_handle_create_order(world):
     """
 
 
-@given(parsers.parse('a command handler Alpha for domain "{domain}" handling CreateOrder'))
+@given(
+    parsers.parse('a command handler Alpha for domain "{domain}" handling CreateOrder')
+)
 def _given_cross_alpha(world, domain):
     @command_handler(domain=domain, state=StateA)
     class AlphaCross:
@@ -569,7 +571,9 @@ def _given_cross_alpha(world, domain):
     world.classes["AlphaCross"] = AlphaCross
 
 
-@given(parsers.parse('a command handler Beta for domain "{domain}" handling CreateOrder'))
+@given(
+    parsers.parse('a command handler Beta for domain "{domain}" handling CreateOrder')
+)
 def _given_cross_beta(world, domain):
     @command_handler(domain=domain, state=StateB)
     class BetaCross:
@@ -580,7 +584,11 @@ def _given_cross_beta(world, domain):
     world.classes["BetaCross"] = BetaCross
 
 
-@given(parsers.parse('a command handler Player for domain "{domain}" handling RegisterPlayer and DepositFunds'))
+@given(
+    parsers.parse(
+        'a command handler Player for domain "{domain}" handling RegisterPlayer and DepositFunds'
+    )
+)
 def _given_player_two_types(world, domain):
     # Use two stand-in protos. Reuse OrderCreated / OrderCompleted as
     # distinct command types — the fixture set doesn't have
@@ -623,7 +631,9 @@ def _when_build_alpha_beta(world):
             return None
 
     try:
-        Router("multi-ch-test").with_handler(Alpha, Alpha).with_handler(Beta, Beta).build()
+        Router("multi-ch-test").with_handler(Alpha, Alpha).with_handler(
+            Beta, Beta
+        ).build()
         world.observed["build_result"] = "ok"
     except BuildError as e:
         world.observed["build_result"] = "err"
@@ -637,7 +647,12 @@ def _when_build_alpha_beta_cross(world):
     Alpha = world.classes["AlphaCross"]
     Beta = world.classes["BetaCross"]
     try:
-        router = Router("multi-ch-cross").with_handler(Alpha, Alpha).with_handler(Beta, Beta).build()
+        router = (
+            Router("multi-ch-cross")
+            .with_handler(Alpha, Alpha)
+            .with_handler(Beta, Beta)
+            .build()
+        )
         world.observed["build_result"] = "ok"
         world.observed["built_router"] = router
     except BuildError as e:
@@ -659,7 +674,11 @@ def _when_build_player(world):
         world.observed["build_error"] = e
 
 
-@then(parsers.parse('build fails with DuplicateCommandHandler for domain "{domain}" and {cmd_type}'))
+@then(
+    parsers.parse(
+        'build fails with DuplicateCommandHandler for domain "{domain}" and {cmd_type}'
+    )
+)
 def _then_build_fails_duplicate(world, domain, cmd_type):
     assert world.observed["build_result"] == "err", world.observed
     err_msg = str(world.observed["build_error"]).lower()
@@ -677,6 +696,7 @@ def _then_build_succeeds_ch(world):
 
 
 # C-0087 reframed for saga fan-out.
+
 
 @given("each saga factory counts invocations")
 def _given_each_saga_factory_counts(world):

@@ -522,7 +522,9 @@ class TestTypeUrlHelpers:
         is a no-op in Python; ``type_url`` echoes the input unchanged
         through the prefix."""
         result = type_url("angzarr_client.proto.examples.OrderCreated")
-        assert result == "type.googleapis.com/angzarr_client.proto.examples.OrderCreated"
+        assert (
+            result == "type.googleapis.com/angzarr_client.proto.examples.OrderCreated"
+        )
 
     def test_wire_name_is_identity_in_python(self) -> None:
         """``wire_name`` is identity in Python — Python's protoc emits
@@ -936,10 +938,7 @@ class TestIdempotencyKey:
         deferred = AngzarrDeferredSequence(source=cover, source_seq=7)
 
         # Format: {edition}:{domain}:{root_hex}:{source_seq}
-        assert (
-            idempotency_key(deferred)
-            == f"angzarr:orders:{'01' * 16}:7"
-        )
+        assert idempotency_key(deferred) == f"angzarr:orders:{'01' * 16}:7"
 
     def test_returns_none_when_source_missing(self) -> None:
         from angzarr_client.helpers import idempotency_key
@@ -965,10 +964,7 @@ class TestIdempotencyKey:
         # No explicit edition — first segment is empty (default-edition convention).
         cover = Cover(domain="players", root=UUID(value=b"\xab" * 16))
         deferred = AngzarrDeferredSequence(source=cover, source_seq=42)
-        assert (
-            idempotency_key(deferred)
-            == f":players:{'ab' * 16}:42"
-        )
+        assert idempotency_key(deferred) == f":players:{'ab' * 16}:42"
 
     def test_empty_root_yields_empty_root_segment(self) -> None:
         from angzarr_client.helpers import idempotency_key

@@ -263,9 +263,7 @@ class TestCommandRejectedErrorPredicates:
     def test_not_found_constructor(self) -> None:
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.not_found(
-            "NO_SUCH_AGGREGATE", "no such aggregate"
-        )
+        err = CommandRejectedError.not_found("NO_SUCH_AGGREGATE", "no such aggregate")
         assert err.code == "NO_SUCH_AGGREGATE"
         assert err.status_code == "NOT_FOUND"
         assert err.is_not_found() is True

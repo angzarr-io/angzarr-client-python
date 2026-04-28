@@ -390,8 +390,7 @@ def test_dispatch_chains_v1_through_v2_to_v3():
 
     assert len(response.events) == 1
     assert (
-        response.events[0].event.type_url
-        == TYPE_URL_PREFIX + "order.OrderCompleted"
+        response.events[0].event.type_url == TYPE_URL_PREFIX + "order.OrderCompleted"
     ), "chain must reach V3 (OrderCompleted), not stop at V2 (OrderCreated)"
 
 
@@ -399,6 +398,7 @@ def test_dispatch_chain_stops_when_no_further_upcaster_matches():
     """C-0137: a chain stops at whatever stage no upcaster matches the
     current event's type_url. Subsequent upcasters that don't match the
     current value are simply skipped."""
+
     @upcaster(name="upcaster-v1-v2", domain="order")
     class V1ToV2:
         @upcasts(OrderCreatedV1, OrderCreated)

@@ -225,10 +225,9 @@ def _when_get_events(state: _World, domain: str, root: str) -> None:
         state.root = UUID(root)
     except ValueError:
         state.root = uuid4()
-    state.fetched_book = (
-        query(state.client, domain, state.root)  # type: ignore[arg-type]
-        .get_event_book()
-    )
+    state.fetched_book = query(
+        state.client, domain, state.root
+    ).get_event_book()  # type: ignore[arg-type]
 
 
 @when(parsers.parse('I build and get_pages for domain "{domain}" root "{root}"'))
@@ -237,10 +236,9 @@ def _when_get_pages(state: _World, domain: str, root: str) -> None:
         state.root = UUID(root)
     except ValueError:
         state.root = uuid4()
-    state.fetched_pages = (
-        query(state.client, domain, state.root)  # type: ignore[arg-type]
-        .get_pages()
-    )
+    state.fetched_pages = query(
+        state.client, domain, state.root
+    ).get_pages()  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +284,9 @@ def _then_query_root(state: _World, expected: str) -> None:
 @then("the built query should have no root")
 def _then_query_no_root(state: _World) -> None:
     assert state.built is not None
-    has_root = state.built.cover.HasField("root") and len(state.built.cover.root.value) > 0
+    has_root = (
+        state.built.cover.HasField("root") and len(state.built.cover.root.value) > 0
+    )
     assert not has_root
 
 
@@ -341,7 +341,9 @@ def _then_query_building_fails(state: _World) -> None:
 def _then_error_invalid_timestamp(state: _World) -> None:
     assert state.build_error is not None
     err_str = str(state.build_error).lower()
-    assert isinstance(state.build_error, InvalidTimestampError) or "timestamp" in err_str
+    assert (
+        isinstance(state.build_error, InvalidTimestampError) or "timestamp" in err_str
+    )
 
 
 @then(parsers.parse('the built query should have correlation ID "{expected}"'))
@@ -446,7 +448,9 @@ def _then_receive_query_builder(state: _World) -> None:
 def _then_receive_query_builder_no_root(state: _World) -> None:
     assert state.builder is not None
     assert state.built is not None
-    assert not state.built.cover.HasField("root") or len(state.built.cover.root.value) == 0
+    assert (
+        not state.built.cover.HasField("root") or len(state.built.cover.root.value) == 0
+    )
 
 
 @then("I can chain by_correlation_id")

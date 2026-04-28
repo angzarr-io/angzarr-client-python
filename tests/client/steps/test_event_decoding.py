@@ -209,12 +209,8 @@ def _given_decode_event_function(state: _State) -> None:
 def _given_command_response_with_events(state: _State) -> None:
     response = CommandResponse()
     book = EventBook()
-    book.pages.append(
-        _make_event_page(sequence=0, type_url=_MSG_TYPE_URL)
-    )
-    book.pages.append(
-        _make_event_page(sequence=1, type_url=_MSG_TYPE_URL)
-    )
+    book.pages.append(_make_event_page(sequence=0, type_url=_MSG_TYPE_URL))
+    book.pages.append(_make_event_page(sequence=1, type_url=_MSG_TYPE_URL))
     response.events.CopyFrom(book)
     state.command_response = response
 
@@ -227,8 +223,7 @@ def _given_command_response_no_events(state: _State) -> None:
 @given(parsers.parse('{count:d} events all of type "{event_type}"'))
 def _given_n_events_of_type(state: _State, count: int, event_type: str) -> None:
     state.events_list = [
-        _make_event_page(sequence=i, type_url=_MSG_TYPE_URL)
-        for i in range(count)
+        _make_event_page(sequence=i, type_url=_MSG_TYPE_URL) for i in range(count)
     ]
 
 
@@ -238,10 +233,14 @@ def _given_mixed_events(state: _State) -> None:
     # same StringValue stand-in but with synthetic type_urls so the
     # filter scenarios can distinguish them.
     state.events_list = [
-        _make_event_page(sequence=0, type_url="type.googleapis.com/orders.OrderCreated"),
+        _make_event_page(
+            sequence=0, type_url="type.googleapis.com/orders.OrderCreated"
+        ),
         _make_event_page(sequence=1, type_url="type.googleapis.com/orders.ItemAdded"),
         _make_event_page(sequence=2, type_url="type.googleapis.com/orders.ItemAdded"),
-        _make_event_page(sequence=3, type_url="type.googleapis.com/orders.OrderShipped"),
+        _make_event_page(
+            sequence=3, type_url="type.googleapis.com/orders.OrderShipped"
+        ),
     ]
 
 
@@ -292,6 +291,7 @@ def _when_match_against(state: _State, pattern: str) -> None:
 
     For list-of-events scenarios (Versioned type URLs), filter the list.
     """
+
     def _matches(tu: str, pat: str) -> bool:
         if pat.startswith("type.googleapis.com/"):
             return tu == pat
@@ -382,7 +382,7 @@ def _when_events_from_response(state: _State) -> None:
         state.events_list = []
 
 
-@when(parsers.parse('I decode each as {event_type}'))
+@when(parsers.parse("I decode each as {event_type}"))
 def _when_decode_each(state: _State, event_type: str) -> None:
     decoded = []
     for evt in state.events_list:

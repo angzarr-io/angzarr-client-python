@@ -74,9 +74,7 @@ class DispatchError(grpc.RpcError):
         self._code = code
         self._details = details
         self.error_code = error_code
-        self.extras: dict[str, str] = {
-            k: str(v) for k, v in (extras or {}).items()
-        }
+        self.extras: dict[str, str] = {k: str(v) for k, v in (extras or {}).items()}
 
     def code(self) -> grpc.StatusCode:
         return self._code

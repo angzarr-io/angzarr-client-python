@@ -308,9 +308,7 @@ def _when_fluent_chaining(state: _World, docstring: str) -> None:
         command(state.client, state.domain, state.root)  # type: ignore[arg-type]
         .with_correlation_id("trace-456")
         .with_sequence(3)
-        .with_command(
-            "type.googleapis.com/orders.CreateOrder", _make_test_message()
-        )
+        .with_command("type.googleapis.com/orders.CreateOrder", _make_test_message())
     )
     try:
         state.built = builder.build()
@@ -460,7 +458,9 @@ def _then_auto_root_is_valid_uuid(state: _World) -> None:
     assert state.built is not None
     raw = bytes(state.built.cover.root.value)
     parsed = UUID(bytes=raw)
-    assert parsed.version == 4, f"command_new must produce UUID v4, got {parsed.version}"
+    assert (
+        parsed.version == 4
+    ), f"command_new must produce UUID v4, got {parsed.version}"
 
 
 @then(parsers.parse('the built command should have type URL containing "{needle}"'))

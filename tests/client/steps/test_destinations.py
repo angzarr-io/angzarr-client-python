@@ -39,20 +39,12 @@ def _parse_sequence_map(spec: str) -> dict[str, int]:
     return out
 
 
-@given(
-    parsers.re(
-        r"a Destinations built from sequences mapping (?P<spec>.+)"
-    )
-)
+@given(parsers.re(r"a Destinations built from sequences mapping (?P<spec>.+)"))
 def given_destinations(state: _State, spec: str) -> None:
     state.destinations = Destinations(_parse_sequence_map(spec))
 
 
-@given(
-    parsers.re(
-        r"a Destinations built from an ordered sequence list (?P<spec>.+)"
-    )
-)
+@given(parsers.re(r"a Destinations built from an ordered sequence list (?P<spec>.+)"))
 def given_destinations_ordered(state: _State, spec: str) -> None:
     """Build from an explicitly-ordered list like `"zulu" then "alpha" then "mike"`.
 

@@ -123,7 +123,9 @@ def _given_aggregate_with_events(
     state.real_event_count = count
 
 
-@given(parsers.parse('an aggregate "{domain}" with root "{root}" in state "{agg_state}"'))
+@given(
+    parsers.parse('an aggregate "{domain}" with root "{root}" in state "{agg_state}"')
+)
 def _given_aggregate_in_state(
     state: _World, domain: str, root: str, agg_state: str
 ) -> None:
@@ -212,10 +214,10 @@ def _do_command_spec(state: _World, response: CommandResponse) -> None:
         state.last_error = e
 
 
-@when(parsers.parse('I speculatively execute a command against "{domain}" root "{root}"'))
-def _when_speculative_execute_against(
-    state: _World, domain: str, root: str
-) -> None:
+@when(
+    parsers.parse('I speculatively execute a command against "{domain}" root "{root}"')
+)
+def _when_speculative_execute_against(state: _World, domain: str, root: str) -> None:
     _do_command_spec(
         state,
         _make_command_response([_event_page(0, "SpeculativeEvent")]),
@@ -278,7 +280,11 @@ def _when_speculative_execute_simple(state: _World) -> None:
 # ---------------------------------------------------------------------------
 
 
-@when(parsers.parse('I speculatively execute projector "{projector}" against those events'))
+@when(
+    parsers.parse(
+        'I speculatively execute projector "{projector}" against those events'
+    )
+)
 def _when_speculative_projector_against(state: _World, projector: str) -> None:
     proj = Projection()
     proj.projector = projector
@@ -339,9 +345,7 @@ def _when_speculative_pm(state: _World, pm: str) -> None:
 def _when_speculative_multi_event(state: _World) -> None:
     _do_command_spec(
         state,
-        _make_command_response(
-            [_event_page(0, "Event1"), _event_page(1, "Event2")]
-        ),
+        _make_command_response([_event_page(0, "Event1"), _event_page(1, "Event2")]),
     )
 
 

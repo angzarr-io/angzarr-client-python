@@ -193,9 +193,7 @@ def _do_execute(
     if payload != msg.SerializeToString():
         # First call with_command so build() succeeds; then mutate the
         # bytes on the resulting CommandBook to match the mock's marker.
-        cmd_book = builder.with_command(
-            f"type.googleapis.com/{cmd_type}", msg
-        ).build()
+        cmd_book = builder.with_command(f"type.googleapis.com/{cmd_type}", msg).build()
         cmd_book.pages[0].command.value = payload
         request = CommandRequest(command=cmd_book, sync_mode=sync_mode)
         try:
@@ -285,13 +283,9 @@ def _when_execute_command_with_data(state: _World, cmd_type: str, data: str) -> 
         state.root = uuid4()
     if cmd_type.startswith("Create"):
         # Treat new-aggregate creates as starting at 0
-        seq = state.cmd.aggregates.get(
-            (state.domain, state.root.bytes.hex()), 0
-        )
+        seq = state.cmd.aggregates.get((state.domain, state.root.bytes.hex()), 0)
     else:
-        seq = state.cmd.aggregates.get(
-            (state.domain, state.root.bytes.hex()), 0
-        )
+        seq = state.cmd.aggregates.get((state.domain, state.root.bytes.hex()), 0)
     _do_execute(state, sequence=seq, cmd_type=f"orders.{cmd_type}")
 
 
@@ -421,9 +415,7 @@ def _when_execute_multi_event(state: _World) -> None:
     if state.root is None:
         state.root = uuid4()
     state.cmd.events_for_next_command = 3
-    seq = state.cmd.aggregates.get(
-        (state.domain, state.root.bytes.hex()), 0
-    )
+    seq = state.cmd.aggregates.get((state.domain, state.root.bytes.hex()), 0)
     _do_execute(state, sequence=seq)
 
 
@@ -600,7 +592,11 @@ def _then_events_have_sequences(state: _World, s1: int, s2: int, s3: int) -> Non
     assert state.last_response is not None
     pages = state.last_response.events.pages
     assert len(pages) == 3
-    assert (pages[0].header.sequence, pages[1].header.sequence, pages[2].header.sequence) == (
+    assert (
+        pages[0].header.sequence,
+        pages[1].header.sequence,
+        pages[2].header.sequence,
+    ) == (
         s1,
         s2,
         s3,

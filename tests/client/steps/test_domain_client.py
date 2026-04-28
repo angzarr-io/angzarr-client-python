@@ -73,9 +73,7 @@ class _MockQueryClient:
     def _root_hex(self, query: Query) -> str:
         return query.cover.root.value.hex() if query.cover.HasField("root") else ""
 
-    def get_event_book(
-        self, query: Query, timeout: float | None = None
-    ) -> EventBook:
+    def get_event_book(self, query: Query, timeout: float | None = None) -> EventBook:
         if self.closed:
             raise ClientConnectionError("client is closed")
         self.last_query = query
@@ -88,9 +86,7 @@ class _MockQueryClient:
             book.pages.append(page)
         return book
 
-    def get_events(
-        self, query: Query, timeout: float | None = None
-    ) -> list[EventBook]:
+    def get_events(self, query: Query, timeout: float | None = None) -> list[EventBook]:
         return [self.get_event_book(query, timeout)]
 
 
@@ -219,9 +215,7 @@ def _when_command_builder(state: _World) -> None:
     state.last_command_resp = (
         command(state.client.command_handler, state.domain, root)
         .with_sequence(0)
-        .with_command(
-            "type.googleapis.com/test.Cmd", StringValue(value="x")
-        )
+        .with_command("type.googleapis.com/test.Cmd", StringValue(value="x"))
         .execute()
     )
 
@@ -241,10 +235,7 @@ def _when_query_builder(state: _World) -> None:
     root_hex = root_key[1]
     root_uuid = UUID(bytes=bytes.fromhex(root_hex))
 
-    book = (
-        query_builder(state.client.query, state.domain, root_uuid)
-        .get_event_book()
-    )
+    book = query_builder(state.client.query, state.domain, root_uuid).get_event_book()
     state.fetched_pages = len(book.pages)
 
 
@@ -262,9 +253,11 @@ def _when_query_resulting(state: _World) -> None:
     from angzarr_client.builder import query_domain
 
     assert state.client is not None
-    _ = query_domain(state.client.query, state.domain).by_correlation_id(
-        "trace-1"
-    ).build()
+    _ = (
+        query_domain(state.client.query, state.domain)
+        .by_correlation_id("trace-1")
+        .build()
+    )
 
 
 @when("I close the DomainClient")
