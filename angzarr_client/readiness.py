@@ -219,14 +219,14 @@ class _SupervisorThread(threading.Thread):
         self._service_names = service_names
         self._interval = interval
         self._timeout = timeout
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
 
     def stop(self) -> None:
         """Signal the supervisor to exit on its next loop iteration."""
-        self._stop.set()
+        self._stop_event.set()
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             all_ok = True
             for probe in self._probes:
                 try:
@@ -244,7 +244,7 @@ class _SupervisorThread(threading.Thread):
             for name in self._service_names:
                 self._health.set(name, status)
             # Sleep in small chunks so stop() is responsive on shutdown.
-            self._stop.wait(timeout=self._interval)
+            self._stop_event.wait(timeout=self._interval)
 
 
 def run_supervisor(

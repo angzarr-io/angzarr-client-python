@@ -1,6 +1,5 @@
 """Tests for error types."""
 
-
 import grpc
 
 from angzarr_client.errors import (

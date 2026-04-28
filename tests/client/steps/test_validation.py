@@ -147,6 +147,6 @@ def _also_apply_applies(world, name):
 
 @then("the declaration raises a configuration error")
 def _then_config_error(world):
-    assert isinstance(world.dispatch_exc, CONFIG_ERRORS), (
-        f"expected TypeError or BuildError, got {type(world.dispatch_exc).__name__}"
-    )
+    assert isinstance(
+        world.dispatch_exc, CONFIG_ERRORS
+    ), f"expected TypeError or BuildError, got {type(world.dispatch_exc).__name__}"

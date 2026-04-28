@@ -84,9 +84,7 @@ class TestQueryClient:
         # Use a unique var name that won't exist, don't clear all env vars
         # (clearing all breaks mutmut which needs MUTANT_UNDER_TEST)
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        QueryClient.from_env(
-            "QUERY_CLIENT_NONEXISTENT_VAR_12345", "default:8000"
-        )
+        QueryClient.from_env("QUERY_CLIENT_NONEXISTENT_VAR_12345", "default:8000")
         mock_channel.assert_called_once_with("default:8000")
 
     def test_get_event_book_success(self) -> None:
