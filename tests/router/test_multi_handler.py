@@ -31,7 +31,6 @@ from angzarr_client.proto.angzarr import (
 )
 from angzarr_client.router import (
     Router,
-    applies,
     command_handler,
     handles,
 )
@@ -39,7 +38,6 @@ from tests.fixtures import (
     CreateOrder,
     OrderCompleted,
     OrderCreated,
-    StockUpdated,
 )
 
 

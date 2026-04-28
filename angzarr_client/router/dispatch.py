@@ -218,9 +218,15 @@ def dispatch_command(
 ) -> BusinessResponse:
     """Dispatch a ContextualCommand to the matching @handles or @rejected method.
 
-    Command path (R6-R9): routes by (domain, type_url).
-    Notification path (R10): routes rejection compensation to @rejected handlers.
-    Multi-handler merge applies to both paths.
+    Command path: routes by ``(domain, type_url)``. Audit #62: at most one
+    handler per ``(domain, type_url)`` — duplicate registration is a
+    build-time error (``BuildError`` from ``router/builder.py:115-138``),
+    so this loop matches at most one factory and returns at the first
+    match. Mirrors Rust ``runtime.rs:43-108``.
+
+    Notification path: routes rejection compensation to ``@rejected``
+    handlers; that path *does* fan out across every matching ``@rejected``
+    set (sagas / multi-handler compensation legitimately broadcast).
     """
     cmd_book = request.command
     if not cmd_book.pages:
@@ -252,50 +258,36 @@ def dispatch_command(
     if type_url == _NOTIFICATION_TYPE_URL:
         return _dispatch_notification(factories, command_any, request)
 
-    # Find all factories whose class handles (domain, type_url-suffix). Matching
-    # is pure class-level reflection; handlers aren't instantiated until we
-    # know they'll be invoked.
-    matched: list[tuple[Callable[[], Any], type, str]] = []
+    # Audit #62: single-handler invariant enforced at build time. First
+    # match wins; no merge across handlers.
+    prior = request.events if request.HasField("events") else None
+    base_seq = int(request.events.next_sequence) if request.HasField("events") else 0
+
     for cls, factory in factories:
         if cls.__angzarr_meta__.get("domain") != domain:
             continue
         for cmd_type, method_name in _collect_method_names(cls, "__angzarr_handles__"):
-            if type_url == TYPE_URL_PREFIX + cmd_type.DESCRIPTOR.full_name:
-                matched.append((factory, cmd_type, method_name))
+            if type_url != TYPE_URL_PREFIX + cmd_type.DESCRIPTOR.full_name:
+                continue
 
-    if not matched:
-        raise DispatchError(
-            grpc.StatusCode.INVALID_ARGUMENT,
-            messages.NO_HANDLER_REGISTERED,
-            error_code=codes.NO_HANDLER_REGISTERED,
-            extras={keys.DOMAIN: domain, keys.TYPE_URL: type_url},
-        )
+            # Decode the command and invoke the single matching handler.
+            cmd = cmd_type()
+            cmd.ParseFromString(command_any.value)
 
-    # Rebuild state per instance (isolated). Invoke all matched handlers in
-    # registration order, advancing the sequence counter across the merged
-    # output so handler N sees seq = base_seq + events_emitted_by_earlier_handlers.
-    prior = request.events if request.HasField("events") else None
-    base_seq = int(request.events.next_sequence) if request.HasField("events") else 0
-    current_seq = base_seq
-    merged = EventBook()
+            inst = factory()
+            state = _rebuild_state(inst, prior)
+            emitted = getattr(inst, method_name)(cmd, state, base_seq)
 
-    for factory, cmd_type, method_name in matched:
-        # Decode the command per-instance so each handler receives its own
-        # independent parsed message (no shared mutation risk if anyone modifies it).
-        cmd = cmd_type()
-        cmd.ParseFromString(command_any.value)
+            response = BusinessResponse()
+            response.events.CopyFrom(_pack_events(emitted, base_seq=base_seq))
+            return response
 
-        inst = factory()
-        state = _rebuild_state(inst, prior)
-        emitted = getattr(inst, method_name)(cmd, state, current_seq)
-
-        pages = _pack_events(emitted, base_seq=current_seq).pages
-        merged.pages.extend(pages)
-        current_seq += len(pages)
-
-    response = BusinessResponse()
-    response.events.CopyFrom(merged)
-    return response
+    raise DispatchError(
+        grpc.StatusCode.INVALID_ARGUMENT,
+        messages.NO_HANDLER_REGISTERED,
+        error_code=codes.NO_HANDLER_REGISTERED,
+        extras={keys.DOMAIN: domain, keys.TYPE_URL: type_url},
+    )
 
 
 def _dispatch_notification(
@@ -359,6 +351,137 @@ def _build_fresh_state(instance: Any) -> Any:
             return attr(instance)
     state_type = cls.__angzarr_meta__["state"]
     return state_type()
+
+
+# --------------------------------------------------------------------------
+# Dispatch: HandleFact (audit #45)
+# --------------------------------------------------------------------------
+
+
+def dispatch_fact(factories: list[Factory], request: Any) -> EventBook:
+    """Dispatch a ``FactRequest`` through @handles_fact methods.
+
+    Audit #45. Walks each fact in ``request.facts``, finds the matching
+    ``@handles_fact(EventType)`` method, rebuilds state from
+    ``request.prior_events``, invokes the method, and concatenates
+    emitted events into the returned ``EventBook``.
+
+    Caller (the gRPC adapter) is responsible for gating on
+    ``CommandHandlerRouter.supports_handle_fact()`` first — when no
+    handler declares any ``@handles_fact``, the adapter returns
+    ``UNIMPLEMENTED`` without invoking dispatch. Once dispatch IS
+    invoked, individual fact events with no matching ``@handles_fact``
+    are silently skipped (the framework returns whatever events the
+    matching handlers emitted; the coordinator persists the original
+    facts as-is via its own path).
+    """
+    facts = request.facts if request.HasField("facts") else None
+    prior = request.prior_events if request.HasField("prior_events") else None
+
+    merged = EventBook()
+    if facts is None:
+        return merged
+
+    base_seq = int(prior.next_sequence) if prior is not None else 0
+    current_seq = base_seq
+
+    for page in facts.pages:
+        if not page.HasField("event"):
+            continue
+        type_url = page.event.type_url
+        if not type_url or not type_url.startswith(TYPE_URL_PREFIX):
+            continue
+        suffix = type_url[len(TYPE_URL_PREFIX) :]
+
+        for cls, factory in factories:
+            for evt_type, method_name in _collect_method_names(
+                cls, "__angzarr_handles_fact__"
+            ):
+                if evt_type.DESCRIPTOR.full_name != suffix:
+                    continue
+
+                inst = factory()
+                state = _rebuild_state(inst, prior)
+                evt = evt_type()
+                evt.ParseFromString(page.event.value)
+                emitted = getattr(inst, method_name)(evt, state)
+
+                pages = _pack_events(emitted, base_seq=current_seq).pages
+                merged.pages.extend(pages)
+                current_seq += len(pages)
+
+    merged.next_sequence = current_seq
+    return merged
+
+
+# --------------------------------------------------------------------------
+# Dispatch: Replay (audit #45)
+# --------------------------------------------------------------------------
+
+
+def dispatch_replay(factories: list[Factory], request: Any) -> Any:
+    """Replay events on top of a base snapshot to compute final state.
+
+    Audit #45. Decodes the base snapshot's state into the registered
+    state type, applies ``request.events`` through the aggregate's
+    ``@applies`` methods, and returns the resulting state wrapped in
+    an ``Any`` inside a ``ReplayResponse``.
+
+    Caller (the gRPC adapter) is responsible for gating on
+    ``CommandHandlerRouter.supports_replay()`` first.
+
+    Replay uses the FIRST registered handler's state type and applier
+    set — multi-handler routers are forbidden post-#62 so there is at
+    most one. If somehow none is registered, returns an empty
+    ``ReplayResponse``.
+    """
+    from angzarr_client.proto.angzarr.command_handler_pb2 import ReplayResponse
+
+    if not factories:
+        return ReplayResponse()
+
+    cls, factory = factories[0]
+    state_type = cls.__angzarr_meta__.get("state")
+    if state_type is None or not hasattr(state_type, "DESCRIPTOR"):
+        # Aggregate state isn't proto-serializable. The
+        # supports_replay() gate should have prevented us from reaching
+        # here, but stay defensive: an empty response is closer to
+        # "framework declined" than crashing the supervisor.
+        return ReplayResponse()
+
+    inst = factory()
+
+    # Decode base snapshot state — empty Any means "start from default".
+    state = _build_fresh_state(inst)
+    if request.HasField("base_snapshot") and request.base_snapshot.HasField("state"):
+        any_state = request.base_snapshot.state
+        if any_state.value:
+            state = state_type()
+            any_state.Unpack(state)
+
+    # Apply each event through the matching @applies method.
+    appliers = _appliers_for(inst)
+    applier_types = _collect_method_names(cls, "__angzarr_applies__")
+    for page in request.events:
+        if not page.HasField("event"):
+            continue
+        any_evt: ProtoAny = page.event
+        if not any_evt.type_url.startswith(TYPE_URL_PREFIX):
+            continue
+        suffix = any_evt.type_url[len(TYPE_URL_PREFIX) :]
+        applier = appliers.get(suffix)
+        if applier is None:
+            continue
+        for event_type, _ in applier_types:
+            if event_type.DESCRIPTOR.full_name == suffix:
+                evt = event_type()
+                evt.ParseFromString(any_evt.value)
+                applier(state, evt)
+                break
+
+    response = ReplayResponse()
+    response.state.Pack(state)
+    return response
 
 
 def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaResponse:
@@ -614,6 +737,13 @@ def dispatch_projector(factories: list[Factory], events: EventBook) -> Projectio
     result = Projection()
     if events.HasField("cover"):
         result.cover.CopyFrom(events.cover)
+    # Audit #63: synthetic Projection carries the input book's
+    # next_sequence so downstream readers can correlate the projection
+    # back to the event-stream cursor. Mirrors Rust
+    # `runtime.rs:590-595` which sets `sequence: next_sequence` on the
+    # framework-synthesized Projection. Audit #52 fixed the dispatch
+    # model on both sides; #63 is the missed sequence-field carry.
+    result.sequence = events.next_sequence
     return result
 
 

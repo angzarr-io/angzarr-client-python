@@ -15,7 +15,7 @@ from angzarr_client.router import (
     state_factory,
 )
 from tests.client.steps._helpers import contextual_command, event_book
-from tests.fixtures import CompleteOrder, CreateOrder, OrderCompleted, OrderCreated
+from tests.fixtures import CompleteOrder, CreateOrder, OrderCreated
 
 scenarios("command_handler.feature")
 

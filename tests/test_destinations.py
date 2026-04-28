@@ -58,12 +58,16 @@ class TestDestinations:
         assert cmd.pages[1].header.sequence == 11
 
     def test_stamp_command_raises_for_missing_domain(self) -> None:
-        from angzarr_client.error_codes import codes, keys
+        # Audit #64: structured error with the dedicated
+        # MISSING_DESTINATION_SEQUENCE code (was incorrectly
+        # NO_HANDLER_REGISTERED placeholder before).
+        from angzarr_client.error_codes import codes, keys, messages
 
         d = Destinations({"inventory": 1})
         cmd = types.CommandBook()
         cmd.pages.add().header.sequence = 0
         with pytest.raises(InvalidArgumentError) as exc:
             d.stamp_command(cmd, "orders")
-        assert exc.value.code == codes.NO_HANDLER_REGISTERED
+        assert exc.value.code == codes.MISSING_DESTINATION_SEQUENCE
+        assert exc.value.message == messages.MISSING_DESTINATION_SEQUENCE
         assert exc.value.details[keys.DOMAIN] == "orders"

@@ -106,35 +106,64 @@ class TestConfigureLogging:
 
 
 class TestCreateServer:
+    # Audit #68: create_server now returns (server, address, health_servicer)
+    # so the per-kind runner can pass the health servicer to the
+    # readiness supervisor.
     def test_tcp_default_builds_server(self, monkeypatch) -> None:
         add_servicer = MagicMock()
         servicer = object()
-        server, address = srv.create_server(
+        server, address, health_servicer = srv.create_server(
             add_servicer_func=add_servicer,
             servicer=servicer,
             service_name="angzarr_client.proto.angzarr.Test",
         )
         assert add_servicer.call_count == 1
         assert address.startswith("[::]:")
+        assert health_servicer is not None
 
     def test_uds_builds_server(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setenv("TRANSPORT_TYPE", "uds")
         monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
         add_servicer = MagicMock()
         servicer = object()
-        server, address = srv.create_server(
+        server, address, _hs = srv.create_server(
             add_servicer_func=add_servicer, servicer=servicer
         )
         assert address.startswith("unix:")
 
     def test_no_service_name_skips_named_health(self, monkeypatch) -> None:
         add_servicer = MagicMock()
-        server, _ = srv.create_server(
+        server, _addr, _hs = srv.create_server(
             add_servicer_func=add_servicer,
             servicer=object(),
             service_name="",
         )
         assert add_servicer.call_count == 1
+
+    def test_initial_health_state_is_not_serving(self, monkeypatch) -> None:
+        # Audit #68: health starts NOT_SERVING; the supervisor flips it
+        # to SERVING once probes pass. Pre-#68 behavior set it SERVING
+        # immediately, which made K8s readiness gate vacuously true.
+        from grpc_health.v1 import health_pb2
+
+        add_servicer = MagicMock()
+        _server, _addr, health_servicer = srv.create_server(
+            add_servicer_func=add_servicer,
+            servicer=object(),
+            service_name="angzarr_client.proto.angzarr.Test",
+        )
+        # HealthServicer doesn't expose a public getter; reach into the
+        # internal status map. Pin both the empty (overall) name and
+        # the kind-specific name.
+        statuses = getattr(health_servicer, "_server_status", None) or getattr(
+            health_servicer, "_servicer_status", None
+        )
+        assert statuses is not None, "could not introspect HealthServicer state"
+        assert statuses[""] == health_pb2.HealthCheckResponse.NOT_SERVING
+        assert (
+            statuses["angzarr_client.proto.angzarr.Test"]
+            == health_pb2.HealthCheckResponse.NOT_SERVING
+        )
 
 
 class TestRunServerLogging:
@@ -143,7 +172,9 @@ class TestRunServerLogging:
         fake_server = MagicMock()
         fake_server.wait_for_termination.side_effect = KeyboardInterrupt
         monkeypatch.setattr(
-            srv, "create_server", lambda *a, **kw: (fake_server, "[::]:9999")
+            srv,
+            "create_server",
+            lambda *a, **kw: (fake_server, "[::]:9999", MagicMock()),
         )
         logger = MagicMock()
         with pytest.raises(KeyboardInterrupt):
@@ -164,7 +195,9 @@ class TestRunServerLogging:
         fake_server = MagicMock()
         fake_server.wait_for_termination.side_effect = KeyboardInterrupt
         monkeypatch.setattr(
-            srv, "create_server", lambda *a, **kw: (fake_server, "[::]:4242")
+            srv,
+            "create_server",
+            lambda *a, **kw: (fake_server, "[::]:4242", MagicMock()),
         )
         with pytest.raises(KeyboardInterrupt):
             srv.run_server(
@@ -178,7 +211,9 @@ class TestRunServerLogging:
         fake_server = MagicMock()
         fake_server.wait_for_termination.side_effect = KeyboardInterrupt
         monkeypatch.setattr(
-            srv, "create_server", lambda *a, **kw: (fake_server, "[::]:50052")
+            srv,
+            "create_server",
+            lambda *a, **kw: (fake_server, "[::]:50052", MagicMock()),
         )
         with pytest.raises(KeyboardInterrupt):
             srv.run_server(

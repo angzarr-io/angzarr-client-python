@@ -5,7 +5,6 @@ from uuid import UUID as PyUUID
 
 import pytest
 from google.protobuf.any_pb2 import Any as ProtoAny
-from google.protobuf.timestamp_pb2 import Timestamp
 
 from angzarr_client.errors import InvalidTimestampError
 from angzarr_client.helpers import (
@@ -73,8 +72,6 @@ from angzarr_client.proto.angzarr import (
     EventPage,
     PageHeader,
     Query,
-    SequenceRange,
-    TemporalQuery,
 )
 
 
@@ -975,3 +972,61 @@ class TestIdempotencyKey:
         cover = Cover(domain="orders", edition=Edition(name="angzarr"))
         deferred = AngzarrDeferredSequence(source=cover, source_seq=1)
         assert idempotency_key(deferred) == "angzarr:orders::1"
+
+
+class TestCorrelatedMetadata:
+    """Audit #69: ``correlated_metadata`` mirrors Rust's
+    ``proto_ext::correlated_request`` — same wire surface
+    (``x-correlation-id`` header), per-language idiomatic call shape."""
+
+    def test_returns_metadata_pair_for_non_empty_id(self) -> None:
+        from angzarr_client.helpers import (
+            CORRELATION_ID_HEADER,
+            correlated_metadata,
+        )
+
+        md = correlated_metadata("abc-123")
+        assert md == [(CORRELATION_ID_HEADER, "abc-123")]
+
+    def test_returns_empty_list_for_empty_id(self) -> None:
+        from angzarr_client.helpers import correlated_metadata
+
+        assert correlated_metadata("") == []
+
+    def test_uuid_format_id_passes_through(self) -> None:
+        from angzarr_client.helpers import (
+            CORRELATION_ID_HEADER,
+            correlated_metadata,
+        )
+
+        uuid_id = "550e8400-e29b-41d4-a716-446655440000"
+        md = correlated_metadata(uuid_id)
+        assert md == [(CORRELATION_ID_HEADER, uuid_id)]
+
+    def test_header_value_is_x_correlation_id(self) -> None:
+        # Cross-language wire contract — Rust and every grpc-py caller
+        # must agree on this exact header name.
+        from angzarr_client.helpers import CORRELATION_ID_HEADER
+
+        assert CORRELATION_ID_HEADER == "x-correlation-id"
+
+    def test_alphanumeric_dash_underscore_id_passes(self) -> None:
+        # Mirrors Rust's `test_correlated_request_with_common_id_formats`.
+        from angzarr_client.helpers import (
+            CORRELATION_ID_HEADER,
+            correlated_metadata,
+        )
+
+        for sample in ["abc123", "req-42", "trace_001", "corr.7"]:
+            md = correlated_metadata(sample)
+            assert md == [(CORRELATION_ID_HEADER, sample)], sample
+
+    def test_returns_list_not_tuple(self) -> None:
+        # grpc-py expects metadata as a list/iterable of 2-tuples; pin
+        # the outer container shape to avoid silently passing the wrong
+        # type to a stub call.
+        from angzarr_client.helpers import correlated_metadata
+
+        assert isinstance(correlated_metadata("x"), list)
+        assert isinstance(correlated_metadata("x")[0], tuple)
+        assert len(correlated_metadata("x")[0]) == 2

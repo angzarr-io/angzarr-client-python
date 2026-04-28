@@ -225,9 +225,7 @@ def _when_get_events(state: _World, domain: str, root: str) -> None:
         state.root = UUID(root)
     except ValueError:
         state.root = uuid4()
-    state.fetched_book = query(
-        state.client, domain, state.root
-    ).get_event_book()  # type: ignore[arg-type]
+    state.fetched_book = query(state.client, domain, state.root).get_event_book()  # type: ignore[arg-type]
 
 
 @when(parsers.parse('I build and get_pages for domain "{domain}" root "{root}"'))
@@ -236,9 +234,7 @@ def _when_get_pages(state: _World, domain: str, root: str) -> None:
         state.root = UUID(root)
     except ValueError:
         state.root = uuid4()
-    state.fetched_pages = query(
-        state.client, domain, state.root
-    ).get_pages()  # type: ignore[arg-type]
+    state.fetched_pages = query(state.client, domain, state.root).get_pages()  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

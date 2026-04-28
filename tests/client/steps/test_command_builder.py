@@ -27,7 +27,6 @@ from angzarr_client.proto.angzarr import (
     CommandBook,
     CommandRequest,
     CommandResponse,
-    MergeStrategy,
 )
 
 scenarios("command_builder.feature")

@@ -27,8 +27,6 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from angzarr_client.helpers import (
     decode_event,
     full_type_url_for,
-    type_matches,
-    type_url_matches,
     type_name_from_url,
     try_unpack,
     unpack,

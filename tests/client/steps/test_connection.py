@@ -29,7 +29,7 @@ from angzarr_client.client import (
     SpeculativeClient,
 )
 from angzarr_client.errors import GRPCError
-from angzarr_client.proto.angzarr import CommandRequest, Query
+from angzarr_client.proto.angzarr import CommandRequest
 
 from ._fakes import RecordingStub, StubRpcError
 

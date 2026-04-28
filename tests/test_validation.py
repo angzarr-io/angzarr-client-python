@@ -25,24 +25,25 @@ from angzarr_client.validation import (
 
 
 class TestRequireExists:
-    def test_passes_when_non_empty(self):
-        require_exists("value", "context")
+    # Audit #60: predicate-bool shape, mirrors Rust validation.rs:41.
+    def test_passes_when_true(self):
+        require_exists(True, "context")
 
-    def test_fails_when_empty(self):
+    def test_fails_when_false(self):
         with pytest.raises(CommandRejectedError) as exc:
-            require_exists("", "Player does not exist")
+            require_exists(False, "Player does not exist")
         assert exc.value.code == codes.ENTITY_NOT_FOUND
         assert exc.value.message == messages.ENTITY_NOT_FOUND
         assert exc.value.details[keys.CONTEXT] == "Player does not exist"
 
 
 class TestRequireNotExists:
-    def test_passes_when_empty(self):
-        require_not_exists("", "context")
+    def test_passes_when_false(self):
+        require_not_exists(False, "context")
 
-    def test_fails_when_non_empty(self):
+    def test_fails_when_true(self):
         with pytest.raises(CommandRejectedError) as exc:
-            require_not_exists("value", "Player already exists")
+            require_not_exists(True, "Player already exists")
         assert exc.value.code == codes.ENTITY_ALREADY_EXISTS
         assert exc.value.message == messages.ENTITY_ALREADY_EXISTS
         assert exc.value.details[keys.CONTEXT] == "Player already exists"
@@ -197,7 +198,7 @@ class TestStructuredLogging:
     def test_require_exists_logs_not_found(self, caplog):
         with caplog.at_level(logging.INFO, logger="angzarr_client.validation"):
             with pytest.raises(CommandRejectedError):
-                require_exists("", "entity")
+                require_exists(False, "entity")
 
         records = [r for r in caplog.records if r.name == "angzarr_client.validation"]
         assert len(records) == 1

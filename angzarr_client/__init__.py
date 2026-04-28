@@ -13,6 +13,7 @@ from .client import (
 )
 from .compensation import (
     CompensationContext,
+    DelegationOptions,
     RejectionHandlerResponse,
     delegate_to_framework,
     emit_compensation_events,
@@ -32,6 +33,7 @@ from .errors import (
 )
 from .event_packing import new_event_book, new_event_book_multi
 from .helpers import (
+    CORRELATION_ID_HEADER,
     DEFAULT_EDITION,
     META_ANGZARR_DOMAIN,
     PROJECTION_DOMAIN_PREFIX,
@@ -39,6 +41,7 @@ from .helpers import (
     TYPE_URL_PREFIX,
     UNKNOWN_DOMAIN,
     WILDCARD_DOMAIN,
+    correlated_metadata,
     correlation_id,
     destination_map,
     domain,
@@ -89,6 +92,7 @@ from .router import (
     applies,
     command_handler,
     handles,
+    handles_fact,
     process_manager,
     projector,
     rejected,
@@ -174,6 +178,7 @@ __all__ = [
     "projector",
     "upcaster",
     "handles",
+    "handles_fact",
     "applies",
     "rejected",
     "state_factory",
@@ -200,7 +205,9 @@ __all__ = [
     "PROJECTION_DOMAIN_PREFIX",
     "PROJECTION_TYPE_URL",
     "TYPE_URL_PREFIX",
+    "CORRELATION_ID_HEADER",
     # Helpers
+    "correlated_metadata",
     "destination_map",
     "domain",
     "correlation_id",
@@ -285,6 +292,7 @@ __all__ = [
     "new_event_book_multi",
     # Compensation
     "CompensationContext",
+    "DelegationOptions",
     "RejectionHandlerResponse",
     "delegate_to_framework",
     "emit_compensation_events",

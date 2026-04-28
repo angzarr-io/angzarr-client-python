@@ -680,11 +680,19 @@ def _when_build_player(world):
     )
 )
 def _then_build_fails_duplicate(world, domain, cmd_type):
+    # Audit #72: BuildError carries structured `code` + `details` rather
+    # than interpolating runtime values into the message.
+    from angzarr_client.error_codes import codes, keys
+
     assert world.observed["build_result"] == "err", world.observed
-    err_msg = str(world.observed["build_error"]).lower()
-    assert "duplicate" in err_msg, err_msg
-    assert domain in err_msg, err_msg
-    assert cmd_type.lower() in err_msg, err_msg
+    err = world.observed["build_error"]
+    assert err.code == codes.DUPLICATE_COMMAND_HANDLER, err.code
+    assert err.details[keys.DOMAIN] == domain, err.details
+    # cmd_type is the proto short name (e.g., "CreateOrder"); details
+    # carries the full type URL — assert the short name is the suffix
+    # after the last '.'.
+    type_url = err.details[keys.TYPE_URL]
+    assert type_url.endswith(f".{cmd_type}"), (cmd_type, type_url)
 
 
 @then("build succeeds with a CommandHandlerRouter")

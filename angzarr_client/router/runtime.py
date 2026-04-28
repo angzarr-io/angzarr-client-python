@@ -94,6 +94,55 @@ class CommandHandlerRouter(_BuiltRouterBase, Generic[S]):
 
         return dispatch_command(self._factories, request)
 
+    def supports_handle_fact(self) -> bool:
+        """Audit #45: True if any registered handler declares at least one
+        ``@handles_fact`` method. The gRPC adapter uses this as the gate
+        for the ``HandleFact`` RPC — False → return ``UNIMPLEMENTED``
+        without entering dispatch.
+
+        Implemented as pure metadata read on the registered classes;
+        no factory invocation, no per-request work."""
+        from .dispatch import _collect_method_names
+
+        for cls, _factory in self._factories:
+            if _collect_method_names(cls, "__angzarr_handles_fact__"):
+                return True
+        return False
+
+    def supports_replay(self) -> bool:
+        """Audit #45: True if any registered handler opted in via
+        ``@command_handler(supports_replay=True)``. The gRPC adapter
+        uses this as the gate for the ``Replay`` RPC.
+
+        Replay is a generic state-rebuild operation — the framework
+        implements it from the existing ``@applies`` machinery, so the
+        opt-in is just an explicit acknowledgement that the aggregate's
+        state type is proto-serializable (replay round-trips state via
+        ``Any``)."""
+        for cls, _factory in self._factories:
+            meta = getattr(cls, "__angzarr_meta__", {})
+            if meta.get("supports_replay", False):
+                return True
+        return False
+
+    def dispatch_fact(self, request):
+        """Route a FactRequest to matching @handles_fact methods.
+
+        Caller is responsible for gating via :meth:`supports_handle_fact`
+        before invoking this — the gRPC adapter does so."""
+        from .dispatch import dispatch_fact
+
+        return dispatch_fact(self._factories, request)
+
+    def dispatch_replay(self, request):
+        """Replay events on top of a base snapshot to compute final state.
+
+        Caller is responsible for gating via :meth:`supports_replay`
+        before invoking this — the gRPC adapter does so."""
+        from .dispatch import dispatch_replay
+
+        return dispatch_replay(self._factories, request)
+
 
 class SagaRouter(_BuiltRouterBase):
     """Runtime router dispatching events to registered @saga instances."""

@@ -46,13 +46,19 @@ def _log_rejection(field: str, predicate: str, status_code: str, message: str) -
     )
 
 
-def require_exists(field: str, context: str) -> None:
-    """Require that a field is non-empty (entity exists).
+def require_exists(exists: bool, context: str) -> None:
+    """Require that an aggregate exists (caller-supplied predicate).
 
-    Raises a NOT_FOUND rejection — not retryable, since refetching events
-    cannot change the outcome.
+    Audit #60: takes a precomputed predicate boolean (e.g.
+    ``state.is_some()`` / ``bool(state.id)``) so the callsite is
+    explicit about what "exists" means. Mirrors Rust's
+    ``validation.rs:41`` ``require_exists(exists: bool, context: &str)``.
+
+    Raises NOT_FOUND — not retryable, since refetching events cannot
+    change the outcome. For empty-string checks, use
+    :func:`require_not_empty_str`.
     """
-    if not field:
+    if not exists:
         _log_rejection(
             field="<entity>",
             predicate="exists",
@@ -66,9 +72,13 @@ def require_exists(field: str, context: str) -> None:
         )
 
 
-def require_not_exists(field: str, context: str) -> None:
-    """Require that a field is empty (entity does not yet exist)."""
-    if field:
+def require_not_exists(exists: bool, context: str) -> None:
+    """Require that an aggregate does NOT exist (caller-supplied predicate).
+
+    Audit #60: takes a precomputed predicate boolean. Mirrors Rust's
+    ``validation.rs:54`` ``require_not_exists(exists: bool, context: &str)``.
+    """
+    if exists:
         _log_rejection(
             field="<entity>",
             predicate="not_exists",

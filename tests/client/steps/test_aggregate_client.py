@@ -20,7 +20,7 @@ import pytest
 from google.protobuf.wrappers_pb2 import StringValue
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.builder import command, command_new
+from angzarr_client.builder import command
 from angzarr_client.errors import (
     ConnectionError as ClientConnectionError,
     GRPCError,

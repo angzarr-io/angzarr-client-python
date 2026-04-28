@@ -82,8 +82,15 @@ def create_server(
     servicer: object,
     service_name: str = "",
     max_workers: int = 10,
-) -> tuple[grpc.Server, str]:
+) -> tuple[grpc.Server, str, health.HealthServicer]:
     """Create a gRPC server with health checking.
+
+    Audit #68: health is initialized to ``NOT_SERVING`` at startup so
+    the supervisor (when wired by the per-kind ``run_*_server``) can
+    flip it to ``SERVING`` once probes pass. Mirrors Rust's
+    ``server.rs::run_kind`` initial state. Callers that don't run a
+    supervisor still see ``NOT_SERVING`` — those should construct
+    without a supervisor only for narrow cases (unit tests, dev mode).
 
     Args:
         add_servicer_func: The add_*Servicer_to_server function
@@ -92,7 +99,9 @@ def create_server(
         max_workers: Maximum thread pool workers
 
     Returns:
-        Tuple of (server, address) where address includes the transport prefix
+        Tuple of ``(server, address, health_servicer)``. The
+        ``health_servicer`` is exposed so the per-kind runner can pass
+        it to :func:`angzarr_client.readiness.run_supervisor`.
     """
     transport_type, address = get_transport_config()
 
@@ -101,12 +110,13 @@ def create_server(
     # Add the main service
     add_servicer_func(servicer, server)
 
-    # Add health service
+    # Add health service. Initial state is NOT_SERVING for all names —
+    # the supervisor flips to SERVING once probes pass (audit #68).
     health_servicer = health.HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
-    health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set("", health_pb2.HealthCheckResponse.NOT_SERVING)
     if service_name:
-        health_servicer.set(service_name, health_pb2.HealthCheckResponse.SERVING)
+        health_servicer.set(service_name, health_pb2.HealthCheckResponse.NOT_SERVING)
 
     # Add port/socket
     if transport_type == "uds":
@@ -114,7 +124,7 @@ def create_server(
     else:
         server.add_insecure_port(address)
 
-    return server, address
+    return server, address, health_servicer
 
 
 def run_server(
@@ -124,6 +134,7 @@ def run_server(
     domain: str = "",
     default_port: str = "50052",
     logger=None,
+    output_domains: list[str] | None = None,
 ) -> None:
     """Run a gRPC server until termination.
 
@@ -134,12 +145,32 @@ def run_server(
         domain: Domain name (for logging)
         default_port: Default TCP port if PORT env not set
         logger: Optional structlog logger
+        output_domains: Audit #68 — list of downstream domains this
+            server emits commands to (typically
+            ``router.output_domains()`` for sagas/PMs). Each domain
+            becomes an :class:`OutputDomainProbe` so health flips to
+            ``SERVING`` only once every downstream coordinator is
+            reachable. Empty / ``None`` means "no output probes" —
+            ``TransportProbe`` alone gates readiness.
     """
+    # Deferred import — readiness pulls in client.resolve_ch_endpoint
+    # for OutputDomainProbe; importing at module top would create a
+    # circular reference (client imports server elsewhere).
+    from .readiness import (
+        OutputDomainProbe,
+        Probe,
+        TransportProbe,
+        probe_config_from_env,
+        run_supervisor,
+    )
+
     # Set default port if not specified
     if "PORT" not in os.environ:
         os.environ["PORT"] = default_port
 
-    server, address = create_server(add_servicer_func, servicer, service_name)
+    server, address, health_servicer = create_server(
+        add_servicer_func, servicer, service_name
+    )
 
     transport_type = os.environ.get("TRANSPORT_TYPE", "tcp").lower()
 
@@ -156,8 +187,32 @@ def run_server(
             f"Server started: {service_name} ({domain}) on {address} ({transport_type})"
         )
 
+    # Audit #68: build readiness probes — TransportProbe (one-shot,
+    # flipped after server.start) + one OutputDomainProbe per declared
+    # output domain. Health stays NOT_SERVING until every probe passes.
+    transport_probe, transport_signal = TransportProbe.new()
+    probes: list[Probe] = [transport_probe]
+    for out_domain in output_domains or []:
+        probes.append(OutputDomainProbe.for_domain(out_domain))
+
+    interval, timeout = probe_config_from_env()
+    service_names = [""]
+    if service_name:
+        service_names.append(service_name)
+    supervisor = run_supervisor(
+        probes,
+        health_servicer,
+        service_names,
+        interval,
+        timeout,
+    )
+
     server.start()
-    server.wait_for_termination()
+    transport_signal.mark_bound()
+    try:
+        server.wait_for_termination()
+    finally:
+        supervisor.stop()
 
 
 def cleanup_socket(socket_path: str) -> None:
@@ -227,14 +282,28 @@ def _run_kind_server(
     domain: str,
     default_port: int,
 ) -> None:
-    """Shared plumbing for the per-kind `run_*_server` wrappers."""
+    """Shared plumbing for the per-kind ``run_*_server`` wrappers.
+
+    Audit #68: reads ``router.output_domains()`` so the readiness
+    supervisor can construct one ``OutputDomainProbe`` per declared
+    target. CH and projector routers return ``[]`` (no outbound
+    destinations); saga and PM routers return their target domain
+    list.
+    """
     servicer = grpc_adapter_cls(router)
+    output_domains = []
+    if hasattr(router, "output_domains") and callable(router.output_domains):
+        try:
+            output_domains = list(router.output_domains())
+        except Exception:  # noqa: BLE001 — best-effort introspection.
+            output_domains = []
     run_server(
         add_servicer_fn,
         servicer,
         service_name=pb2_grpc_service_name,
         domain=domain,
         default_port=str(default_port),
+        output_domains=output_domains,
     )
 
 

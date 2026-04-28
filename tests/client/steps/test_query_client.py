@@ -357,8 +357,7 @@ def _when_query_from_sequence(
 
 @when(
     parsers.parse(
-        'I query events for "{domain}" root "{root}" from sequence {start:d} '
-        "to {end:d}"
+        'I query events for "{domain}" root "{root}" from sequence {start:d} to {end:d}'
     )
 )
 def _when_query_range(

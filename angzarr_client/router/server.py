@@ -77,7 +77,20 @@ def _translate_and_abort(context: grpc.ServicerContext, exc: Exception) -> None:
 
 
 class CommandHandlerGrpc(command_handler_pb2_grpc.CommandHandlerServiceServicer):
-    """gRPC adapter for a unified ``CommandHandlerRouter``."""
+    """gRPC adapter for a unified ``CommandHandlerRouter``.
+
+    Audit #45: implements all three RPCs declared by the proto:
+    ``Handle`` (always functional), ``HandleFact`` (gated on whether the
+    aggregate declared any ``@handles_fact`` methods), and ``Replay``
+    (gated on whether the aggregate opted in via
+    ``@command_handler(supports_replay=True)``).
+
+    Both ``HandleFact`` and ``Replay`` short-circuit to ``UNIMPLEMENTED``
+    based on a pure metadata read on the runtime router — no dispatch
+    work runs for aggregates that didn't opt in. Per the proto's
+    Optional contract, the coordinator handles the fallback (pass-
+    through-persist for facts; degrade to ``MERGE_STRICT`` for replay).
+    """
 
     def __init__(self, router: Any) -> None:
         self._router = router
@@ -88,6 +101,46 @@ class CommandHandlerGrpc(command_handler_pb2_grpc.CommandHandlerServiceServicer)
         context: grpc.ServicerContext,
     ) -> command_handler_pb2.BusinessResponse:
         return self._dispatch(request, context)
+
+    def HandleFact(
+        self,
+        request: command_handler_pb2.FactRequest,
+        context: grpc.ServicerContext,
+    ) -> types.EventBook:
+        # Audit #45: gate as high in the stack as the metadata allows.
+        # No fact-handlers declared → return UNIMPLEMENTED before any
+        # dispatch logic runs. Coordinator's pass-through-persist
+        # fallback handles persistence.
+        if not self._router.supports_handle_fact():
+            context.abort(
+                grpc.StatusCode.UNIMPLEMENTED,
+                "no @handles_fact methods declared on registered command_handler",
+            )
+            return types.EventBook()  # unreachable; abort raises
+        try:
+            return self._router.dispatch_fact(request)
+        except Exception as exc:  # noqa: BLE001 — translated via _translate_and_abort
+            _translate_and_abort(context, exc)
+            return types.EventBook()
+
+    def Replay(
+        self,
+        request: command_handler_pb2.ReplayRequest,
+        context: grpc.ServicerContext,
+    ) -> command_handler_pb2.ReplayResponse:
+        # Audit #45: same shape as HandleFact — gate on metadata,
+        # short-circuit if the aggregate didn't opt in.
+        if not self._router.supports_replay():
+            context.abort(
+                grpc.StatusCode.UNIMPLEMENTED,
+                "command_handler did not opt in via @command_handler(supports_replay=True)",
+            )
+            return command_handler_pb2.ReplayResponse()
+        try:
+            return self._router.dispatch_replay(request)
+        except Exception as exc:  # noqa: BLE001
+            _translate_and_abort(context, exc)
+            return command_handler_pb2.ReplayResponse()
 
     def _dispatch(
         self, request: types.ContextualCommand, context: grpc.ServicerContext

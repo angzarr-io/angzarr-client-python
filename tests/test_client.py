@@ -1,7 +1,7 @@
 """Tests for client classes."""
 
 import os
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import grpc
 import pytest
@@ -75,7 +75,7 @@ class TestQueryClient:
     def test_from_env_uses_env_var(self, mock_channel: Mock) -> None:
         """from_env uses environment variable."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = QueryClient.from_env("TEST_ENDPOINT", "default:8000")
+        QueryClient.from_env("TEST_ENDPOINT", "default:8000")
         mock_channel.assert_called_once_with("env-host:9000")
 
     @patch("angzarr_client.client.grpc.insecure_channel")
@@ -84,9 +84,7 @@ class TestQueryClient:
         # Use a unique var name that won't exist, don't clear all env vars
         # (clearing all breaks mutmut which needs MUTANT_UNDER_TEST)
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = QueryClient.from_env(
-            "QUERY_CLIENT_NONEXISTENT_VAR_12345", "default:8000"
-        )
+        QueryClient.from_env("QUERY_CLIENT_NONEXISTENT_VAR_12345", "default:8000")
         mock_channel.assert_called_once_with("default:8000")
 
     def test_get_event_book_success(self) -> None:
@@ -100,7 +98,9 @@ class TestQueryClient:
         query = Query()
         result = client.get_event_book(query)
 
-        client._stub.GetEventBook.assert_called_once_with(query, timeout=None)
+        client._stub.GetEventBook.assert_called_once_with(
+            query, timeout=None, metadata=[]
+        )
         assert result.next_sequence == 42
 
     def test_get_event_book_raises_grpc_error(self) -> None:
@@ -169,7 +169,7 @@ class TestCommandHandlerClient:
     def test_connect(self, mock_channel: Mock) -> None:
         """connect creates client from endpoint."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = CommandHandlerClient.connect("localhost:9000")
+        CommandHandlerClient.connect("localhost:9000")
         mock_channel.assert_called_once_with("localhost:9000")
 
     @patch.dict(os.environ, {"AGG_ENDPOINT": "agg-host:9000"})
@@ -177,7 +177,7 @@ class TestCommandHandlerClient:
     def test_from_env_uses_env_var(self, mock_channel: Mock) -> None:
         """from_env uses environment variable."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = CommandHandlerClient.from_env("AGG_ENDPOINT", "default:8000")
+        CommandHandlerClient.from_env("AGG_ENDPOINT", "default:8000")
         mock_channel.assert_called_once_with("agg-host:9000")
 
     def test_handle_command_success(self) -> None:
@@ -190,7 +190,9 @@ class TestCommandHandlerClient:
         cmd = CommandRequest()
         result = client.handle_command(cmd)
 
-        client._stub.HandleCommand.assert_called_once_with(cmd, timeout=None)
+        client._stub.HandleCommand.assert_called_once_with(
+            cmd, timeout=None, metadata=[]
+        )
         assert result is not None
 
     def test_handle_command_raises_grpc_error(self) -> None:
@@ -215,7 +217,7 @@ class TestCommandHandlerClient:
         result = client.handle_sync_speculative(request)
 
         client._stub.HandleSyncSpeculative.assert_called_once_with(
-            request, timeout=None
+            request, timeout=None, metadata=[]
         )
         assert result is not None
 
@@ -260,7 +262,7 @@ class TestSpeculativeClient:
     def test_connect(self, mock_channel: Mock) -> None:
         """connect creates client from endpoint."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = SpeculativeClient.connect("localhost:9000")
+        SpeculativeClient.connect("localhost:9000")
         mock_channel.assert_called_once_with("localhost:9000")
 
     @patch.dict(os.environ, {"SPEC_ENDPOINT": "spec-host:9000"})
@@ -268,7 +270,7 @@ class TestSpeculativeClient:
     def test_from_env_uses_env_var(self, mock_channel: Mock) -> None:
         """from_env uses environment variable."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = SpeculativeClient.from_env("SPEC_ENDPOINT", "default:8000")
+        SpeculativeClient.from_env("SPEC_ENDPOINT", "default:8000")
         mock_channel.assert_called_once_with("spec-host:9000")
 
     def test_aggregate_success(self) -> None:
@@ -284,7 +286,7 @@ class TestSpeculativeClient:
         result = client.command_handler(request)
 
         client._command_handler_stub.HandleSyncSpeculative.assert_called_once_with(
-            request, timeout=None
+            request, timeout=None, metadata=[]
         )
         assert result is not None
 
@@ -310,7 +312,7 @@ class TestSpeculativeClient:
         result = client.projector(request)
 
         client._projector_stub.HandleSpeculative.assert_called_once_with(
-            request, timeout=None
+            request, timeout=None, metadata=[]
         )
         assert result is not None
 
@@ -336,7 +338,7 @@ class TestSpeculativeClient:
         result = client.saga(request)
 
         client._saga_stub.ExecuteSpeculative.assert_called_once_with(
-            request, timeout=None
+            request, timeout=None, metadata=[]
         )
         assert result is not None
 
@@ -361,7 +363,9 @@ class TestSpeculativeClient:
         request = SpeculatePmRequest()
         result = client.process_manager(request)
 
-        client._pm_stub.HandleSpeculative.assert_called_once_with(request, timeout=None)
+        client._pm_stub.HandleSpeculative.assert_called_once_with(
+            request, timeout=None, metadata=[]
+        )
         assert result is not None
 
     def test_process_manager_raises_grpc_error(self) -> None:
@@ -404,7 +408,7 @@ class TestDomainClient:
     def test_connect(self, mock_channel: Mock) -> None:
         """connect creates client from endpoint."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = DomainClient.connect("localhost:9000")
+        DomainClient.connect("localhost:9000")
         mock_channel.assert_called_once_with("localhost:9000")
 
     @patch.dict(os.environ, {"DOMAIN_ENDPOINT": "domain-host:9000"})
@@ -412,7 +416,7 @@ class TestDomainClient:
     def test_from_env_uses_env_var(self, mock_channel: Mock) -> None:
         """from_env uses environment variable."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
-        client = DomainClient.from_env("DOMAIN_ENDPOINT", "default:8000")
+        DomainClient.from_env("DOMAIN_ENDPOINT", "default:8000")
         mock_channel.assert_called_once_with("domain-host:9000")
 
     def test_execute_delegates_to_command_handler(self) -> None:
@@ -434,3 +438,173 @@ class TestDomainClient:
         client = DomainClient(channel)
         client.close()
         channel.close.assert_called_once()
+
+
+class TestCorrelationIdMetadataPropagation:
+    """Audit #69 stage (b): every outbound RPC method attaches
+    ``x-correlation-id`` metadata sourced from the canonical
+    ``Cover.correlation_id`` field on the request data structure.
+
+    Send-only — receivers don't read it. The header is for OTel
+    exporters / mesh sidecars / external observability filtering.
+    """
+
+    HEADER = "x-correlation-id"
+
+    @staticmethod
+    def _channel() -> Mock:
+        return Mock(spec=grpc.Channel)
+
+    @staticmethod
+    def _captured_metadata(mock_call: Mock) -> list[tuple[str, str]]:
+        """Pull the ``metadata`` kwarg from the most recent call."""
+        return mock_call.call_args.kwargs["metadata"]
+
+    def test_query_client_get_event_book_attaches_metadata(self) -> None:
+        client = QueryClient(self._channel())
+        client._stub.GetEventBook = Mock(return_value=EventBook())
+        from angzarr_client.proto.angzarr import Cover, Query
+
+        query = Query(cover=Cover(correlation_id="trace-q-01"))
+        client.get_event_book(query)
+        assert (self.HEADER, "trace-q-01") in self._captured_metadata(
+            client._stub.GetEventBook
+        )
+
+    def test_query_client_get_events_attaches_metadata(self) -> None:
+        client = QueryClient(self._channel())
+        client._stub.GetEvents = Mock(return_value=iter([]))
+        from angzarr_client.proto.angzarr import Cover, Query
+
+        query = Query(cover=Cover(correlation_id="trace-q-02"))
+        client.get_events(query)
+        assert (self.HEADER, "trace-q-02") in self._captured_metadata(
+            client._stub.GetEvents
+        )
+
+    def test_command_handler_handle_command_attaches_metadata(self) -> None:
+        client = CommandHandlerClient(self._channel())
+        client._stub.HandleCommand = Mock(return_value=CommandResponse())
+        from angzarr_client.proto.angzarr import (
+            CommandBook,
+            CommandRequest,
+            Cover,
+        )
+
+        req = CommandRequest(
+            command=CommandBook(cover=Cover(correlation_id="trace-ch-01"))
+        )
+        client.handle_command(req)
+        assert (self.HEADER, "trace-ch-01") in self._captured_metadata(
+            client._stub.HandleCommand
+        )
+
+    def test_command_handler_handle_sync_speculative_attaches_metadata(
+        self,
+    ) -> None:
+        client = CommandHandlerClient(self._channel())
+        client._stub.HandleSyncSpeculative = Mock(return_value=CommandResponse())
+        from angzarr_client.proto.angzarr import (
+            CommandBook,
+            Cover,
+            SpeculateCommandHandlerRequest,
+        )
+
+        req = SpeculateCommandHandlerRequest(
+            command=CommandBook(cover=Cover(correlation_id="trace-spec-01"))
+        )
+        client.handle_sync_speculative(req)
+        assert (self.HEADER, "trace-spec-01") in self._captured_metadata(
+            client._stub.HandleSyncSpeculative
+        )
+
+    def test_speculative_client_command_handler_attaches_metadata(self) -> None:
+        client = SpeculativeClient(self._channel())
+        client._command_handler_stub.HandleSyncSpeculative = Mock(
+            return_value=CommandResponse()
+        )
+        from angzarr_client.proto.angzarr import (
+            CommandBook,
+            Cover,
+            SpeculateCommandHandlerRequest,
+        )
+
+        req = SpeculateCommandHandlerRequest(
+            command=CommandBook(cover=Cover(correlation_id="spec-ch-1"))
+        )
+        client.command_handler(req)
+        assert (self.HEADER, "spec-ch-1") in self._captured_metadata(
+            client._command_handler_stub.HandleSyncSpeculative
+        )
+
+    def test_speculative_client_projector_attaches_metadata(self) -> None:
+        client = SpeculativeClient(self._channel())
+        client._projector_stub.HandleSpeculative = Mock(return_value=Projection())
+        from angzarr_client.proto.angzarr import (
+            Cover,
+            EventBook,
+            SpeculateProjectorRequest,
+        )
+
+        req = SpeculateProjectorRequest(
+            events=EventBook(cover=Cover(correlation_id="spec-prj-1"))
+        )
+        client.projector(req)
+        assert (self.HEADER, "spec-prj-1") in self._captured_metadata(
+            client._projector_stub.HandleSpeculative
+        )
+
+    def test_speculative_client_saga_attaches_metadata(self) -> None:
+        client = SpeculativeClient(self._channel())
+        client._saga_stub.ExecuteSpeculative = Mock(return_value=SagaResponse())
+        from angzarr_client.proto.angzarr import (
+            Cover,
+            EventBook,
+            SagaHandleRequest,
+            SpeculateSagaRequest,
+        )
+
+        req = SpeculateSagaRequest(
+            request=SagaHandleRequest(
+                source=EventBook(cover=Cover(correlation_id="spec-saga-1"))
+            )
+        )
+        client.saga(req)
+        assert (self.HEADER, "spec-saga-1") in self._captured_metadata(
+            client._saga_stub.ExecuteSpeculative
+        )
+
+    def test_speculative_client_pm_attaches_metadata(self) -> None:
+        client = SpeculativeClient(self._channel())
+        client._pm_stub.HandleSpeculative = Mock(
+            return_value=ProcessManagerHandleResponse()
+        )
+        # ProcessManagerHandleRequest isn't re-exported from
+        # angzarr_client.proto.angzarr; reach through the pb2 module.
+        from angzarr_client.proto.angzarr import (
+            Cover,
+            EventBook,
+            SpeculatePmRequest,
+        )
+        from angzarr_client.proto.angzarr.process_manager_pb2 import (
+            ProcessManagerHandleRequest,
+        )
+
+        req = SpeculatePmRequest(
+            request=ProcessManagerHandleRequest(
+                trigger=EventBook(cover=Cover(correlation_id="spec-pm-1"))
+            )
+        )
+        client.process_manager(req)
+        assert (self.HEADER, "spec-pm-1") in self._captured_metadata(
+            client._pm_stub.HandleSpeculative
+        )
+
+    def test_empty_correlation_id_skips_header(self) -> None:
+        # The header is omitted entirely (not sent as a blank value)
+        # when correlation_id is empty / unset on the canonical field.
+        client = QueryClient(self._channel())
+        client._stub.GetEventBook = Mock(return_value=EventBook())
+        client.get_event_book(Query())  # default-constructed, no cover
+        md = self._captured_metadata(client._stub.GetEventBook)
+        assert all(k != self.HEADER for k, _ in md)

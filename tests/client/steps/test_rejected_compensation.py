@@ -9,7 +9,7 @@ the Rust-side approach in tests/steps/rejected_compensation.rs.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from pytest_bdd import given, parsers, scenarios, then, when
 

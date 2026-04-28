@@ -21,3 +21,7 @@ HANDLER_CLASS = "handler_class"
 HANDLER_KIND = "handler_kind"
 ACTUAL_RETURN_TYPE = "actual_return_type"
 ENV_VAR = "env_var"
+# Audit #72: paired with HANDLER_KIND for MIXED_HANDLER_KINDS errors —
+# ``details["handler_kind"]`` is the first kind found,
+# ``details["other_kind"]`` is the conflicting one.
+OTHER_KIND = "other_kind"

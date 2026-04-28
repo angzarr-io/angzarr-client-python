@@ -2,22 +2,16 @@
 
 from uuid import UUID as PyUUID
 
-import pytest
-from google.protobuf.any_pb2 import Any as ProtoAny
-from google.protobuf.timestamp_pb2 import Timestamp
 
 from angzarr_client.helpers import (
     UNKNOWN_DOMAIN,
     uuid_to_proto,
 )
 from angzarr_client.proto.angzarr import (
-    UUID,
     CommandBook,
     CommandPage,
     CommandResponse,
     Cover,
-    DomainDivergence,
-    Edition,
     EventBook,
     EventPage,
     PageHeader,
