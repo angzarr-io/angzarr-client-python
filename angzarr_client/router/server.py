@@ -65,7 +65,9 @@ def _translate_and_abort(context: grpc.ServicerContext, exc: Exception) -> None:
         context.abort(exc.code(), exc.details())
     elif isinstance(exc, GRPCError):
         # Pass the upstream gRPC status through unchanged.
-        context.abort(exc.code, exc.details)
+        # Audit #59: GRPCError's `.code` is the SCREAMING_SNAKE id;
+        # `.grpc_code` / `.grpc_details` are the gRPC StatusCode + msg.
+        context.abort(exc.grpc_code, exc.grpc_details)
     elif isinstance(exc, (InvalidArgumentError, InvalidTimestampError)):
         context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
     elif isinstance(exc, (ConnectionError, TransportError)):

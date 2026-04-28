@@ -308,7 +308,7 @@ def _then_is_not_found_true(state: _State) -> None:
 def _then_code_not_found(state: _State) -> None:
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.NOT_FOUND
+    assert err.grpc_code == grpc.StatusCode.NOT_FOUND
 
 
 @then("is_precondition_failed should return true")
@@ -320,7 +320,7 @@ def _then_is_precondition_failed_true(state: _State) -> None:
 def _then_code_failed_precondition(state: _State) -> None:
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.FAILED_PRECONDITION
+    assert err.grpc_code == grpc.StatusCode.FAILED_PRECONDITION
 
 
 @then("the error indicates optimistic lock failure")
@@ -332,42 +332,46 @@ def _then_indicates_optimistic_lock(state: _State) -> None:
 def _then_code_invalid_argument(state: _State) -> None:
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert err.grpc_code == grpc.StatusCode.INVALID_ARGUMENT
 
 
 @then("code should return PERMISSION_DENIED")
 def _then_code_permission_denied(state: _State) -> None:
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.PERMISSION_DENIED
+    assert err.grpc_code == grpc.StatusCode.PERMISSION_DENIED
 
 
 @then("the error message should describe access denial")
 def _then_message_describes_access_denial(state: _State) -> None:
+    # Audit #59: server-side detail surfaces via `.grpc_details` (the
+    # ClientError-side `.details` is now a structured dict, not the
+    # gRPC server's free-form details string).
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert "denied" in err.details or "access" in err.details
+    detail = err.grpc_details
+    assert "denied" in detail or "access" in detail, detail
 
 
 @then("code should return INTERNAL")
 def _then_code_internal(state: _State) -> None:
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.INTERNAL
+    assert err.grpc_code == grpc.StatusCode.INTERNAL
 
 
 @then("the error should indicate server-side failure")
 def _then_indicates_server_failure(state: _State) -> None:
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.INTERNAL
+    assert err.grpc_code == grpc.StatusCode.INTERNAL
 
 
 @then("code should return DEADLINE_EXCEEDED")
 def _then_code_deadline_exceeded(state: _State) -> None:
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.DEADLINE_EXCEEDED
+    assert err.grpc_code == grpc.StatusCode.DEADLINE_EXCEEDED
 
 
 @then("I should get a non-empty string")
@@ -384,7 +388,7 @@ def _then_message_describes_error(state: _State) -> None:
 def _then_get_some_not_found(state: _State) -> None:
     err = _err(state)
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.NOT_FOUND
+    assert err.grpc_code == grpc.StatusCode.NOT_FOUND
 
 
 @then("I should get None")
@@ -417,7 +421,7 @@ def _find(state: _State, predicate) -> ClientError:
 
 
 def _is_grpc_code(code: grpc.StatusCode):
-    return lambda e: isinstance(e, GRPCError) and e.code == code
+    return lambda e: isinstance(e, GRPCError) and e.grpc_code == code
 
 
 @then("NOT_FOUND gRPC error should have is_not_found true")
@@ -505,14 +509,14 @@ def _then_connection_retryable(state: _State) -> None:
 def _then_unavailable_retryable(state: _State) -> None:
     err = _find(state, _is_grpc_code(grpc.StatusCode.UNAVAILABLE))
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.UNAVAILABLE
+    assert err.grpc_code == grpc.StatusCode.UNAVAILABLE
 
 
 @then("RESOURCE_EXHAUSTED should be retryable with backoff")
 def _then_resource_exhausted_retryable(state: _State) -> None:
     err = _find(state, _is_grpc_code(grpc.StatusCode.RESOURCE_EXHAUSTED))
     assert isinstance(err, GRPCError)
-    assert err.code == grpc.StatusCode.RESOURCE_EXHAUSTED
+    assert err.grpc_code == grpc.StatusCode.RESOURCE_EXHAUSTED
 
 
 @then("INVALID_ARGUMENT should NOT be retryable")

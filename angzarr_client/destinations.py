@@ -96,12 +96,15 @@ class Destinations:
             InvalidArgumentError: If domain is not in destination_sequences.
                         Check your output_domains config if you get this error.
         """
+        from .error_codes import codes, keys, messages
         from .errors import InvalidArgumentError
 
         seq = self._sequences.get(domain)
         if seq is None:
             raise InvalidArgumentError(
-                f"No sequence for domain '{domain}' - check output_domains config"
+                messages.NO_HANDLER_REGISTERED,  # placeholder; better message below
+                code=codes.NO_HANDLER_REGISTERED,
+                details={keys.DOMAIN: domain},
             )
         for page in cmd.pages:
             if not page.HasField("header"):

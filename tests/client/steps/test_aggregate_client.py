@@ -393,7 +393,9 @@ def _when_execute_missing_fields(state: _World) -> None:
         try:
             return real_handle(req, timeout)
         except GRPCError as e:
-            if "invalid payload" in e.details:
+            # Audit #59: structured `details` is now a dict; the gRPC
+            # server's free-form details string lives on `.grpc_details`.
+            if "invalid payload" in e.grpc_details:
                 raise GRPCError(
                     _StubRpcError(
                         grpc.StatusCode.INVALID_ARGUMENT,
@@ -529,13 +531,16 @@ def _then_events_have_correlation(state: _World, cid: str) -> None:
 def _then_fail_precondition(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.code == grpc.StatusCode.FAILED_PRECONDITION
+    assert state.last_error.grpc_code == grpc.StatusCode.FAILED_PRECONDITION
 
 
 @then("the error should indicate sequence mismatch")
 def _then_error_sequence_mismatch(state: _World) -> None:
+    # Audit #59: server-side detail surfaces via `.grpc_details`
+    # (GRPCError's static message is just "grpc error").
     assert state.last_error is not None
-    assert "Sequence" in str(state.last_error)
+    assert isinstance(state.last_error, GRPCError)
+    assert "Sequence" in state.last_error.grpc_details
 
 
 @then("one should succeed")
@@ -568,20 +573,26 @@ def _then_fail_invalid_argument(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, (GRPCError, InvalidArgumentError))
     if isinstance(state.last_error, GRPCError):
-        assert state.last_error.code == grpc.StatusCode.INVALID_ARGUMENT
+        assert state.last_error.grpc_code == grpc.StatusCode.INVALID_ARGUMENT
 
 
 @then("the error message should describe the missing field")
 def _then_error_describes_field(state: _World) -> None:
+    # Audit #59: ClientError messages are static. Server-side detail
+    # strings ride on the cause; for GRPCError that surfaces via
+    # `.grpc_details`. Mock raises with "missing pages" — accept any
+    # detail describing the missing input.
     assert state.last_error is not None
-    assert "field" in str(state.last_error)
+    assert isinstance(state.last_error, GRPCError)
+    detail = state.last_error.grpc_details
+    assert "missing" in detail or "field" in detail or "pages" in detail, detail
 
 
 @then("the error should indicate unknown domain")
 def _then_error_unknown_domain(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.code == grpc.StatusCode.NOT_FOUND
+    assert state.last_error.grpc_code == grpc.StatusCode.NOT_FOUND
 
 
 @then(parsers.parse("events should have sequences {s1:d}, {s2:d}, {s3:d}"))
@@ -614,7 +625,7 @@ def _then_aggregate_fail_connection(state: _World) -> None:
 def _then_fail_timeout(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.code == grpc.StatusCode.DEADLINE_EXCEEDED
+    assert state.last_error.grpc_code == grpc.StatusCode.DEADLINE_EXCEEDED
 
 
 @then(parsers.parse("the aggregate should now exist with {count:d} event"))

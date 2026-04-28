@@ -375,12 +375,12 @@ def test_pm_response_facts_and_process_events_propagate():
         def on(self, event, state, destinations):
             pe = EventBook()
             pe.cover.CopyFrom(Cover(domain="fulfillment"))
-            # Return a fact book + process-event book
+            # Return a fact book + process-event list (single book).
             fact_book = EventBook()
             fact_book.cover.CopyFrom(Cover(domain="audit"))
             return ProcessManagerResponse(
                 commands=[],
-                process_events=pe,
+                process_events=[pe],
                 facts=[fact_book],
             )
 
@@ -390,3 +390,148 @@ def test_pm_response_facts_and_process_events_propagate():
     assert len(response.facts) == 1
     assert response.facts[0].cover.domain == "audit"
     assert response.process_events.cover.domain == "fulfillment"
+
+
+def test_pm_response_process_events_multiple_books_concatenate():
+    """Audit finding #56 (Option B): `process_events` is list[EventBook].
+    Multiple books concatenate into the wire's single
+    `process_events` (first non-empty book's cover wins)."""
+
+    @process_manager(
+        name="pm-x",
+        pm_domain="fulfillment",
+        sources=["order"],
+        targets=["inventory"],
+        state=WorkflowState,
+    )
+    class P:
+        @handles(OrderCreated)
+        def on(self, event, state, destinations):
+            book_a = EventBook()
+            book_a.cover.CopyFrom(Cover(domain="fulfillment"))
+            page_a = book_a.pages.add()
+            page_a.header.sequence = 1
+
+            book_b = EventBook()
+            book_b.cover.CopyFrom(Cover(domain="other-domain-ignored-second"))
+            page_b1 = book_b.pages.add()
+            page_b1.header.sequence = 2
+            page_b2 = book_b.pages.add()
+            page_b2.header.sequence = 3
+
+            return ProcessManagerResponse(
+                process_events=[book_a, book_b],
+            )
+
+    router = Router("pms").with_handler(P, lambda: P()).build()
+    response = router.dispatch(_pm_request([OrderCreated(order_id="o-1")]))
+
+    # Pages from both books concatenate; first book's cover wins.
+    assert len(response.process_events.pages) == 3
+    assert response.process_events.cover.domain == "fulfillment"
+
+
+def test_pm_response_process_events_default_is_empty_list():
+    """Audit finding #56: `process_events` defaults to [], not None."""
+    resp = ProcessManagerResponse()
+    assert resp.process_events == []
+    assert resp.commands == []
+    assert resp.facts == []
+
+
+# --------------------------------------------------------------------------
+# Malformed input — audit finding #37 (Option A — explicit-over-tolerant)
+# --------------------------------------------------------------------------
+
+
+def _trivial_pm_router() -> "Router":
+    """Tiny PM registered for OrderCreated/order — used only as a target
+    for malformed-input dispatches that should error before reaching the
+    handler."""
+
+    @process_manager(
+        name="pm-x",
+        pm_domain="fulfillment",
+        sources=["order"],
+        targets=["inventory"],
+        state=WorkflowState,
+    )
+    class P:
+        @handles(OrderCreated)
+        def on(self, event, state, destinations):
+            return None
+
+    return Router("pms").with_handler(P, lambda: P()).build()
+
+
+def test_pm_dispatch_raises_on_missing_trigger():
+    """Audit finding #37: per P2.5 explicit-over-tolerant, malformed PM
+    triggers raise DispatchError(INVALID_ARGUMENT) instead of returning
+    silent. Mirrors saga dispatch's four-case validation."""
+    import grpc
+    import pytest
+
+    from angzarr_client.router.dispatch import DispatchError
+
+    router = _trivial_pm_router()
+    request = pm_pb.ProcessManagerHandleRequest()  # no `trigger` set
+
+    with pytest.raises(DispatchError) as exc:
+        router.dispatch(request)
+    assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert "missing PM trigger" in exc.value.details()
+
+
+def test_pm_dispatch_raises_on_empty_trigger_pages():
+    import grpc
+    import pytest
+
+    from angzarr_client.router.dispatch import DispatchError
+
+    router = _trivial_pm_router()
+    request = pm_pb.ProcessManagerHandleRequest()
+    request.trigger.cover.CopyFrom(Cover(domain="order"))
+    # No pages
+
+    with pytest.raises(DispatchError) as exc:
+        router.dispatch(request)
+    assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert "empty PM trigger" in exc.value.details()
+
+
+def test_pm_dispatch_raises_on_missing_event_payload():
+    import grpc
+    import pytest
+
+    from angzarr_client.router.dispatch import DispatchError
+
+    router = _trivial_pm_router()
+    request = pm_pb.ProcessManagerHandleRequest()
+    request.trigger.cover.CopyFrom(Cover(domain="order"))
+    page = request.trigger.pages.add()
+    page.header.sequence = 0
+    # No event nor external payload set
+
+    with pytest.raises(DispatchError) as exc:
+        router.dispatch(request)
+    assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert "missing event payload on PM trigger" in exc.value.details()
+
+
+def test_pm_dispatch_raises_on_invalid_type_url():
+    import grpc
+    import pytest
+
+    from angzarr_client.router.dispatch import DispatchError
+
+    router = _trivial_pm_router()
+    request = pm_pb.ProcessManagerHandleRequest()
+    request.trigger.cover.CopyFrom(Cover(domain="order"))
+    page = request.trigger.pages.add()
+    page.header.sequence = 0
+    page.event.type_url = "type.example.com/foo.Bar"  # wrong prefix
+
+    with pytest.raises(DispatchError) as exc:
+        router.dispatch(request)
+    assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert "invalid type_url" in exc.value.details()

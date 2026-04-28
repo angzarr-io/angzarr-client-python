@@ -232,8 +232,9 @@ class TestProcessManagerHelpers:
 
 class TestResponseDataclasses:
     def test_rejection_handler_response_defaults(self) -> None:
+        # Audit finding #56: events is now list[EventBook] (default []).
         r = RejectionHandlerResponse()
-        assert r.events is None
+        assert r.events == []
         assert r.notification is None
 
     def test_pm_revocation_response_defaults(self) -> None:
@@ -244,7 +245,18 @@ class TestResponseDataclasses:
 
 class TestIsNotification:
     def test_matches_canonical_notification_url(self) -> None:
-        assert is_notification("type.googleapis.com/angzarr.Notification") is True
+        # Audit finding #58: spec-compliant fully qualified name.
+        assert (
+            is_notification(
+                "type.googleapis.com/angzarr_client.proto.angzarr.Notification"
+            )
+            is True
+        )
+
+    def test_rejects_pre_58_short_form(self) -> None:
+        # Pre-#58 the short form `angzarr.Notification` was accepted on
+        # both sides (a Rust-bug-induced convention). Now rejected.
+        assert is_notification("type.googleapis.com/angzarr.Notification") is False
 
     def test_rejects_unrelated_type_url(self) -> None:
         assert is_notification("type.googleapis.com/examples.Foo") is False
@@ -253,5 +265,10 @@ class TestIsNotification:
         assert is_notification("") is False
 
     def test_case_sensitive(self) -> None:
-        # Wire names are case-sensitive; same payload path as Rust's wire_name.
-        assert is_notification("type.googleapis.com/angzarr.notification") is False
+        # Wire names are case-sensitive.
+        assert (
+            is_notification(
+                "type.googleapis.com/angzarr_client.proto.angzarr.notification"
+            )
+            is False
+        )

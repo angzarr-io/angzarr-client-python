@@ -353,3 +353,102 @@ def test_upcaster_grpc_adapter_translates_exception_to_internal():
     context.abort.assert_called_once()
     args = context.abort.call_args
     assert args.args[0] == grpc.StatusCode.INTERNAL
+
+
+# --------------------------------------------------------------------------
+# Chain semantics — audit finding #43 (cucumber C-0136 / C-0137).
+# Every matching upcaster runs in registration order; output of one is
+# the input of the next. Mirrors Rust's `router/upcaster.rs::dispatch`.
+# --------------------------------------------------------------------------
+
+
+def test_dispatch_chains_v1_through_v2_to_v3():
+    """C-0136: V1 → V2 → V3 transforms compose across two upcasters."""
+    from tests.fixtures import OrderCompleted
+
+    @upcaster(name="upcaster-v1-v2", domain="order")
+    class V1ToV2:
+        @upcasts(OrderCreatedV1, OrderCreated)
+        def migrate(self, old: OrderCreatedV1) -> OrderCreated:
+            return OrderCreated(order_id=old.order_id, customer_id=old.customer_id)
+
+    @upcaster(name="upcaster-v2-v3", domain="order")
+    class V2ToV3:
+        @upcasts(OrderCreated, OrderCompleted)
+        def migrate(self, old: OrderCreated) -> OrderCompleted:
+            return OrderCompleted(order_id=old.order_id)
+
+    # Registration order: V1ToV2 first, then V2ToV3 — chain follows.
+    router = (
+        Router("upcaster-chain")
+        .with_handler(V1ToV2, V1ToV2)
+        .with_handler(V2ToV3, V2ToV3)
+        .build()
+    )
+    page = _page(OrderCreatedV1(order_id="o-1", customer_id="c-1"))
+    response = router.dispatch(_request([page]))
+
+    assert len(response.events) == 1
+    assert (
+        response.events[0].event.type_url
+        == TYPE_URL_PREFIX + "order.OrderCompleted"
+    ), "chain must reach V3 (OrderCompleted), not stop at V2 (OrderCreated)"
+
+
+def test_dispatch_chain_stops_when_no_further_upcaster_matches():
+    """C-0137: a chain stops at whatever stage no upcaster matches the
+    current event's type_url. Subsequent upcasters that don't match the
+    current value are simply skipped."""
+    @upcaster(name="upcaster-v1-v2", domain="order")
+    class V1ToV2:
+        @upcasts(OrderCreatedV1, OrderCreated)
+        def migrate(self, old: OrderCreatedV1) -> OrderCreated:
+            return OrderCreated(order_id=old.order_id)
+
+    @upcaster(name="upcaster-other", domain="order")
+    class OtherChain:
+        # This handler's From-type doesn't match OrderCreated, so it
+        # won't fire even after V1ToV2 transforms the event.
+        @upcasts(PlayerRegisteredV1, PlayerRegistered)
+        def migrate(self, old: PlayerRegisteredV1) -> PlayerRegistered:
+            return PlayerRegistered(player_id=old.player_id)
+
+    router = (
+        Router("upcaster-chain")
+        .with_handler(V1ToV2, V1ToV2)
+        .with_handler(OtherChain, OtherChain)
+        .build()
+    )
+    page = _page(OrderCreatedV1(order_id="o-1"))
+    response = router.dispatch(_request([page]))
+
+    assert len(response.events) == 1
+    assert (
+        response.events[0].event.type_url == TYPE_URL_PREFIX + "order.OrderCreated"
+    ), "chain stops at V2 (OrderCreated) — OtherChain doesn't match"
+
+
+def test_dispatch_chain_independent_of_registration_order_within_factory():
+    """A single upcaster with multiple @upcasts methods picks the one
+    matching the current event type. The inner-loop break preserves
+    'one transform per upcaster per page'."""
+    from tests.fixtures import OrderCompleted
+
+    @upcaster(name="upcaster-multi", domain="order")
+    class MultiUp:
+        @upcasts(OrderCreatedV1, OrderCreated)
+        def from_v1(self, old: OrderCreatedV1) -> OrderCreated:
+            return OrderCreated(order_id=old.order_id)
+
+        @upcasts(OrderCreated, OrderCompleted)
+        def from_v2(self, old: OrderCreated) -> OrderCompleted:
+            return OrderCompleted(order_id=old.order_id)
+
+    router = Router("u").with_handler(MultiUp, MultiUp).build()
+
+    # Send V1 — only the V1→V2 method on this upcaster fires once.
+    # Chain doesn't continue within a single factory invocation.
+    response = router.dispatch(_request([_page(OrderCreatedV1(order_id="o-1"))]))
+    assert (
+        response.events[0].event.type_url == TYPE_URL_PREFIX + "order.OrderCreated"
+    ), "single factory fires one method per page; doesn't loop within itself"

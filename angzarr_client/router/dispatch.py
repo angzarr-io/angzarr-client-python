@@ -9,10 +9,15 @@ subsequent rounds.
 from __future__ import annotations
 
 import inspect
+import logging
 from typing import Any, Callable
 
 import grpc
 from google.protobuf.any_pb2 import Any as ProtoAny
+
+from ..error_codes import codes, keys, messages
+
+_LOG = logging.getLogger(__name__)
 
 from angzarr_client.destinations import Destinations
 from angzarr_client.helpers import TYPE_URL_PREFIX
@@ -51,12 +56,28 @@ class DispatchError(grpc.RpcError):
     when a request is malformed (missing command/page/cover), or for any
     other caller-facing violation. The gRPC servicer can read ``.code()``
     and forward the status to the client.
+
+    Audit finding #59: ``message`` is a static string (no interpolation);
+    runtime context like type URLs, domains, etc. ride in ``extras``.
+    The SCREAMING_SNAKE ``error_code`` is a stable cross-language
+    identifier suitable for cucumber assertions.
     """
 
-    def __init__(self, code: grpc.StatusCode, details: str) -> None:
+    def __init__(
+        self,
+        code: grpc.StatusCode,
+        details: str,
+        *,
+        error_code: str = "",
+        extras: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(details)
         self._code = code
         self._details = details
+        self.error_code = error_code
+        self.extras: dict[str, str] = {
+            k: str(v) for k, v in (extras or {}).items()
+        }
 
     def code(self) -> grpc.StatusCode:
         return self._code
@@ -208,14 +229,16 @@ def dispatch_command(
     if not cmd_book.pages:
         raise DispatchError(
             grpc.StatusCode.INVALID_ARGUMENT,
-            "CommandBook has no pages",
+            messages.MISSING_COMMAND_PAGE,
+            error_code=codes.MISSING_COMMAND_PAGE,
         )
 
     domain = cmd_book.cover.domain
     if not domain:
         raise DispatchError(
             grpc.StatusCode.INVALID_ARGUMENT,
-            "CommandBook cover has no domain",
+            messages.MISSING_COMMAND_BOOK,
+            error_code=codes.MISSING_COMMAND_BOOK,
         )
 
     cmd_page = cmd_book.pages[0]
@@ -224,7 +247,8 @@ def dispatch_command(
     if not type_url:
         raise DispatchError(
             grpc.StatusCode.INVALID_ARGUMENT,
-            "CommandPage has no command Any",
+            messages.MISSING_COMMAND_PAYLOAD,
+            error_code=codes.MISSING_COMMAND_PAYLOAD,
         )
 
     # Notification branch: compensation for a rejected upstream command.
@@ -245,7 +269,9 @@ def dispatch_command(
     if not matched:
         raise DispatchError(
             grpc.StatusCode.INVALID_ARGUMENT,
-            f"no handler registered for domain={domain!r} type_url={type_url!r}",
+            messages.NO_HANDLER_REGISTERED,
+            error_code=codes.NO_HANDLER_REGISTERED,
+            extras={keys.DOMAIN: domain, keys.TYPE_URL: type_url},
         )
 
     # Rebuild state per instance (isolated). Invoke all matched handlers in
@@ -355,27 +381,35 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
     # 2026-04-25 (explicit failure over tolerance).
     if not request.HasField("source"):
         raise DispatchError(
-            grpc.StatusCode.INVALID_ARGUMENT, "missing saga source"
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.MISSING_SAGA_SOURCE,
+            error_code=codes.MISSING_SAGA_SOURCE,
         )
     source = request.source
     source_cover = source.cover if source.HasField("cover") else None
     source_domain = source_cover.domain if source_cover is not None else ""
     if not source.pages:
         raise DispatchError(
-            grpc.StatusCode.INVALID_ARGUMENT, "empty saga source"
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.EMPTY_SAGA_SOURCE,
+            error_code=codes.EMPTY_SAGA_SOURCE,
         )
 
     trigger = source.pages[-1]
     if not trigger.HasField("event"):
         raise DispatchError(
-            grpc.StatusCode.INVALID_ARGUMENT, "missing event payload"
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.MISSING_SAGA_EVENT_PAYLOAD,
+            error_code=codes.MISSING_SAGA_EVENT_PAYLOAD,
         )
 
     type_url = trigger.event.type_url
     if not type_url or not type_url.startswith(TYPE_URL_PREFIX):
         raise DispatchError(
             grpc.StatusCode.INVALID_ARGUMENT,
-            f"saga trigger has invalid type_url: {type_url!r}",
+            messages.SAGA_INVALID_TYPE_URL,
+            error_code=codes.SAGA_INVALID_TYPE_URL,
+            extras={keys.TYPE_URL: type_url},
         )
     suffix = type_url[len(TYPE_URL_PREFIX) :]
 
@@ -384,6 +418,7 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
     source_seq = _trigger_sequence(trigger)
 
     response = SagaResponse()
+    matched = 0
     for cls, factory in factories:
         if cls.__angzarr_meta__.get("source") != source_domain:
             continue
@@ -402,6 +437,18 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
                 kwargs["source_seq"] = source_seq
             emitted = method(evt, destinations, **kwargs)
             _merge_saga_output(emitted, response)
+            matched += 1
+
+    # P2.5 / audit finding #36: "no handler matched" is a normal runtime
+    # condition (no saga subscribed to this event type), not a failure.
+    # Log at info-level for observability and return the empty
+    # SagaResponse — Rust matches via the same convention.
+    if matched == 0:
+        _LOG.info(
+            "no saga handler registered for event type %r — returning empty SagaResponse",
+            type_url,
+        )
+
     return response
 
 
@@ -417,18 +464,43 @@ def dispatch_process_manager(
     ``ProcessManagerResponse`` returns merged into a single
     ``ProcessManagerHandleResponse``.
     """
+    # Audit finding #37 (Option A — explicit-over-tolerant, per P2.5):
+    # malformed PM triggers raise DispatchError(INVALID_ARGUMENT) instead
+    # of returning silently. Mirrors saga dispatch's four-case validation
+    # (`extract_saga_event_type_url` / `dispatch_saga`). A framework bug
+    # or wire-protocol violation surfaces loudly rather than disappearing
+    # into an empty response.
+    if not request.HasField("trigger"):
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.MISSING_PM_TRIGGER,
+            error_code=codes.MISSING_PM_TRIGGER,
+        )
     trigger = request.trigger
     trigger_cover = trigger.cover if trigger.HasField("cover") else None
     trigger_domain = trigger_cover.domain if trigger_cover is not None else ""
     if not trigger.pages:
-        return ProcessManagerHandleResponse()
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.EMPTY_PM_TRIGGER,
+            error_code=codes.EMPTY_PM_TRIGGER,
+        )
 
     last = trigger.pages[-1]
     if not last.HasField("event"):
-        return ProcessManagerHandleResponse()
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.MISSING_PM_EVENT_PAYLOAD,
+            error_code=codes.MISSING_PM_EVENT_PAYLOAD,
+        )
     type_url = last.event.type_url
     if not type_url or not type_url.startswith(TYPE_URL_PREFIX):
-        return ProcessManagerHandleResponse()
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.PM_INVALID_TYPE_URL,
+            error_code=codes.PM_INVALID_TYPE_URL,
+            extras={keys.TYPE_URL: type_url},
+        )
     suffix = type_url[len(TYPE_URL_PREFIX) :]
 
     destinations = Destinations.from_proto(request.destination_sequences)
@@ -437,6 +509,7 @@ def dispatch_process_manager(
     response = ProcessManagerHandleResponse()
     merged_process_events = EventBook()
     has_pe = False
+    matched = 0
     for cls, factory in factories:
         meta = cls.__angzarr_meta__
         sources = meta.get("sources", [])
@@ -455,24 +528,43 @@ def dispatch_process_manager(
                 result = method(evt, state, destinations, source_cover=trigger_cover)
             else:
                 result = method(evt, state, destinations)
+            matched += 1
             if result is None:
                 continue
             if not isinstance(result, ProcessManagerResponse):
                 raise DispatchError(
                     grpc.StatusCode.INTERNAL,
-                    f"PM handler must return ProcessManagerResponse, got {type(result).__name__}",
+                    messages.PM_HANDLER_WRONG_RETURN_TYPE,
+                    error_code=codes.PM_HANDLER_WRONG_RETURN_TYPE,
+                    extras={keys.ACTUAL_RETURN_TYPE: type(result).__name__},
                 )
             for cmd in result.commands or []:
                 response.commands.append(cmd)
             for fact in result.facts or []:
                 response.facts.append(fact)
-            if result.process_events is not None:
-                merged_process_events.pages.extend(result.process_events.pages)
+            # Audit finding #56 (Option B): `process_events` is now a
+            # list[EventBook]. Iterate; concatenate every book's pages
+            # into the wire's single `process_events`. First non-empty
+            # book's cover wins, matching the existing first-cover
+            # convention.
+            for pe_book in result.process_events or []:
+                merged_process_events.pages.extend(pe_book.pages)
                 if not has_pe:
-                    merged_process_events.cover.CopyFrom(result.process_events.cover)
+                    merged_process_events.cover.CopyFrom(pe_book.cover)
                     has_pe = True
     if has_pe:
         response.process_events.CopyFrom(merged_process_events)
+
+    # Audit findings #36/#37: "no handler matched" is a normal runtime
+    # condition (no PM subscribed to this trigger). Log at info-level for
+    # observability and return the empty response — Rust matches via the
+    # same convention.
+    if matched == 0:
+        _LOG.info(
+            "no process-manager handler registered for event type %r — returning empty response",
+            type_url,
+        )
+
     return response
 
 
@@ -491,11 +583,15 @@ def dispatch_projector(factories: list[Factory], events: EventBook) -> Projectio
     domain = events.cover.domain if events.HasField("cover") else ""
 
     # Instantiate each matching projector once per dispatch. Non-matching
-    # projectors never have their factory invoked.
+    # projectors never have their factory invoked. A declared "*" domain
+    # is the catch-all wildcard — matches any incoming book domain.
+    # Mirrors Rust's `runtime.rs:428` (`x == d || x == "*"`). Audit
+    # finding #53.
     live: list[tuple[Any, list[tuple[type, str]]]] = []
     for cls, factory in factories:
         meta = cls.__angzarr_meta__
-        if domain not in meta.get("domains", []):
+        declared = meta.get("domains", [])
+        if "*" not in declared and domain not in declared:
             continue
         method_table = _collect_method_names(cls, "__angzarr_handles__")
         if not method_table:
@@ -544,7 +640,9 @@ def _merge_saga_output(emitted: Any, response: SagaResponse) -> None:
         else:
             raise DispatchError(
                 grpc.StatusCode.INTERNAL,
-                f"saga handler returned unsupported type: {type(item).__name__}",
+                messages.SAGA_HANDLER_UNSUPPORTED_RETURN_TYPE,
+                error_code=codes.SAGA_HANDLER_UNSUPPORTED_RETURN_TYPE,
+                extras={keys.ACTUAL_RETURN_TYPE: type(item).__name__},
             )
 
 
@@ -580,44 +678,51 @@ def dispatch_upcaster(
     """Transform events via registered @upcaster handlers.
 
     Only handlers whose ``@upcaster(domain=...)`` matches ``request.domain``
-    are consulted. For each event page, the first matching ``@upcasts(From, To)``
-    method (exact proto type-URL match on ``From``) is invoked; its return value
-    is packed into a new ``Any`` preserving the original ``PageHeader`` and
-    ``created_at`` timestamp. Events with no matching transform pass through
-    unchanged. Events already at a target version pass through.
+    are consulted. **Every matching upcaster runs in registration order; the
+    output of one is the input of the next** — chained transforms let
+    schema evolution compose across versions (V1 → V2 → V3) without
+    forcing each upcaster to know about every newer version. The
+    ``@upcasts(From, To)`` match is exact on the *current* event's
+    type_url, so an upcaster only fires when its `From` matches the
+    incoming/transformed value. Events with no matching transform pass
+    through unchanged.
+
+    Audit finding #43 (cucumber C-0136 / C-0137): mirrors Rust's
+    ``router/upcaster.rs::dispatch`` semantics. Was previously
+    first-match-wins (broke after first transform).
     """
     out_events: list[EventPage] = []
     for page in request.events:
         if not page.HasField("event"):
             out_events.append(page)
             continue
-        event_any: ProtoAny = page.event
-        transformed = event_any
+        # `current` is the running event Any — each matching upcaster
+        # transforms it and the next factory sees the new value.
+        current = ProtoAny()
+        current.CopyFrom(page.event)
         for cls, factory in factories:
             meta = cls.__angzarr_meta__
             if meta.get("domain") != request.domain:
                 continue
-            matched = False
             for (from_type, _to_type), method_name in _collect_method_names(
                 cls, "__angzarr_upcasts__"
             ):
                 expected = TYPE_URL_PREFIX + from_type.DESCRIPTOR.full_name
-                if event_any.type_url != expected:
+                if current.type_url != expected:
                     continue
                 inst = factory()
                 old_evt = from_type()
-                event_any.Unpack(old_evt)
+                current.Unpack(old_evt)
                 new_evt = getattr(inst, method_name)(old_evt)
                 new_any = ProtoAny()
                 new_any.type_url = TYPE_URL_PREFIX + new_evt.DESCRIPTOR.full_name
                 new_any.value = new_evt.SerializeToString()
-                transformed = new_any
-                matched = True
-                break
-            if matched:
+                current = new_any
+                # One method per upcaster fires per page; move to the
+                # next factory with the (possibly-updated) `current`.
                 break
         new_page = EventPage()
         new_page.CopyFrom(page)
-        new_page.event.CopyFrom(transformed)
+        new_page.event.CopyFrom(current)
         out_events.append(new_page)
     return UpcastResponse(events=out_events)

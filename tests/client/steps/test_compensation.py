@@ -111,7 +111,8 @@ class _CompensationContext:
                     header=types.PageHeader(sequence=0),
                     merge_strategy=types.MergeStrategy.MERGE_COMMUTATIVE,
                     command=ProtoAny(
-                        type_url="type.googleapis.com/angzarr.Notification"
+                        # Audit finding #58: spec-compliant fully qualified name.
+                        type_url="type.googleapis.com/angzarr_client.proto.angzarr.Notification"
                     ),
                 )
             ],

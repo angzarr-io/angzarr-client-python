@@ -528,7 +528,7 @@ def _then_snapshot_at_sequence(state: _World, seq: int) -> None:
 def _then_fail_invalid_argument(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert state.last_error.grpc_code == grpc.StatusCode.INVALID_ARGUMENT
 
 
 @then("the operation should fail with connection error")

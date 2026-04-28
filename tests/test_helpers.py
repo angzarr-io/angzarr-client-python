@@ -505,9 +505,32 @@ class TestTypeUrlHelpers:
     """Tests for type URL helper functions."""
 
     def test_type_url_construction(self) -> None:
-        """type_url constructs full URL."""
-        result = type_url("com.example", "MyMessage")
+        """type_url constructs full URL from a fully-qualified type name.
+
+        Audit finding #32 (Option A): single-arg signature matching Rust."""
+        result = type_url("com.example.MyMessage")
         assert result == "type.googleapis.com/com.example.MyMessage"
+
+    def test_type_url_preserves_angzarr_proto_prefix(self) -> None:
+        """Python's actual proto packages are ``angzarr_client.proto.*``,
+        so Python wire URLs include that prefix verbatim. ``wire_name``
+        is a no-op in Python; ``type_url`` echoes the input unchanged
+        through the prefix."""
+        result = type_url("angzarr_client.proto.examples.OrderCreated")
+        assert result == "type.googleapis.com/angzarr_client.proto.examples.OrderCreated"
+
+    def test_wire_name_is_identity_in_python(self) -> None:
+        """``wire_name`` is identity in Python — Python's protoc emits
+        the full proto package on the wire, so there's no prefix to
+        strip. The function exists for cross-language API symmetry
+        with Rust's ``convert::wire_name``."""
+        from angzarr_client.helpers import wire_name
+
+        assert wire_name("examples.OrderCreated") == "examples.OrderCreated"
+        assert (
+            wire_name("angzarr_client.proto.examples.OrderCreated")
+            == "angzarr_client.proto.examples.OrderCreated"
+        )
 
     def test_type_name_from_url_fully_qualified(self) -> None:
         """type_name_from_url extracts fully qualified name after last slash."""
@@ -540,6 +563,28 @@ class TestTypeUrlHelpers:
             type_url_matches(
                 "type.googleapis.com/com.example.OrderCreated",
                 "com.example.OrderCanceled",
+            )
+            is False
+        )
+
+    def test_type_url_matches_with_full_python_proto_prefix(self) -> None:
+        """Python wire URLs include the ``angzarr_client.proto.*`` prefix
+        because Python protoc honors the proto package declaration.
+        ``type_url_matches`` accepts the corresponding ``type_name`` form."""
+        assert (
+            type_url_matches(
+                "type.googleapis.com/angzarr_client.proto.examples.OrderCreated",
+                "angzarr_client.proto.examples.OrderCreated",
+            )
+            is True
+        )
+
+    def test_type_url_matches_post_normalize_is_exact(self) -> None:
+        """Post-normalize, the comparison is exact (no suffix matching)."""
+        assert (
+            type_url_matches(
+                "type.googleapis.com/examples.OrderCreated",
+                "OrderCreated",
             )
             is False
         )
@@ -863,3 +908,69 @@ class TestAdditionalHelpers:
         # Patch Unpack on the Any to force the except branch
         monkeypatch.setattr(type(page.event), "Unpack", boom)
         assert decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover) is None
+
+
+class TestIdempotencyKey:
+    """Tests for ``idempotency_key`` — composite saga-deferred dedup key.
+
+    Audit finding #55: ported from Rust's
+    ``AngzarrDeferredSequenceExt::idempotency_key``.
+    """
+
+    def test_returns_composite_key_with_all_fields(self) -> None:
+        from angzarr_client.helpers import idempotency_key
+        from angzarr_client.proto.angzarr.types_pb2 import (
+            AngzarrDeferredSequence,
+        )
+
+        cover = Cover(
+            domain="orders",
+            root=UUID(value=b"\x01" * 16),
+            edition=Edition(name="angzarr"),
+        )
+        deferred = AngzarrDeferredSequence(source=cover, source_seq=7)
+
+        # Format: {edition}:{domain}:{root_hex}:{source_seq}
+        assert (
+            idempotency_key(deferred)
+            == f"angzarr:orders:{'01' * 16}:7"
+        )
+
+    def test_returns_none_when_source_missing(self) -> None:
+        from angzarr_client.helpers import idempotency_key
+        from angzarr_client.proto.angzarr.types_pb2 import (
+            AngzarrDeferredSequence,
+        )
+
+        # No source set — should return None, not raise.
+        deferred = AngzarrDeferredSequence(source_seq=3)
+        assert idempotency_key(deferred) is None
+
+    def test_returns_none_when_input_is_none(self) -> None:
+        from angzarr_client.helpers import idempotency_key
+
+        assert idempotency_key(None) is None
+
+    def test_empty_edition_name_yields_empty_first_part(self) -> None:
+        from angzarr_client.helpers import idempotency_key
+        from angzarr_client.proto.angzarr.types_pb2 import (
+            AngzarrDeferredSequence,
+        )
+
+        # No explicit edition — first segment is empty (default-edition convention).
+        cover = Cover(domain="players", root=UUID(value=b"\xab" * 16))
+        deferred = AngzarrDeferredSequence(source=cover, source_seq=42)
+        assert (
+            idempotency_key(deferred)
+            == f":players:{'ab' * 16}:42"
+        )
+
+    def test_empty_root_yields_empty_root_segment(self) -> None:
+        from angzarr_client.helpers import idempotency_key
+        from angzarr_client.proto.angzarr.types_pb2 import (
+            AngzarrDeferredSequence,
+        )
+
+        cover = Cover(domain="orders", edition=Edition(name="angzarr"))
+        deferred = AngzarrDeferredSequence(source=cover, source_seq=1)
+        assert idempotency_key(deferred) == "angzarr:orders::1"

@@ -229,6 +229,31 @@ def event_pages(book: EventBook | None) -> list[EventPage]:
     return list(book.pages)
 
 
+def idempotency_key(deferred) -> str | None:
+    """Build the composite idempotency key for a saga-produced deferred sequence.
+
+    Format: ``{source.edition}:{source.domain}:{source.root_hex}:{source_seq}``,
+    e.g. ``angzarr:order:550e8400e29b41d4a716446655440000:7``.
+
+    Returns ``None`` when the deferred sequence has no source cover —
+    a malformed wire input is a missing-key signal, not an exception.
+    Mirrors Rust's ``AngzarrDeferredSequenceExt::idempotency_key`` on
+    ``AngzarrDeferredSequence``. Audit finding #55.
+
+    Args:
+        deferred: An ``AngzarrDeferredSequence`` proto message.
+
+    Returns:
+        The composite key string, or ``None`` if the source cover is missing.
+    """
+    if deferred is None or not deferred.HasField("source"):
+        return None
+    source = deferred.source
+    edition_name = source.edition.name if source.HasField("edition") else ""
+    root_hex = source.root.value.hex() if source.HasField("root") else ""
+    return f"{edition_name}:{source.domain}:{root_hex}:{deferred.source_seq}"
+
+
 def destination_map(destinations: list[EventBook]) -> dict[str, EventBook]:
     """Build a map from root UUID hex to EventBook for destination lookup.
 
@@ -277,15 +302,44 @@ def events_from_response(resp) -> list[EventPage]:
 # Type URL helpers
 
 
-def type_url(package_name: str, type_name: str) -> str:
-    """Construct a full type URL from a package and type name."""
-    return f"{TYPE_URL_PREFIX}{package_name}.{type_name}"
+def wire_name(full_name: str) -> str:
+    """Return the wire-format name for cross-language symmetry.
+
+    Identity in Python: the actual proto packages are
+    ``angzarr_client.proto.angzarr`` / ``angzarr_client.proto.examples``,
+    so Python protoc generates ``DESCRIPTOR.full_name`` AND ``Pack()``
+    type URLs with that full prefix already. Rust's ``convert::wire_name``
+    strips ``angzarr_client.proto.`` because prost emits the prefix
+    internally but Rust's wire format omits it — that asymmetry is a
+    cross-language wire-divergence concern tracked separately. This
+    helper exists so cross-language code can call ``wire_name`` in
+    either language and get a sensible result.
+
+    Audit finding #32.
+    """
+    return full_name
+
+
+def type_url(type_name: str) -> str:
+    """Construct a full type URL from a fully-qualified message type name.
+
+    Mirrors Rust's ``convert::type_url(type_name) -> String`` 1-arg
+    signature. ``type_name`` is the proto's fully-qualified name (e.g.
+    ``MyMessage.DESCRIPTOR.full_name``).
+
+    Audit finding #32 (Option A — 1-arg, full name): replaces the
+    previous 2-arg ``type_url(package_name, type_name)``.
+    """
+    return f"{TYPE_URL_PREFIX}{wire_name(type_name)}"
 
 
 def type_name_from_url(type_url_str: str) -> str:
-    """Extract the fully qualified type name from a type URL.
+    """Extract the wire-format type name from a type URL.
 
-    For "type.googleapis.com/examples.CardsDealt", returns "angzarr_client.proto.examples.CardsDealt".
+    Returns the part after the last ``/``. For
+    ``"type.googleapis.com/examples.CardsDealt"`` returns
+    ``"examples.CardsDealt"``. Inputs with no slash are returned
+    unchanged. Mirrors Rust's ``convert::type_name_from_url``.
     """
     if "/" in type_url_str:
         return type_url_str.rsplit("/", 1)[1]
@@ -293,16 +347,24 @@ def type_name_from_url(type_url_str: str) -> str:
 
 
 def type_url_matches(type_url_str: str, type_name: str) -> bool:
-    """Check if a type URL matches the given fully qualified type name.
+    """Check if a type URL matches the given message type name.
+
+    Audit finding #33 (per Postel's Law — be lenient in what you accept):
+    runs ``type_name`` through :func:`wire_name` before comparison so
+    cross-language callers can pass either shape. ``wire_name`` is a
+    no-op in Python (proto packages already use the
+    ``angzarr_client.proto.*`` form on the wire) but the call is kept
+    for cross-language API symmetry. The comparison post-normalize is
+    exact — no suffix matching.
 
     Args:
-        type_url_str: Full type URL (e.g., "type.googleapis.com/examples.CardsDealt")
-        type_name: Fully qualified type name (e.g., "angzarr_client.proto.examples.CardsDealt")
+        type_url_str: Full type URL (e.g., ``"type.googleapis.com/angzarr_client.proto.examples.CardsDealt"``).
+        type_name: Fully-qualified type name.
 
     Returns:
-        True if type_url equals TYPE_URL_PREFIX + type_name
+        True if the URL equals ``TYPE_URL_PREFIX + wire_name(type_name)``.
     """
-    return type_url_str == TYPE_URL_PREFIX + type_name
+    return type_url_str == TYPE_URL_PREFIX + wire_name(type_name)
 
 
 # Alias for Rust API consistency

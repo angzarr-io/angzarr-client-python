@@ -71,67 +71,12 @@ def new_event_book_multi(
     )
 
 
-def pack_event(
-    cover: angzarr.Cover,
-    event: Message,
-    seq: int,
-    type_url_prefix: str = "type.googleapis.com/",
-) -> angzarr.EventBook:
-    """Pack a single protobuf event into an EventBook.
-
-    Args:
-        cover: The event cover (root, metadata).
-        event: The protobuf event message.
-        seq: The sequence number for this event.
-        type_url_prefix: Prefix for the Any type_url.
-
-    Returns:
-        An EventBook containing one page with the packed event.
-    """
-    event_any = Any()
-    event_any.Pack(event, type_url_prefix=type_url_prefix)
-
-    page = angzarr.EventPage(
-        event=event_any,
-        created_at=_now_timestamp(),
-    )
-    page.header.sequence = seq
-
-    return angzarr.EventBook(
-        cover=cover,
-        pages=[page],
-    )
-
-
-def pack_events(
-    cover: angzarr.Cover,
-    events: list[Message],
-    start_seq: int,
-    type_url_prefix: str = "type.googleapis.com/",
-) -> angzarr.EventBook:
-    """Pack multiple protobuf events into an EventBook with sequential numbering.
-
-    Args:
-        cover: The event cover (root, metadata).
-        events: List of protobuf event messages.
-        start_seq: The starting sequence number.
-        type_url_prefix: Prefix for the Any type_url.
-
-    Returns:
-        An EventBook containing one page per event.
-    """
-    pages = []
-    for i, event in enumerate(events):
-        event_any = Any()
-        event_any.Pack(event, type_url_prefix=type_url_prefix)
-        page = angzarr.EventPage(
-            event=event_any,
-            created_at=_now_timestamp(),
-        )
-        page.header.sequence = start_seq + i
-        pages.append(page)
-
-    return angzarr.EventBook(
-        cover=cover,
-        pages=pages,
-    )
+# Audit finding #57 (Option D): the previous high-level
+# `pack_event(cover, event, seq, type_url_prefix) -> EventBook` and
+# `pack_events(cover, events, start_seq, type_url_prefix) -> EventBook`
+# helpers were deleted. They had no production callers (only their own
+# tests in `test_event_packing.py`) and the same shape can be expressed
+# as `new_event_book(cmd_book, seq, any_proto)` after packing the event
+# with `Any.Pack(msg)` directly. The high-level form was redundant with
+# `new_event_book*` and conflicted in name with Rust's low-level
+# `pack_event(msg) -> Any`.

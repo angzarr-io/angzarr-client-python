@@ -439,7 +439,7 @@ def _then_rejection_reason(state: _World, reason: str) -> None:
 def _then_fail_validation(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert state.last_error.grpc_code == grpc.StatusCode.INVALID_ARGUMENT
 
 
 @then("no events should be produced")
@@ -517,8 +517,11 @@ def _then_pm_operation_fails(state: _World) -> None:
 
 @then("the error should indicate missing correlation ID")
 def _then_error_missing_correlation(state: _World) -> None:
+    # Audit #59: server-side detail surfaces via `.grpc_details` for
+    # GRPCError; `str()` returns the static message ("grpc error").
     assert state.last_error is not None
-    assert "correlation" in str(state.last_error)
+    assert isinstance(state.last_error, GRPCError)
+    assert "correlation" in state.last_error.grpc_details
 
 
 @then(parsers.parse("I should receive only {count:d} events"))
@@ -560,4 +563,4 @@ def _then_fail_connection(state: _World) -> None:
 def _then_fail_invalid_argument(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert state.last_error.grpc_code == grpc.StatusCode.INVALID_ARGUMENT

@@ -31,16 +31,23 @@ class ProcessManagerResponse:
     """Return value of a process-manager ``@handles`` method.
 
     - ``commands``: commands forwarded to target domains
-    - ``process_events``: events recorded into the PM's own event stream (state)
+    - ``process_events``: list of EventBooks recorded into the PM's own
+      event stream (state). Multiple books concatenate into the wire's
+      single ``ProcessManagerHandleResponse.process_events`` (first
+      non-empty book's cover wins).
     - ``facts``: facts injected into other aggregates without a command
+
+    Audit finding #56 (Option B — list[EventBook]): aligns with Rust's
+    ``Vec<EventBook>`` and matches the existing ``commands`` / ``facts``
+    list shapes for symmetry.
     """
 
     def __init__(
         self,
         commands: list[types.CommandBook] | None = None,
-        process_events: types.EventBook | None = None,
+        process_events: list[types.EventBook] | None = None,
         facts: list[types.EventBook] | None = None,
     ) -> None:
         self.commands = commands or []
-        self.process_events = process_events
+        self.process_events = process_events or []
         self.facts = facts or []

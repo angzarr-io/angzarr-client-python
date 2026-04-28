@@ -183,6 +183,53 @@ def test_projector_filters_by_declared_domains():
     assert written == []
 
 
+def test_projector_wildcard_domain_matches_any_book_domain():
+    """Audit finding #53: ``domains=["*"]`` is a catch-all that fires for
+    every incoming book domain. Mirrors Rust's ``runtime.rs:428``
+    (``x == d || x == "*"``)."""
+    fired_domains: list[str] = []
+
+    @projector(name="prj-catch-all", domains=["*"])
+    class CatchAll:
+        @handles(OrderCreated)
+        def on_order(self, event):
+            fired_domains.append("order_event")
+
+        @handles(StockReserved)
+        def on_stock(self, event):
+            fired_domains.append("stock_event")
+
+    router = Router("prjs").with_handler(CatchAll, lambda: CatchAll()).build()
+
+    # Dispatch from "order" domain — must fire
+    router.dispatch(_event_book([OrderCreated(order_id="o-1")], domain="order"))
+    # Dispatch from "inventory" domain — must also fire (catch-all)
+    router.dispatch(
+        _event_book(
+            [StockReserved(order_id="a", sku="x", quantity=1)], domain="inventory"
+        )
+    )
+
+    assert fired_domains == ["order_event", "stock_event"]
+
+
+def test_projector_wildcard_alongside_specific_domain_doesnt_double_fire():
+    """A projector declaring ``domains=["*", "order"]`` still fires once
+    per matching event — the wildcard match short-circuits, no double dispatch."""
+    fire_count = {"n": 0}
+
+    @projector(name="prj-mix", domains=["*", "order"])
+    class Mix:
+        @handles(OrderCreated)
+        def on(self, event):
+            fire_count["n"] += 1
+
+    router = Router("prjs").with_handler(Mix, lambda: Mix()).build()
+    router.dispatch(_event_book([OrderCreated(order_id="o-1")], domain="order"))
+
+    assert fire_count["n"] == 1
+
+
 # --------------------------------------------------------------------------
 # No prior state, no destinations, no response merging
 # --------------------------------------------------------------------------

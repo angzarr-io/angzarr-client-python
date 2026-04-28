@@ -26,12 +26,16 @@ class TestClientError:
         assert str(err) == "something went wrong"
 
     def test_with_cause(self) -> None:
-        """Error with underlying cause."""
+        """Error with underlying cause.
+
+        Audit #59: ``__str__`` returns the bare static message; cause is
+        preserved on ``.cause`` for inspection but no longer concatenated
+        into the message string."""
         cause = ValueError("underlying issue")
         err = ClientError("wrapper", cause)
         assert err.message == "wrapper"
         assert err.cause is cause
-        assert str(err) == "wrapper: underlying issue"
+        assert str(err) == "wrapper"
 
     def test_exception_inheritance(self) -> None:
         """ClientError is an Exception."""
@@ -43,10 +47,11 @@ class TestConnectionError:
     """Tests for ConnectionError."""
 
     def test_message_formatting(self) -> None:
-        """Connection error prefixes message."""
+        """Audit #59: ConnectionError carries a static ``message``.
+        Caller-supplied detail rides on ``.details`` if needed."""
         err = ConnectionError("host unreachable")
-        assert str(err) == "connection failed: host unreachable"
-        assert err.message == "connection failed: host unreachable"
+        assert str(err) == "host unreachable"
+        assert err.message == "host unreachable"
         assert err.cause is None
 
     def test_exception_inheritance(self) -> None:
@@ -60,10 +65,12 @@ class TestTransportError:
     """Tests for TransportError."""
 
     def test_wraps_cause(self) -> None:
-        """Transport error wraps an underlying exception."""
+        """Transport error wraps an underlying exception.
+
+        Audit #59: static message; cause preserved on ``.cause``."""
         cause = OSError("socket error")
         err = TransportError(cause)
-        assert str(err) == "transport error: socket error"
+        assert str(err) == "transport error"
         assert err.cause is cause
 
     def test_exception_inheritance(self) -> None:
@@ -107,18 +114,21 @@ class TestGRPCError:
         assert err.cause is rpc_error
 
     def test_code_property(self) -> None:
-        """Code property returns the gRPC status code."""
+        """Audit #59: ``.grpc_code`` is the upstream gRPC StatusCode.
+        ``.code`` is now the SCREAMING_SNAKE structural identifier."""
         rpc_error = self._mock_rpc_error(grpc.StatusCode.NOT_FOUND, "not found")
         err = GRPCError(rpc_error)
-        assert err.code == grpc.StatusCode.NOT_FOUND
+        assert err.grpc_code == grpc.StatusCode.NOT_FOUND
+        assert err.code == "GRPC_ERROR"
 
     def test_details_property(self) -> None:
-        """Details property returns error details."""
+        """Audit #59: ``.grpc_details`` is the upstream gRPC details
+        string; ``.details`` is the structured-detail dict."""
         rpc_error = self._mock_rpc_error(
             grpc.StatusCode.INVALID_ARGUMENT, "bad request"
         )
         err = GRPCError(rpc_error)
-        assert err.details == "bad request"
+        assert err.grpc_details == "bad request"
 
     def test_is_not_found_true(self) -> None:
         """is_not_found returns True for NOT_FOUND."""
@@ -167,9 +177,9 @@ class TestInvalidArgumentError:
     """Tests for InvalidArgumentError."""
 
     def test_message_formatting(self) -> None:
-        """Invalid argument error prefixes message."""
+        """Audit #59: static message; no prefix concatenation."""
         err = InvalidArgumentError("missing field")
-        assert str(err) == "invalid argument: missing field"
+        assert str(err) == "missing field"
         assert err.cause is None
 
     def test_exception_inheritance(self) -> None:
@@ -230,9 +240,12 @@ class TestGRPCErrorExtraBranches:
 
 class TestCommandRejectedErrorPredicates:
     def test_precondition_failed_constructor(self) -> None:
+        """Audit #59: factories take ``(code, message, details)``."""
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.precondition_failed("bad state")
+        err = CommandRejectedError.precondition_failed("BAD_STATE", "bad state")
+        assert err.code == "BAD_STATE"
+        assert err.message == "bad state"
         assert err.status_code == "FAILED_PRECONDITION"
         assert err.is_precondition_failed() is True
         assert err.is_invalid_argument() is False
@@ -241,7 +254,8 @@ class TestCommandRejectedErrorPredicates:
     def test_invalid_argument_constructor(self) -> None:
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.invalid_argument("bad input")
+        err = CommandRejectedError.invalid_argument("BAD_INPUT", "bad input")
+        assert err.code == "BAD_INPUT"
         assert err.status_code == "INVALID_ARGUMENT"
         assert err.is_invalid_argument() is True
         assert err.is_precondition_failed() is False
@@ -249,7 +263,10 @@ class TestCommandRejectedErrorPredicates:
     def test_not_found_constructor(self) -> None:
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.not_found("no such aggregate")
+        err = CommandRejectedError.not_found(
+            "NO_SUCH_AGGREGATE", "no such aggregate"
+        )
+        assert err.code == "NO_SUCH_AGGREGATE"
         assert err.status_code == "NOT_FOUND"
         assert err.is_not_found() is True
         assert err.is_precondition_failed() is False
@@ -258,26 +275,34 @@ class TestCommandRejectedErrorPredicates:
     def test_is_a_client_error(self) -> None:
         """CommandRejectedError IS-A ClientError so callers can catch the
         base class and still get rejection-specific predicates without
-        casting. P2.3 cross-language taxonomy contract — Rust mirrors
-        this with a ClientError::Rejected variant + From impl."""
+        casting. P2.3 cross-language taxonomy contract."""
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.not_found("missing")
+        err = CommandRejectedError.not_found("MISSING", "missing aggregate")
         assert isinstance(err, ClientError)
-        # Polymorphic predicate access via the base type still routes
-        # to the rejection's status_code.
         as_base: ClientError = err
         assert as_base.is_not_found() is True
         assert as_base.is_precondition_failed() is False
+
+    def test_details_carry_structured_context(self) -> None:
+        """Audit #59: ``details`` is the structured-context dict."""
+        from angzarr_client.errors import CommandRejectedError
+
+        err = CommandRejectedError.invalid_argument(
+            "VALUE_NOT_POSITIVE",
+            "value must be positive",
+            {"field": "amount"},
+        )
+        assert err.details["field"] == "amount"
 
 
 class TestInvalidTimestampError:
     """Tests for InvalidTimestampError."""
 
     def test_message_formatting(self) -> None:
-        """Invalid timestamp error prefixes message."""
+        """Audit #59: static message; no prefix concatenation."""
         err = InvalidTimestampError("bad format")
-        assert str(err) == "invalid timestamp: bad format"
+        assert str(err) == "bad format"
         assert err.cause is None
 
     def test_exception_inheritance(self) -> None:

@@ -154,7 +154,13 @@ def _when_set_as_of_sequence(state: _World, seq: int) -> None:
 
 @when(parsers.parse('I set as_of_time to "{rfc3339}"'))
 def _when_set_as_of_time(state: _World, rfc3339: str) -> None:
-    state.builder = _ensure_builder(state).as_of_time(rfc3339)
+    # Audit #34: as_of_time now raises on bad input rather than deferring
+    # to build(); record the error here so the Then step still sees it.
+    try:
+        state.builder = _ensure_builder(state).as_of_time(rfc3339)
+    except Exception as e:  # noqa: BLE001
+        state.build_error = e
+        return
     _try_build(state)
 
 

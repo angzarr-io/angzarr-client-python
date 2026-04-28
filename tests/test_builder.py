@@ -140,15 +140,6 @@ class TestCommandBuilder:
             builder.build()
         assert "payload" in str(exc_info.value)
 
-    def test_build_propagates_stored_error(self) -> None:
-        """Build raises stored error if present."""
-        client = self._mock_aggregate_client()
-        builder = CommandBuilder(client, "orders")
-        builder._err = ValueError("something went wrong")
-
-        with pytest.raises(ValueError):
-            builder.build()
-
     def test_execute_calls_handle_command(self) -> None:
         """Execute builds and calls client.handle_command."""
         client = self._mock_aggregate_client()
@@ -281,24 +272,31 @@ class TestQueryBuilder:
 
         assert query.temporal.as_of_time.seconds > 0
 
-    def test_as_of_time_invalid_stores_error(self) -> None:
-        """Invalid timestamp stores error for later."""
+    def test_as_of_time_invalid_raises_immediately(self) -> None:
+        """Audit finding #34 (Option B): a malformed RFC3339 string raises
+        ``InvalidTimestampError`` synchronously at the call site, not
+        deferred to ``build()``. The previous deferred-error pattern
+        survived last-call-wins setters and produced stale-error bugs."""
         client = self._mock_query_client()
 
         builder = QueryBuilder(client, "orders")
-        builder.as_of_time("not-a-timestamp")
-
         with pytest.raises(InvalidTimestampError):
-            builder.build()
+            builder.as_of_time("not-a-timestamp")
 
-    def test_build_propagates_stored_error(self) -> None:
-        """Build raises stored error if present."""
+    def test_as_of_time_failure_does_not_pollute_subsequent_setters(self) -> None:
+        """After a failed `as_of_time(...)`, subsequent last-call-wins
+        setters work normally — no sticky `_err` survives."""
         client = self._mock_query_client()
-        builder = QueryBuilder(client, "orders")
-        builder._err = ValueError("something went wrong")
 
-        with pytest.raises(ValueError):
-            builder.build()
+        builder = QueryBuilder(client, "orders")
+        with pytest.raises(InvalidTimestampError):
+            builder.as_of_time("not-a-timestamp")
+
+        # Same builder instance: a valid setter call now succeeds and
+        # build() must NOT raise the stale parse error.
+        builder.as_of_sequence(5)
+        query = builder.build()
+        assert query.temporal.as_of_sequence == 5
 
     def test_get_event_book(self) -> None:
         """get_event_book executes query."""

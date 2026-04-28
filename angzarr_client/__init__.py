@@ -30,7 +30,7 @@ from .errors import (
     InvalidTimestampError,
     TransportError,
 )
-from .event_packing import new_event_book, new_event_book_multi, pack_event, pack_events
+from .event_packing import new_event_book, new_event_book_multi
 from .helpers import (
     DEFAULT_EDITION,
     META_ANGZARR_DOMAIN,
@@ -48,6 +48,7 @@ from .helpers import (
     full_type_url,
     full_type_url_for,
     has_correlation_id,
+    idempotency_key,
     next_sequence,
     now,
     parse_timestamp,
@@ -60,6 +61,7 @@ from .helpers import (
     type_url_matches,
     type_url_matches_exact,
     uuid_to_proto,
+    wire_name,
 )
 from .identity import (
     INVENTORY_PRODUCT_NAMESPACE,
@@ -208,6 +210,7 @@ __all__ = [
     "edition",
     "edition_is_empty",
     "edition_name_or_default",
+    "idempotency_key",
     "next_sequence",
     "uuid_to_proto",
     "proto_to_uuid",
@@ -216,6 +219,7 @@ __all__ = [
     "type_name_from_url",
     "type_url_matches",
     "type_url_matches_exact",
+    "wire_name",
     "full_type_url",
     "full_type_url_for",
     "now",
@@ -277,8 +281,6 @@ __all__ = [
     "fulfillment_root",
     "to_proto_bytes",
     # Event packing
-    "pack_event",
-    "pack_events",
     "new_event_book",
     "new_event_book_multi",
     # Compensation

@@ -158,12 +158,13 @@ def _abort_code_for(exc_to_raise: Exception) -> grpc.StatusCode:
 def test_command_rejected_error_invalid_argument_status_maps_to_invalid_argument():
     # Previously collapsed every CommandRejectedError to FAILED_PRECONDITION,
     # losing the rejection's own status_code. Mirrors Rust's From<CommandRejectedError>.
-    err = CommandRejectedError.invalid_argument("bad input")
+    # Audit #59: factories now take (code, message, details).
+    err = CommandRejectedError.invalid_argument("BAD_INPUT", "bad input")
     assert _abort_code_for(err) == grpc.StatusCode.INVALID_ARGUMENT
 
 
 def test_command_rejected_error_not_found_status_maps_to_not_found():
-    err = CommandRejectedError.not_found("missing aggregate")
+    err = CommandRejectedError.not_found("MISSING_AGGREGATE", "missing aggregate")
     assert _abort_code_for(err) == grpc.StatusCode.NOT_FOUND
 
 
@@ -202,7 +203,10 @@ def test_grpc_error_passes_through_upstream_code():
         def details(self):
             return "rate limited"
 
-    assert _abort_code_for(GRPCError(_RpcErr())) == grpc.StatusCode.RESOURCE_EXHAUSTED
+    # GRPCError inspects the upstream code via .grpc_code (post-#59 rename).
+    err = GRPCError(_RpcErr())
+    abort_code = _abort_code_for(err)
+    assert abort_code == grpc.StatusCode.RESOURCE_EXHAUSTED
 
 
 # --------------------------------------------------------------------------

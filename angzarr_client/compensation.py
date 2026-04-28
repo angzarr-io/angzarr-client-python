@@ -55,15 +55,17 @@ Usage in ProcessManager:
             )
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .helpers import TYPE_URL_PREFIX
 from .proto.angzarr import command_handler_pb2 as command_handler
 from .proto.angzarr import types_pb2 as types
 
-# Matches the Rust-side wire_name(NOTIFICATION_TYPE_NAME): the internal
-# package prefix `angzarr_client.proto.` is stripped, leaving `angzarr.Notification`.
-_NOTIFICATION_WIRE_NAME = "angzarr.Notification"
+# Audit finding #58: per `google.protobuf.Any` spec the URL carries the
+# fully qualified proto type name verbatim (package prefix included).
+# The pre-#58 short form was a Rust-side bug that this also matched —
+# fixed in both languages.
+_NOTIFICATION_WIRE_NAME = "angzarr_client.proto.angzarr.Notification"
 
 
 @dataclass
@@ -233,9 +235,13 @@ class RejectionHandlerResponse:
     """Response from rejection handlers.
 
     Can contain events (compensation), notification (upstream propagation), or both.
+
+    Audit finding #56 (Option B — list[EventBook]): aligns with Rust's
+    ``Vec<EventBook>``. Multiple books concatenate downstream; first
+    non-empty book's cover wins.
     """
 
-    events: types.EventBook | None = None
+    events: list[types.EventBook] = field(default_factory=list)
     """Events to persist to own state (compensation)."""
 
     notification: types.Notification | None = None
