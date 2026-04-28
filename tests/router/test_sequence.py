@@ -21,7 +21,6 @@ from angzarr_client.proto.angzarr import (
     ContextualCommand,
     Cover,
     EventBook,
-    EventPage,
     PageHeader,
 )
 from angzarr_client.router import (
@@ -31,8 +30,6 @@ from angzarr_client.router import (
 )
 from tests.fixtures import (
     CreateOrder,
-    OrderCompleted,
-    OrderCreated,
 )
 
 

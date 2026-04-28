@@ -122,32 +122,44 @@ def test_build_projector_returns_projector_router():
 
 
 def test_mixing_command_handler_and_saga_raises():
+    # Audit #72: structured error — code + details {handler_kind, other_kind}.
+    from angzarr_client.error_codes import codes
+
     r = (
         Router("x")
         .with_handler(Player, Player)
         .with_handler(OrderSaga, lambda: OrderSaga())
     )
-    with pytest.raises(BuildError, match="cannot mix"):
+    with pytest.raises(BuildError) as exc:
         r.build()
+    assert exc.value.code == codes.MIXED_HANDLER_KINDS
 
 
 def test_mixing_saga_and_pm_raises():
+    from angzarr_client.error_codes import codes
+
     r = (
         Router("x")
         .with_handler(OrderSaga, lambda: OrderSaga())
         .with_handler(PM, lambda: PM())
     )
-    with pytest.raises(BuildError, match="cannot mix"):
+    with pytest.raises(BuildError) as exc:
         r.build()
+    assert exc.value.code == codes.MIXED_HANDLER_KINDS
 
 
 def test_mixing_projector_and_command_handler_raises():
+    from angzarr_client.error_codes import codes
+
     r = Router("x").with_handler(Output, lambda: Output()).with_handler(Player, Player)
-    with pytest.raises(BuildError, match="cannot mix"):
+    with pytest.raises(BuildError) as exc:
         r.build()
+    assert exc.value.code == codes.MIXED_HANDLER_KINDS
 
 
 def test_build_error_names_both_kinds():
+    from angzarr_client.error_codes import codes, keys
+
     r = (
         Router("x")
         .with_handler(Player, Player)
@@ -155,9 +167,15 @@ def test_build_error_names_both_kinds():
     )
     with pytest.raises(BuildError) as exc_info:
         r.build()
-    msg = str(exc_info.value)
-    assert "command_handler" in msg
-    assert "saga" in msg
+    assert exc_info.value.code == codes.MIXED_HANDLER_KINDS
+    # First-then-other ordering depends on `sorted(kinds)` — both
+    # "command_handler" and "saga" are present in details (order may
+    # be either), so assert on set membership.
+    detail_kinds = {
+        exc_info.value.details[keys.HANDLER_KIND],
+        exc_info.value.details[keys.OTHER_KIND],
+    }
+    assert detail_kinds == {"command_handler", "saga"}
 
 
 # --------------------------------------------------------------------------

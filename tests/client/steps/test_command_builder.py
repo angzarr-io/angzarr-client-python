@@ -27,7 +27,6 @@ from angzarr_client.proto.angzarr import (
     CommandBook,
     CommandRequest,
     CommandResponse,
-    MergeStrategy,
 )
 
 scenarios("command_builder.feature")
@@ -458,9 +457,9 @@ def _then_auto_root_is_valid_uuid(state: _World) -> None:
     assert state.built is not None
     raw = bytes(state.built.cover.root.value)
     parsed = UUID(bytes=raw)
-    assert (
-        parsed.version == 4
-    ), f"command_new must produce UUID v4, got {parsed.version}"
+    assert parsed.version == 4, (
+        f"command_new must produce UUID v4, got {parsed.version}"
+    )
 
 
 @then(parsers.parse('the built command should have type URL containing "{needle}"'))

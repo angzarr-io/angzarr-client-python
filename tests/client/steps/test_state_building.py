@@ -282,7 +282,7 @@ def _given_snapshot_no_events(state: _State, seq: int) -> None:
 
 @given(
     parsers.parse(
-        "an EventBook with snapshot at {snap_seq:d} and events up to " "{event_seq:d}"
+        "an EventBook with snapshot at {snap_seq:d} and events up to {event_seq:d}"
     )
 )
 def _given_snapshot_and_events(state: _State, snap_seq: int, event_seq: int) -> None:

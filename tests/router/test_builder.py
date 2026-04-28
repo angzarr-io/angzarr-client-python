@@ -65,32 +65,47 @@ def test_with_handler_chain_registers_multiple():
 
 
 def test_build_on_empty_router_raises():
-    with pytest.raises(BuildError, match="no handlers"):
+    # Audit #72: structured error — code + details["router_name"].
+    from angzarr_client.error_codes import codes, keys
+
+    with pytest.raises(BuildError) as exc:
         Router("empty").build()
+    assert exc.value.code == codes.ROUTER_NO_HANDLERS
+    assert exc.value.details[keys.ROUTER_NAME] == "empty"
 
 
 def test_with_handler_rejects_undecorated_class():
+    from angzarr_client.error_codes import codes, keys
+
     class NotDecorated:
         pass
 
     r = Router("x")
-    with pytest.raises(BuildError, match="NotDecorated"):
+    with pytest.raises(BuildError) as exc:
         r.with_handler(NotDecorated, lambda: NotDecorated())
+    assert exc.value.code == codes.HANDLER_UNKNOWN_KIND
+    assert exc.value.details[keys.HANDLER_CLASS] == "NotDecorated"
 
 
 def test_with_handler_rejects_plain_object_class():
+    from angzarr_client.error_codes import codes
+
     r = Router("x")
-    with pytest.raises(BuildError, match="no @command_handler"):
+    with pytest.raises(BuildError) as exc:
         r.with_handler(object, lambda: object())
+    assert exc.value.code == codes.HANDLER_UNKNOWN_KIND
 
 
 def test_build_error_names_the_class():
+    from angzarr_client.error_codes import codes, keys
+
     class MissingDecoration:
         pass
 
     with pytest.raises(BuildError) as exc_info:
         Router("x").with_handler(MissingDecoration, lambda: MissingDecoration()).build()
-    assert "MissingDecoration" in str(exc_info.value)
+    assert exc_info.value.code == codes.HANDLER_UNKNOWN_KIND
+    assert exc_info.value.details[keys.HANDLER_CLASS] == "MissingDecoration"
 
 
 def test_factory_is_stored_verbatim_not_called_at_registration():

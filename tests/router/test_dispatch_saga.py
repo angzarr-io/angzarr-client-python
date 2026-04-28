@@ -14,7 +14,6 @@ Sagas translate events from one domain into commands for another. Contract:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 
 from google.protobuf.any_pb2 import Any as ProtoAny
 

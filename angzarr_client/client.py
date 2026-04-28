@@ -10,6 +10,7 @@ from uuid import UUID as PyUUID
 import grpc
 
 from .errors import GRPCError
+from .helpers import correlated_metadata
 from .retry import RetryPolicy, default_retry_policy
 
 if TYPE_CHECKING:
@@ -172,9 +173,14 @@ class QueryClient:
         Args:
             query: The query specification.
             timeout: Optional per-call deadline in seconds.
+
+        Audit #69 stage (b): attaches ``x-correlation-id`` metadata from
+        ``query.cover.correlation_id`` so OTel exporters / mesh sidecars
+        can filter on it without decoding the body. Send-only.
         """
+        md = correlated_metadata(query.cover.correlation_id)
         try:
-            return self._stub.GetEventBook(query, timeout=timeout)
+            return self._stub.GetEventBook(query, timeout=timeout, metadata=md)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
@@ -185,8 +191,9 @@ class QueryClient:
             query: The query specification.
             timeout: Optional per-call deadline in seconds.
         """
+        md = correlated_metadata(query.cover.correlation_id)
         try:
-            return list(self._stub.GetEvents(query, timeout=timeout))
+            return list(self._stub.GetEvents(query, timeout=timeout, metadata=md))
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
@@ -291,9 +298,13 @@ class CommandHandlerClient:
         Args:
             request: The command request.
             timeout: Optional per-call deadline in seconds.
+
+        Audit #69 stage (b): attaches ``x-correlation-id`` metadata
+        from the canonical ``request.command.cover.correlation_id``.
         """
+        md = correlated_metadata(request.command.cover.correlation_id)
         try:
-            return self._stub.HandleCommand(request, timeout=timeout)
+            return self._stub.HandleCommand(request, timeout=timeout, metadata=md)
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
@@ -308,8 +319,11 @@ class CommandHandlerClient:
             request: The speculative command request.
             timeout: Optional per-call deadline in seconds.
         """
+        md = correlated_metadata(request.command.cover.correlation_id)
         try:
-            return self._stub.HandleSyncSpeculative(request, timeout=timeout)
+            return self._stub.HandleSyncSpeculative(
+                request, timeout=timeout, metadata=md
+            )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
@@ -320,10 +334,17 @@ class CommandHandlerClient:
         return CommandBuilder(self, domain, root)
 
     def command_new(self, domain: str) -> CommandBuilder:
-        """Start building a command for a new aggregate."""
+        """Start building a command for a new aggregate.
+
+        Materializes a fresh UUID v4 client-side and passes it
+        explicitly to CommandBuilder. Audit #67: ``root`` is always
+        client-assigned, no path exists to skip it.
+        """
+        from uuid import uuid4
+
         from .builder import CommandBuilder
 
-        return CommandBuilder(self, domain)
+        return CommandBuilder(self, domain, uuid4())
 
     def close(self) -> None:
         """Close the underlying channel if this client owns it."""
@@ -410,10 +431,15 @@ class SpeculativeClient:
         request: SpeculateCommandHandlerRequest,
         timeout: float | None = None,
     ) -> CommandResponse:
-        """Execute a command speculatively against temporal state."""
+        """Execute a command speculatively against temporal state.
+
+        Audit #69 stage (b): canonical correlation_id at
+        ``request.command.cover.correlation_id``.
+        """
+        md = correlated_metadata(request.command.cover.correlation_id)
         try:
             return self._command_handler_stub.HandleSyncSpeculative(
-                request, timeout=timeout
+                request, timeout=timeout, metadata=md
             )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
@@ -421,27 +447,48 @@ class SpeculativeClient:
     def projector(
         self, request: SpeculateProjectorRequest, timeout: float | None = None
     ) -> Projection:
-        """Speculatively execute a projector against events."""
+        """Speculatively execute a projector against events.
+
+        Audit #69 stage (b): canonical correlation_id at
+        ``request.events.cover.correlation_id``.
+        """
+        md = correlated_metadata(request.events.cover.correlation_id)
         try:
-            return self._projector_stub.HandleSpeculative(request, timeout=timeout)
+            return self._projector_stub.HandleSpeculative(
+                request, timeout=timeout, metadata=md
+            )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
     def saga(
         self, request: SpeculateSagaRequest, timeout: float | None = None
     ) -> SagaResponse:
-        """Speculatively execute a saga against events."""
+        """Speculatively execute a saga against events.
+
+        Audit #69 stage (b): canonical correlation_id at
+        ``request.request.source.cover.correlation_id``.
+        """
+        md = correlated_metadata(request.request.source.cover.correlation_id)
         try:
-            return self._saga_stub.ExecuteSpeculative(request, timeout=timeout)
+            return self._saga_stub.ExecuteSpeculative(
+                request, timeout=timeout, metadata=md
+            )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
     def process_manager(
         self, request: SpeculatePmRequest, timeout: float | None = None
     ) -> ProcessManagerHandleResponse:
-        """Speculatively execute a process manager."""
+        """Speculatively execute a process manager.
+
+        Audit #69 stage (b): canonical correlation_id at
+        ``request.request.trigger.cover.correlation_id``.
+        """
+        md = correlated_metadata(request.request.trigger.cover.correlation_id)
         try:
-            return self._pm_stub.HandleSpeculative(request, timeout=timeout)
+            return self._pm_stub.HandleSpeculative(
+                request, timeout=timeout, metadata=md
+            )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 

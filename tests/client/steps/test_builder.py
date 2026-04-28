@@ -146,8 +146,15 @@ def _when_register_and_build_counting(world):
 
 @then(parsers.parse('the builder raises a BuildError mentioning "{needle}"'))
 def _then_build_error(world, needle):
+    # Audit #72: BuildError now carries a static `message` plus
+    # structured `details` (handler class name, field, conflicting
+    # kinds, etc.). Cucumber needles like "NotDecorated" or "cannot
+    # mix" land in either the message or one of the detail values
+    # depending on the case, so search both.
     assert isinstance(world.dispatch_exc, BuildError), world.dispatch_exc
-    assert needle in str(world.dispatch_exc), str(world.dispatch_exc)
+    err = world.dispatch_exc
+    haystack = str(err) + " " + " ".join(err.details.values())
+    assert needle in haystack, (needle, str(err), err.details)
 
 
 @then("the result is a CommandHandlerRouter")

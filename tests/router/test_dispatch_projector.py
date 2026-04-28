@@ -86,6 +86,38 @@ def test_projector_returns_projection_result():
     assert result.cover.domain == "order"
 
 
+def test_projector_synthetic_projection_carries_next_sequence():
+    # Audit #63: synthetic Projection carries the input book's
+    # next_sequence so downstream readers can correlate the projection
+    # back to the event-stream cursor. Mirrors Rust runtime.rs:590-595.
+
+    @projector(name="prj-seq", domains=["order"])
+    class P:
+        @handles(OrderCreated)
+        def on(self, event):
+            pass
+
+    router = Router("prjs").with_handler(P, lambda: P()).build()
+
+    # next_sequence > 0 case: 3 events, book.next_sequence = 3
+    result = router.dispatch(
+        _event_book(
+            [
+                OrderCreated(order_id="o-1"),
+                OrderCreated(order_id="o-2"),
+                OrderCreated(order_id="o-3"),
+            ]
+        )
+    )
+    assert result.sequence == 3
+
+    # next_sequence == 0 case: empty book is valid; sequence carries through
+    book = _event_book([])
+    book.next_sequence = 0
+    result = router.dispatch(book)
+    assert result.sequence == 0
+
+
 def test_projector_iterates_every_event_in_book():
     written = []
 

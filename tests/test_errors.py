@@ -1,9 +1,7 @@
 """Tests for error types."""
 
-from unittest.mock import Mock
 
 import grpc
-import pytest
 
 from angzarr_client.errors import (
     ClientError,

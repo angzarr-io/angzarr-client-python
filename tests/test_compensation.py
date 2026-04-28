@@ -4,6 +4,7 @@ from uuid import UUID as PyUUID
 
 from angzarr_client.compensation import (
     CompensationContext,
+    DelegationOptions,
     PMRevocationResponse,
     RejectionHandlerResponse,
     delegate_to_framework,
@@ -177,12 +178,15 @@ class TestAggregateHelpers:
         assert resp.revocation.reason == "no compensation logic"
 
     def test_delegate_to_framework_all_flags(self) -> None:
+        # Audit #65: kwargs replaced by DelegationOptions struct.
         resp = delegate_to_framework(
             reason="escalate!",
-            emit_system_event=False,
-            send_to_dead_letter=True,
-            escalate=True,
-            abort=True,
+            options=DelegationOptions(
+                emit_system_event=False,
+                send_to_dead_letter=True,
+                escalate=True,
+                abort=True,
+            ),
         )
         assert resp.revocation.emit_system_revocation is False
         assert resp.revocation.send_to_dead_letter_queue is True
@@ -207,7 +211,11 @@ class TestProcessManagerHelpers:
         assert resp.revocation.reason == "no pm logic"
 
     def test_pm_delegate_no_system_event(self) -> None:
-        resp = pm_delegate_to_framework(reason="silent", emit_system_event=False)
+        # Audit #66: kwargs replaced by DelegationOptions struct.
+        resp = pm_delegate_to_framework(
+            reason="silent",
+            options=DelegationOptions(emit_system_event=False),
+        )
         assert resp.revocation is not None
         assert resp.revocation.emit_system_revocation is False
 
@@ -237,10 +245,18 @@ class TestResponseDataclasses:
         assert r.events == []
         assert r.notification is None
 
-    def test_pm_revocation_response_defaults(self) -> None:
-        r = PMRevocationResponse()
+    def test_pm_revocation_response_requires_revocation(self) -> None:
+        # Audit #70: `revocation` is required (no default), matching
+        # Rust's required field. process_events stays Optional.
+        import pytest
+
+        rev = command_handler.RevocationResponse(reason="x")
+        r = PMRevocationResponse(revocation=rev)
         assert r.process_events is None
-        assert r.revocation is None
+        assert r.revocation is rev
+
+        with pytest.raises(TypeError):
+            PMRevocationResponse()  # type: ignore[call-arg]
 
 
 class TestIsNotification:

@@ -27,17 +27,24 @@ from .proto.angzarr import (
 
 
 class CommandBuilder:
-    """Fluent builder for constructing and executing commands."""
+    """Fluent builder for constructing and executing commands.
+
+    Audit #67: ``root`` is required. The only path to an
+    auto-generated UUID v4 is via :func:`command_new`, which
+    materializes the UUID and passes it explicitly to the constructor.
+    Aggregate roots are always client-assigned across all six languages
+    (audit #20 convention).
+    """
 
     def __init__(
         self,
         client: CommandHandlerClient,
         domain: str,
-        root: PyUUID | None = None,
+        root: PyUUID,
     ):
         self._client = client
         self._domain = domain
-        self._root = root if root is not None else uuid4()
+        self._root = root
         self._correlation_id: str | None = None
         self._sequence: int = 0
         self._sequence_set: bool = False
@@ -245,8 +252,14 @@ def command(client: CommandHandlerClient, domain: str, root: PyUUID) -> CommandB
 
 
 def command_new(client: CommandHandlerClient, domain: str) -> CommandBuilder:
-    """Start building a command for a new aggregate."""
-    return CommandBuilder(client, domain)
+    """Start building a command for a new aggregate.
+
+    Materializes a fresh UUID v4 client-side and passes it explicitly
+    to the CommandBuilder. The framework convention (audit #20 / #67)
+    is "aggregate roots are always client-assigned" — there is no
+    other path to skip ``root``; the constructor requires it.
+    """
+    return CommandBuilder(client, domain, uuid4())
 
 
 def query(client: QueryClient, domain: str, root: PyUUID) -> QueryBuilder:

@@ -1,11 +1,9 @@
 """Tests for builder classes."""
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 from uuid import UUID as PyUUID
-from uuid import uuid4
 
 import pytest
-from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.wrappers_pb2 import StringValue
 
 from angzarr_client.builder import (
@@ -19,11 +17,8 @@ from angzarr_client.builder import (
 from angzarr_client.errors import InvalidArgumentError, InvalidTimestampError
 from angzarr_client.helpers import proto_to_uuid
 from angzarr_client.proto.angzarr import (
-    CommandBook,
     CommandResponse,
     EventBook,
-    EventPage,
-    Query,
 )
 
 
@@ -54,27 +49,64 @@ class TestCommandBuilder:
         # Auto-generated correlation ID
         assert book.cover.correlation_id != ""
 
-    def test_build_generates_root_when_none_provided(self) -> None:
-        """Build command for new aggregate auto-generates a client-side root UUID."""
+    def test_command_new_generates_uuid_v4_root(self) -> None:
+        """``command_new`` materializes a client-side UUID v4 root.
+
+        Audit #67: this is the only path to skip ``root`` — the
+        CommandBuilder constructor itself requires it. Mirrors Rust
+        ``CommandBuilderExt::command_new`` which also calls
+        ``Uuid::new_v4()`` and passes it explicitly.
+        """
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
-        builder = CommandBuilder(client, "orders")
+        builder = command_new(client, "orders")
         builder.with_sequence(0)
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
         book = builder.build()
 
         assert book.cover.domain == "orders"
-        # Tier 2: client-side UUIDs for new aggregates; cover.root is always populated.
+        # Client-side UUIDs for new aggregates; cover.root is always populated.
         assert book.cover.HasField("root")
         assert len(book.cover.root.value) == 16
+
+    def test_command_builder_constructor_requires_root(self) -> None:
+        """Audit #67: ``root`` is a required positional parameter; no
+        default, no ``None`` accepted. Direct constructor call without
+        it must raise ``TypeError`` at construction time."""
+        client = self._mock_aggregate_client()
+        with pytest.raises(TypeError):
+            CommandBuilder(client, "orders")  # type: ignore[call-arg]
+
+    def test_command_new_each_call_yields_independent_root(self) -> None:
+        """``command_new`` called twice produces distinct UUIDs.
+
+        Mirrors Rust's ``test_command_new_each_call_yields_independent_root``
+        in builder.rs — each call gets a fresh random UUID.
+        """
+        client = self._mock_aggregate_client()
+        msg = StringValue(value="test")
+
+        a = (
+            command_new(client, "orders")
+            .with_sequence(0)
+            .with_command("type/Cmd", msg)
+            .build()
+        )
+        b = (
+            command_new(client, "orders")
+            .with_sequence(0)
+            .with_command("type/Cmd", msg)
+            .build()
+        )
+        assert a.cover.root.value != b.cover.root.value
 
     def test_build_missing_sequence_raises(self) -> None:
         """Build without with_sequence() should raise."""
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
-        builder = CommandBuilder(client, "orders")
+        builder = command_new(client, "orders")
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
 
         with pytest.raises(InvalidArgumentError):
@@ -85,7 +117,7 @@ class TestCommandBuilder:
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
-        builder = CommandBuilder(client, "orders")
+        builder = command_new(client, "orders")
         builder.with_sequence(0)
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
         book = builder.build()
@@ -98,7 +130,7 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = (
-            CommandBuilder(client, "orders")
+            command_new(client, "orders")
             .with_correlation_id("my-corr-123")
             .with_sequence(0)
             .with_command("type/Cmd", msg)
@@ -113,9 +145,7 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = (
-            CommandBuilder(client, "orders")
-            .with_sequence(5)
-            .with_command("type/Cmd", msg)
+            command_new(client, "orders").with_sequence(5).with_command("type/Cmd", msg)
         )
         book = builder.build()
 
@@ -124,7 +154,7 @@ class TestCommandBuilder:
     def test_build_without_type_url_raises(self) -> None:
         """Build without type_url raises InvalidArgumentError."""
         client = self._mock_aggregate_client()
-        builder = CommandBuilder(client, "orders")
+        builder = command_new(client, "orders")
 
         with pytest.raises(InvalidArgumentError) as exc_info:
             builder.build()
@@ -133,7 +163,7 @@ class TestCommandBuilder:
     def test_build_without_payload_raises(self) -> None:
         """Build with type_url but no payload raises."""
         client = self._mock_aggregate_client()
-        builder = CommandBuilder(client, "orders")
+        builder = command_new(client, "orders")
         builder._type_url = "type/Cmd"
 
         with pytest.raises(InvalidArgumentError) as exc_info:
@@ -150,9 +180,7 @@ class TestCommandBuilder:
 
         msg = StringValue(value="test")
         builder = (
-            CommandBuilder(client, "orders")
-            .with_sequence(0)
-            .with_command("type/Cmd", msg)
+            command_new(client, "orders").with_sequence(0).with_command("type/Cmd", msg)
         )
         response = builder.execute()
 

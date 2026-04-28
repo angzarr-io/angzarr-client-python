@@ -40,70 +40,99 @@ class S:
 # --------------------------------------------------------------------------
 
 
+# Audit #72: BuildError carries structural error fields (code,
+# message, details). Tests assert on the code + the field name in
+# details rather than on message-substring matching.
+
+
 def test_empty_domain_on_command_handler_rejected_at_build():
+    from angzarr_client.error_codes import codes, keys
+
     @command_handler(domain="", state=S)
     class BadPlayer:
         @handles(CreateOrder)
         def _h(self, cmd, state, seq):
             pass
 
-    with pytest.raises(BuildError, match="domain"):
+    with pytest.raises(BuildError) as exc:
         Router("x").with_handler(BadPlayer, lambda: BadPlayer()).build()
+    assert exc.value.code == codes.HANDLER_FIELD_EMPTY_STRING
+    assert exc.value.details[keys.FIELD] == "domain"
 
 
 def test_empty_saga_target_rejected_at_build():
+    from angzarr_client.error_codes import codes, keys
+
     @saga(name="bad", source="order", target="")
     class BadSaga:
         @handles(OrderCreated)
         def _h(self, evt, dests):
             pass
 
-    with pytest.raises(BuildError, match="target"):
+    with pytest.raises(BuildError) as exc:
         Router("x").with_handler(BadSaga, lambda: BadSaga()).build()
+    assert exc.value.code == codes.HANDLER_FIELD_EMPTY_STRING
+    assert exc.value.details[keys.FIELD] == "target"
 
 
 def test_empty_saga_source_rejected_at_build():
+    from angzarr_client.error_codes import codes, keys
+
     @saga(name="bad", source="", target="inventory")
     class BadSaga:
         @handles(OrderCreated)
         def _h(self, evt, dests):
             pass
 
-    with pytest.raises(BuildError, match="source"):
+    with pytest.raises(BuildError) as exc:
         Router("x").with_handler(BadSaga, lambda: BadSaga()).build()
+    assert exc.value.code == codes.HANDLER_FIELD_EMPTY_STRING
+    assert exc.value.details[keys.FIELD] == "source"
 
 
 def test_empty_pm_sources_list_rejected_at_build():
+    from angzarr_client.error_codes import codes, keys
+
     @process_manager(name="bad", pm_domain="f", sources=[], targets=["s"], state=S)
     class BadPM:
         @handles(OrderCreated)
         def _h(self, evt, state, dests):
             pass
 
-    with pytest.raises(BuildError, match="sources"):
+    with pytest.raises(BuildError) as exc:
         Router("x").with_handler(BadPM, lambda: BadPM()).build()
+    assert exc.value.code == codes.HANDLER_FIELD_EMPTY_LIST
+    assert exc.value.details[keys.FIELD] == "sources"
 
 
 def test_empty_pm_targets_list_rejected_at_build():
+    from angzarr_client.error_codes import codes, keys
+
     @process_manager(name="bad", pm_domain="f", sources=["order"], targets=[], state=S)
     class BadPM:
         @handles(OrderCreated)
         def _h(self, evt, state, dests):
             pass
 
-    with pytest.raises(BuildError, match="targets"):
+    with pytest.raises(BuildError) as exc:
         Router("x").with_handler(BadPM, lambda: BadPM()).build()
+    assert exc.value.code == codes.HANDLER_FIELD_EMPTY_LIST
+    assert exc.value.details[keys.FIELD] == "targets"
 
 
 def test_empty_projector_domains_list_rejected_at_build():
+    from angzarr_client.error_codes import codes, keys
+
     @projector(name="bad", domains=[])
     class BadProjector:
         @handles(OrderCreated)
         def _h(self, evt):
             pass
 
-    with pytest.raises(BuildError, match="domains"):
+    with pytest.raises(BuildError) as exc:
         Router("x").with_handler(BadProjector, lambda: BadProjector()).build()
+    assert exc.value.code == codes.HANDLER_FIELD_EMPTY_LIST
+    assert exc.value.details[keys.FIELD] == "domains"
 
 
 # --------------------------------------------------------------------------
@@ -145,7 +174,10 @@ def test_two_command_handlers_same_domain_same_type_rejected():
             .with_handler(HandlerB, lambda: HandlerB())
             .build()
         )
-    assert "duplicate" in str(excinfo.value).lower()
+    # Audit #72: assert on structured code + details, not message substring.
+    from angzarr_client.error_codes import codes
+
+    assert excinfo.value.code == codes.DUPLICATE_COMMAND_HANDLER
 
 
 def test_two_sagas_same_source_same_event_allowed():

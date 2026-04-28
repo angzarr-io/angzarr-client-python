@@ -94,7 +94,10 @@ class Destinations:
 
         Raises:
             InvalidArgumentError: If domain is not in destination_sequences.
-                        Check your output_domains config if you get this error.
+                Carries ``code=MISSING_DESTINATION_SEQUENCE`` and
+                ``details["domain"]=<domain>`` for cucumber assertions.
+                Check your ``output_domains`` config when you see this.
+                Audit #64.
         """
         from .error_codes import codes, keys, messages
         from .errors import InvalidArgumentError
@@ -102,8 +105,8 @@ class Destinations:
         seq = self._sequences.get(domain)
         if seq is None:
             raise InvalidArgumentError(
-                messages.NO_HANDLER_REGISTERED,  # placeholder; better message below
-                code=codes.NO_HANDLER_REGISTERED,
+                messages.MISSING_DESTINATION_SEQUENCE,
+                code=codes.MISSING_DESTINATION_SEQUENCE,
                 details={keys.DOMAIN: domain},
             )
         for page in cmd.pages:

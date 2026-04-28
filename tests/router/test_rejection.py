@@ -26,7 +26,6 @@ from angzarr_client.proto.angzarr import (
     CommandPage,
     ContextualCommand,
     Cover,
-    EventBook,
     PageHeader,
 )
 from angzarr_client.router import (
@@ -38,7 +37,6 @@ from tests.fixtures import (
     FundsReleased,
     ProcessPayment,
     ReserveStock,
-    StockReserved,
 )
 
 

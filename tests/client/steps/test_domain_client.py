@@ -19,16 +19,12 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.client import (
-    CommandHandlerClient,
     DomainClient,
-    QueryClient,
-    SpeculativeClient,
 )
 from angzarr_client.errors import ConnectionError as ClientConnectionError
 from angzarr_client.proto.angzarr import (
     CommandRequest,
     CommandResponse,
-    Cover,
     EventBook,
     EventPage,
     Query,

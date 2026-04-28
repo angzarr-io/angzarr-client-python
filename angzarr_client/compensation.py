@@ -174,15 +174,40 @@ class CompensationContext:
         return f"{domain}/{type_name_from_url(cmd_type)}"
 
 
+@dataclass
+class DelegationOptions:
+    """Options struct for ``delegate_to_framework`` / ``pm_delegate_to_framework``.
+
+    Audit #65 / #66: collapses the previously-divergent function shapes
+    (Rust two-function split, Python kwargs) into a single shared
+    options type. Cross-language symmetric — Python ``DelegationOptions``
+    mirrors Rust ``compensation::DelegationOptions`` field-for-field with
+    the same defaults.
+
+    Field defaults match the previous Python kwargs and Rust's basic
+    ``delegate_to_framework`` (which hardcoded ``emit_system_event =
+    true`` and the rest false).
+    """
+
+    emit_system_event: bool = True
+    """Emit SagaCompensationFailed to the fallback domain."""
+
+    send_to_dead_letter: bool = False
+    """Move the failed event to the dead-letter queue."""
+
+    escalate: bool = False
+    """Mark for operator intervention."""
+
+    abort: bool = False
+    """Stop the saga entirely without retry."""
+
+
 # --- Aggregate helpers ---
 
 
 def delegate_to_framework(
     reason: str,
-    emit_system_event: bool = True,
-    send_to_dead_letter: bool = False,
-    escalate: bool = False,
-    abort: bool = False,
+    options: DelegationOptions | None = None,
 ) -> command_handler.BusinessResponse:
     """Create a response that delegates compensation to the framework.
 
@@ -191,20 +216,21 @@ def delegate_to_framework(
 
     Args:
         reason: Human-readable explanation for the delegation.
-        emit_system_event: Emit SagaCompensationFailed to fallback domain.
-        send_to_dead_letter: Move failed event to dead letter queue.
-        escalate: Mark for operator intervention.
-        abort: Stop the saga entirely without retry.
+        options: Optional :class:`DelegationOptions` struct overriding
+            the framework defaults (``emit_system_event=True`` and the
+            rest ``False``). Audit #65: replaces the previous keyword
+            arguments for cross-language symmetry with Rust.
 
     Returns:
         BusinessResponse with revocation flags.
     """
+    opts = options if options is not None else DelegationOptions()
     return command_handler.BusinessResponse(
         revocation=command_handler.RevocationResponse(
-            emit_system_revocation=emit_system_event,
-            send_to_dead_letter_queue=send_to_dead_letter,
-            escalate=escalate,
-            abort=abort,
+            emit_system_revocation=opts.emit_system_event,
+            send_to_dead_letter_queue=opts.send_to_dead_letter,
+            escalate=opts.escalate,
+            abort=opts.abort,
             reason=reason,
         )
     )
@@ -254,18 +280,27 @@ class PMRevocationResponse:
 
     Named type matching Go's PMRevocationResponse, replacing raw tuples
     for better discoverability and documentation.
+
+    Audit finding #70: ``revocation`` is required (no default), matching
+    Rust's ``compensation.rs:188-194`` ``revocation: RevocationResponse``
+    field. The factory helpers ``pm_delegate_to_framework`` and
+    ``pm_emit_compensation_events`` always construct one, so no caller
+    is broken; direct user-code construction without it raises
+    ``TypeError`` at construction time, surfacing the missing field
+    loudly. Symmetric to audit-#56 (tighten ambiguous Optionals when
+    the framework always populates them).
     """
+
+    revocation: command_handler.RevocationResponse
+    """Framework action flags. Required."""
 
     process_events: types.EventBook | None = None
     """PM events to persist (may be None when delegating)."""
 
-    revocation: command_handler.RevocationResponse | None = None
-    """Framework action flags."""
-
 
 def pm_delegate_to_framework(
     reason: str,
-    emit_system_event: bool = True,
+    options: DelegationOptions | None = None,
 ) -> PMRevocationResponse:
     """Create a PM response that delegates compensation to the framework.
 
@@ -273,15 +308,22 @@ def pm_delegate_to_framework(
 
     Args:
         reason: Human-readable explanation for the delegation.
-        emit_system_event: Emit SagaCompensationFailed to fallback domain.
+        options: Optional :class:`DelegationOptions` struct. Audit #66:
+            replaces the previous ``emit_system_event`` kwarg with the
+            shared options struct (same shape as
+            :func:`delegate_to_framework`).
 
     Returns:
         PMRevocationResponse with no process events, delegate to framework.
     """
+    opts = options if options is not None else DelegationOptions()
     return PMRevocationResponse(
         process_events=None,
         revocation=command_handler.RevocationResponse(
-            emit_system_revocation=emit_system_event,
+            emit_system_revocation=opts.emit_system_event,
+            send_to_dead_letter_queue=opts.send_to_dead_letter,
+            escalate=opts.escalate,
+            abort=opts.abort,
             reason=reason,
         ),
     )

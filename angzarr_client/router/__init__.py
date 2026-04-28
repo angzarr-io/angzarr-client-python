@@ -13,6 +13,7 @@ from .decorators import (
     applies,
     command_handler,
     handles,
+    handles_fact,
     process_manager,
     projector,
     rejected,
@@ -44,6 +45,7 @@ __all__ = [
     "upcaster",
     # Method decorators
     "handles",
+    "handles_fact",
     "applies",
     "rejected",
     "state_factory",

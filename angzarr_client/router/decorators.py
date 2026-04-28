@@ -41,16 +41,37 @@ def _stamp(cls: type, kind: str, meta: dict[str, Any]) -> None:
     cls.__angzarr_meta__ = meta  # type: ignore[attr-defined]
 
 
-def command_handler(*, domain: str, state: type) -> Callable[[T], T]:
+def command_handler(
+    *, domain: str, state: type, supports_replay: bool = False
+) -> Callable[[T], T]:
     """Mark a class as a command handler (aggregate) for ``domain``.
 
     The ``state`` type is the aggregate's state type; the class must either
     provide a ``@state_factory`` method or rely on ``state()`` as the default
     factory (enforced in a later round).
+
+    ``supports_replay`` (default ``False``) opts the aggregate into the
+    coordinator's ``Replay`` RPC, used for ``MERGE_COMMUTATIVE`` conflict
+    detection. When ``True``, the framework auto-implements replay using
+    the ``@applies`` methods to rebuild state from a snapshot + events;
+    the state type must be a proto Message (carry a ``DESCRIPTOR``).
+    When ``False`` the gRPC adapter returns ``UNIMPLEMENTED`` for
+    ``Replay`` requests — the coordinator degrades to ``MERGE_STRICT``
+    semantics. Audit #45.
+
+    Fact handling is opt-in via the ``@handles_fact(EventType)`` method
+    decorator. Aggregates with no ``@handles_fact`` methods get
+    ``UNIMPLEMENTED`` from the gRPC adapter for ``HandleFact``; the
+    coordinator falls back to pass-through-persist (per the proto's
+    Optional contract).
     """
 
     def decorate(cls: T) -> T:
-        _stamp(cls, "command_handler", {"domain": domain, "state": state})
+        _stamp(
+            cls,
+            "command_handler",
+            {"domain": domain, "state": state, "supports_replay": supports_replay},
+        )
         return cls
 
     return decorate
@@ -130,6 +151,7 @@ def upcaster(*, name: str, domain: str) -> Callable[[T], T]:
 
 _METHOD_SENTINELS = (
     "__angzarr_handles__",
+    "__angzarr_handles_fact__",
     "__angzarr_applies__",
     "__angzarr_rejected__",
     "__angzarr_state_factory__",
@@ -160,6 +182,33 @@ def handles(message_type: type) -> Callable[[F], F]:
     def decorate(fn: F) -> F:
         _guard_method(fn, "@handles")
         fn.__angzarr_handles__ = message_type  # type: ignore[attr-defined]
+        return fn
+
+    return decorate
+
+
+def handles_fact(event_type: type) -> Callable[[F], F]:
+    """Register a method as a fact-event handler for ``event_type``.
+
+    Audit #45. Triggered when the coordinator dispatches a fact (an
+    external reality, e.g. a payment confirmation from a third party)
+    via the ``HandleFact`` RPC. The method receives ``(event, state)``
+    after state has been rebuilt from prior events; it returns the
+    events to persist (or ``None`` for pure side-effects).
+
+    Aggregates with at least one ``@handles_fact`` method opt into the
+    ``HandleFact`` RPC. Aggregates with none get ``UNIMPLEMENTED`` from
+    the framework's gRPC adapter — the coordinator then falls back to
+    pass-through-persist per the proto's Optional contract.
+
+    Distinct from ``@handles`` (which dispatches commands and returns
+    events), ``@handles_fact`` is fact-specific: facts cannot be
+    rejected, and the method's return shape is just events-to-persist.
+    """
+
+    def decorate(fn: F) -> F:
+        _guard_method(fn, "@handles_fact")
+        fn.__angzarr_handles_fact__ = event_type  # type: ignore[attr-defined]
         return fn
 
     return decorate

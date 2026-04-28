@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from angzarr_client.error_codes import codes, keys, messages
+
 from .builder import BuildError
 
 
@@ -22,6 +24,10 @@ def validate_handler(cls: type) -> None:
     Called once per registered handler class at build time. Check the kind
     discriminant (set by the class decorator) and validate kind-specific
     fields. Operates purely on class-level metadata — no instance required.
+
+    Audit #72: BuildError raise sites use the structural error model —
+    ``code`` from ``codes``, static ``message`` from ``messages``, and
+    runtime context (handler class, field name) in ``details``.
     """
     kind: str = cls.__angzarr_kind__
     meta: dict[str, Any] = cls.__angzarr_meta__
@@ -37,24 +43,46 @@ def validate_handler(cls: type) -> None:
     elif kind == "upcaster":
         _validate_upcaster(cls.__name__, meta)
     else:  # pragma: no cover — guarded earlier by _stamp()
-        raise BuildError(f"{cls.__name__}: unknown handler kind {kind!r}")
+        raise BuildError(
+            messages.HANDLER_UNKNOWN_KIND,
+            code=codes.HANDLER_UNKNOWN_KIND,
+            details={
+                keys.HANDLER_CLASS: cls.__name__,
+                keys.HANDLER_KIND: str(kind),
+            },
+        )
 
 
 def _require_non_empty_str(cls_name: str, field: str, value: Any) -> None:
     if not isinstance(value, str) or not value:
-        raise BuildError(f"{cls_name}: {field!r} must be a non-empty string")
+        raise BuildError(
+            messages.HANDLER_FIELD_EMPTY_STRING,
+            code=codes.HANDLER_FIELD_EMPTY_STRING,
+            details={keys.HANDLER_CLASS: cls_name, keys.FIELD: field},
+        )
 
 
 def _require_non_empty_list(cls_name: str, field: str, value: Any) -> None:
     if not isinstance(value, list) or not value:
-        raise BuildError(f"{cls_name}: {field!r} must be a non-empty list")
+        raise BuildError(
+            messages.HANDLER_FIELD_EMPTY_LIST,
+            code=codes.HANDLER_FIELD_EMPTY_LIST,
+            details={keys.HANDLER_CLASS: cls_name, keys.FIELD: field},
+        )
+
+
+def _require_state_is_type(cls_name: str, state: Any) -> None:
+    if not isinstance(state, type):
+        raise BuildError(
+            messages.HANDLER_STATE_NOT_TYPE,
+            code=codes.HANDLER_STATE_NOT_TYPE,
+            details={keys.HANDLER_CLASS: cls_name, keys.FIELD: "state"},
+        )
 
 
 def _validate_command_handler(cls_name: str, meta: dict[str, Any]) -> None:
     _require_non_empty_str(cls_name, "domain", meta.get("domain"))
-    state = meta.get("state")
-    if not isinstance(state, type):
-        raise BuildError(f"{cls_name}: 'state' must be a type")
+    _require_state_is_type(cls_name, meta.get("state"))
 
 
 def _validate_saga(cls_name: str, meta: dict[str, Any]) -> None:
@@ -68,9 +96,7 @@ def _validate_process_manager(cls_name: str, meta: dict[str, Any]) -> None:
     _require_non_empty_str(cls_name, "pm_domain", meta.get("pm_domain"))
     _require_non_empty_list(cls_name, "sources", meta.get("sources"))
     _require_non_empty_list(cls_name, "targets", meta.get("targets"))
-    state = meta.get("state")
-    if not isinstance(state, type):
-        raise BuildError(f"{cls_name}: 'state' must be a type")
+    _require_state_is_type(cls_name, meta.get("state"))
 
 
 def _validate_projector(cls_name: str, meta: dict[str, Any]) -> None:

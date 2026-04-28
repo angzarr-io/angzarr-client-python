@@ -587,3 +587,37 @@ def temporal_by_time(ts: Timestamp) -> TemporalQuery:
     tq = TemporalQuery()
     tq.as_of_time.CopyFrom(ts)
     return tq
+
+
+def correlated_metadata(correlation_id: str) -> list[tuple[str, str]]:
+    """Build gRPC metadata carrying the ``x-correlation-id`` header.
+
+    Returns the list shape grpcio expects on stub calls
+    (``stub.Method(request, metadata=correlated_metadata(corr_id))``).
+    Empty correlation IDs produce an empty list — the header is
+    skipped, never sent as a blank value.
+
+    Mirrors Rust ``proto_ext::correlated_request<T>(msg, correlation_id)``
+    semantically: the wire surface is the same (``x-correlation-id``
+    header), the call shape is per-language idiomatic. Audit #69.
+
+    Args:
+        correlation_id: The correlation ID to attach. Empty / None
+            produces an empty metadata list.
+
+    Returns:
+        ``[(CORRELATION_ID_HEADER, correlation_id)]`` if non-empty,
+        else ``[]``.
+
+    Example::
+
+        from angzarr_client.helpers import correlated_metadata
+
+        stub.HandleCommand(
+            request,
+            metadata=correlated_metadata(cover.correlation_id),
+        )
+    """
+    if not correlation_id:
+        return []
+    return [(CORRELATION_ID_HEADER, correlation_id)]

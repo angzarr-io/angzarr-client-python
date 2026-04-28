@@ -68,3 +68,12 @@ HANDLER_FIELD_EMPTY_LIST = "handler field must be a non-empty list"
 HANDLER_STATE_NOT_TYPE = "handler 'state' must be a type"
 HANDLER_UNKNOWN_KIND = "unknown handler kind"
 ROUTER_NO_HANDLERS = "no handlers registered on Router"
+DUPLICATE_COMMAND_HANDLER = (
+    "duplicate command handler registration for (domain, type_url)"
+)
+MIXED_HANDLER_KINDS = (
+    "cannot mix handler kinds in one Router — all handlers must share a kind"
+)
+
+# Saga / PM destinations
+MISSING_DESTINATION_SEQUENCE = "no sequence for destination domain"

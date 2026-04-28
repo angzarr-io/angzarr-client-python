@@ -7,11 +7,42 @@ sequence.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Callable
 
 
 class BuildError(Exception):
-    """Raised when the builder cannot produce a valid runtime router."""
+    """Raised when the builder cannot produce a valid runtime router.
+
+    Audit #72: carries the structural error shape from audit #59 —
+    SCREAMING_SNAKE ``code`` (programmatic dispatch / cucumber
+    assertions), static ``message`` (cross-language equality), and
+    ``details`` for runtime context (router name, conflicting kinds,
+    duplicate (domain, type_url), handler class, field name, etc.).
+    Mirrors Rust ``router::handler::BuildError`` which carries an
+    ``ErrorDetail`` per variant.
+
+    Construction sites pass constants from ``angzarr_client.error_codes``:
+    ``codes.DUPLICATE_COMMAND_HANDLER`` etc. for the code,
+    ``messages.DUPLICATE_COMMAND_HANDLER`` etc. for the static message,
+    detail keys from ``keys`` for the details map.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "",
+        details: Mapping[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.details: dict[str, str] = {k: str(v) for k, v in (details or {}).items()}
+
+    def __str__(self) -> str:
+        # Static message only — no concatenation. Audit #59 / #72.
+        return self.message
 
 
 class Router:
@@ -58,12 +89,18 @@ class Router:
         prefer a pool checkout or close over a pre-built instance rather
         than constructing fresh on every call.
         """
+        # Audit #72: structural error model — code + static message + details.
+        from angzarr_client.error_codes import codes, keys, messages
+
         kind = getattr(cls, "__angzarr_kind__", None)
         if kind is None:
             raise BuildError(
-                f"{cls.__name__} has no @command_handler / @saga / "
-                f"@process_manager / @projector / @upcaster decorator — "
-                f"cannot register"
+                messages.HANDLER_UNKNOWN_KIND,
+                code=codes.HANDLER_UNKNOWN_KIND,
+                details={
+                    keys.HANDLER_CLASS: cls.__name__,
+                    keys.HANDLER_KIND: "<undecorated>",
+                },
             )
         self._factories.append((cls, factory))
         return self
@@ -75,14 +112,26 @@ class Router:
         Homogeneous → ``CommandHandlerRouter`` / ``SagaRouter`` /
         ``ProcessManagerRouter`` / ``ProjectorRouter`` per the shared kind.
         """
+        from angzarr_client.error_codes import codes, keys, messages
+
         if not self._factories:
-            raise BuildError(f"no handlers registered on Router {self.name!r}")
+            raise BuildError(
+                messages.ROUTER_NO_HANDLERS,
+                code=codes.ROUTER_NO_HANDLERS,
+                details={keys.ROUTER_NAME: self.name},
+            )
 
         kinds = {cls.__angzarr_kind__ for cls, _ in self._factories}
         if len(kinds) > 1:
+            sorted_kinds = sorted(kinds)
             raise BuildError(
-                f"cannot mix handler kinds on one Router {self.name!r}: "
-                f"{sorted(kinds)}"
+                messages.MIXED_HANDLER_KINDS,
+                code=codes.MIXED_HANDLER_KINDS,
+                details={
+                    keys.HANDLER_KIND: sorted_kinds[0],
+                    keys.OTHER_KIND: sorted_kinds[1],
+                    keys.ROUTER_NAME: self.name,
+                },
             )
 
         # Deferred imports avoid circular references through __init__.
@@ -131,9 +180,13 @@ class Router:
                     key = (domain, type_url)
                     if key in seen:
                         raise BuildError(
-                            f"duplicate command handler registration for "
-                            f"domain={domain!r} type_url={type_url!r} — "
-                            f"audit #18: multi-handler CH dispatch is forbidden"
+                            messages.DUPLICATE_COMMAND_HANDLER,
+                            code=codes.DUPLICATE_COMMAND_HANDLER,
+                            details={
+                                keys.DOMAIN: domain,
+                                keys.TYPE_URL: type_url,
+                                keys.ROUTER_NAME: self.name,
+                            },
                         )
                     seen.add(key)
 
@@ -147,4 +200,8 @@ class Router:
             return ProjectorRouter(self._factories)
         if kind == "upcaster":
             return UpcasterRouter(self._factories)
-        raise BuildError(f"unknown handler kind {kind!r}")
+        raise BuildError(
+            messages.HANDLER_UNKNOWN_KIND,
+            code=codes.HANDLER_UNKNOWN_KIND,
+            details={keys.HANDLER_KIND: str(kind)},
+        )
