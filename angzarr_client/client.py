@@ -89,10 +89,14 @@ def _create_channel(endpoint: str) -> grpc.Channel:
     """Create a gRPC channel for the given endpoint.
 
     Supports both TCP (host:port) and Unix Domain Sockets (file paths).
-    UDS paths are detected by leading '/' or './' and converted to unix: URIs
-    following the gRPC name-resolution spec:
-      - absolute paths -> ``unix:///abs/path`` (empty authority)
-      - relative paths -> ``unix:relative/path`` (no authority component)
+    UDS endpoints are converted to ``unix:`` URIs following the gRPC
+    name-resolution spec, with the leading prefix preserved:
+
+      - absolute path ``/abs/path`` → ``unix:///abs/path`` (empty authority)
+      - relative path ``./rel/path`` → ``unix:./rel/path`` (no authority,
+        leading ``./`` retained for the gRPC URI resolver)
+      - already-prefixed ``unix:...`` strings → passed through unchanged
+      - everything else → treated as TCP host:port
 
     The Go/Java/C++ clients emit the same forms. Rust uses a custom connector
     with the raw path. C# uses ``SocketsHttpHandler`` with ``UnixDomainSocketEndPoint``.
