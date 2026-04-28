@@ -121,14 +121,6 @@ class ProcessManagerGrpc(process_manager_pb2_grpc.ProcessManagerServiceServicer)
     def __init__(self, router: Any) -> None:
         self._router = router
 
-    def Prepare(
-        self,
-        request: process_manager_pb2.ProcessManagerPrepareRequest,
-        context: grpc.ServicerContext,
-    ) -> process_manager_pb2.ProcessManagerPrepareResponse:
-        # Destinations are config-driven; no dynamic declaration needed.
-        return process_manager_pb2.ProcessManagerPrepareResponse()
-
     def Handle(
         self,
         request: process_manager_pb2.ProcessManagerHandleRequest,
