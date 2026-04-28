@@ -166,8 +166,14 @@ def test_build_error_names_both_kinds():
 
 
 def test_built_router_carries_name():
+    # Audit #42: built router's name derives from the first registered
+    # handler's metadata. CommandHandlerRouter uses the handler's
+    # ``domain`` (since @command_handler has no ``name`` attribute);
+    # other kinds use the handler's declared ``name``. The argument to
+    # ``Router(...)`` is a builder-side label only and does not propagate
+    # to the runtime router.
     router = Router("agg-service").with_handler(Player, lambda: Player()).build()
-    assert router.name == "agg-service"
+    assert router.name == "player"  # Player's @command_handler(domain="player")
 
 
 def test_built_router_carries_factories_in_registration_order():

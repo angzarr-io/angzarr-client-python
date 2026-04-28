@@ -29,9 +29,27 @@ class _BuiltRouterBase:
     instance would otherwise race between concurrent dispatch calls.
     """
 
-    def __init__(self, name: str, factories: list[Factory]) -> None:
-        self.name = name
+    def __init__(self, factories: list[Factory]) -> None:
         self._factories: list[Factory] = list(factories)
+
+    def _first_meta(self) -> dict:
+        """First registered handler's ``__angzarr_meta__`` (or ``{}``)."""
+        if not self._factories:
+            return {}
+        cls, _ = self._factories[0]
+        return getattr(cls, "__angzarr_meta__", {}) or {}
+
+    @property
+    def name(self) -> str:
+        """Router name read from the first registered handler's metadata.
+
+        Audit finding #42 (single source of truth — first handler's
+        ``__angzarr_meta__["name"]`` wins). Mirrors Rust's
+        ``runtime.rs:642+`` per-kind ``name()`` accessors. CH overrides
+        to read ``domain`` instead, since ``@command_handler`` has no
+        ``name`` attribute.
+        """
+        return self._first_meta().get("name", "")
 
     def handler_count(self) -> int:
         """Number of factories registered on this runtime router.
@@ -58,6 +76,17 @@ class _BuiltRouterBase:
 
 class CommandHandlerRouter(_BuiltRouterBase, Generic[S]):
     """Runtime router dispatching commands to registered @command_handler instances."""
+
+    @property
+    def name(self) -> str:
+        """Domain this router serves (read from the first registered
+        handler's ``@command_handler(domain=...)`` metadata).
+
+        ``@command_handler`` has no ``name`` attribute, so the domain is
+        the natural identifier. Mirrors Rust's
+        ``CommandHandlerRouter::name()`` (``runtime.rs:625-633``).
+        """
+        return self._first_meta().get("domain", "")
 
     def dispatch(self, request):
         """Route a ContextualCommand to the matching @handles method."""

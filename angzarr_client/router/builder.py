@@ -100,13 +100,13 @@ class Router:
 
         (kind,) = kinds
         if kind == "command_handler":
-            return CommandHandlerRouter(self.name, self._factories)
+            return CommandHandlerRouter(self._factories)
         if kind == "saga":
-            return SagaRouter(self.name, self._factories)
+            return SagaRouter(self._factories)
         if kind == "process_manager":
-            return ProcessManagerRouter(self.name, self._factories)
+            return ProcessManagerRouter(self._factories)
         if kind == "projector":
-            return ProjectorRouter(self.name, self._factories)
+            return ProjectorRouter(self._factories)
         if kind == "upcaster":
-            return UpcasterRouter(self.name, self._factories)
+            return UpcasterRouter(self._factories)
         raise BuildError(f"unknown handler kind {kind!r}")
