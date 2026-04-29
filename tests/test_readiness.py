@@ -395,6 +395,112 @@ class TestRunSupervisor:
 
         assert ticks_later > ticks_so_far
 
+    # Audit #82: raising probes don't kill the supervisor; each cause
+    # (timeout / raise / probe-False) emits a distinct log line.
+
+    async def test_survives_raising_probe_and_publishes_not_serving(
+        self, caplog
+    ) -> None:
+        class _Raises(Probe):
+            def __init__(self) -> None:
+                self.calls = 0
+
+            @property
+            def name(self) -> str:
+                return "raiser"
+
+            async def check(self) -> bool:
+                self.calls += 1
+                raise RuntimeError("boom")
+
+        raiser = _Raises()
+        health = _RecordingHealth()
+        with caplog.at_level("WARNING"):
+            task = asyncio.create_task(
+                run_supervisor(
+                    probes=[raiser],
+                    health_servicer=health,
+                    service_names=[""],
+                    interval=0.01,
+                    timeout=1.0,
+                )
+            )
+            await asyncio.sleep(0.06)
+            assert not task.done(), "supervisor exited early — exception leaked"
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # Probe was called multiple times — the supervisor stayed alive.
+        assert raiser.calls >= 2
+        assert all(status == NOT_SERVING for _, status in health.calls)
+        # `_LOG.exception` records the logger message at ERROR level with
+        # exc_info attached.
+        raise_records = [
+            r for r in caplog.records if "raiser" in r.getMessage() and r.exc_info
+        ]
+        assert raise_records, "expected an exception log naming the raising probe"
+
+    async def test_logs_distinct_warning_on_timeout(self, caplog) -> None:
+        slow = _SlowProbe("slow", delay=1.0)
+        health = _RecordingHealth()
+        with caplog.at_level("WARNING"):
+            task = asyncio.create_task(
+                run_supervisor(
+                    probes=[slow],
+                    health_servicer=health,
+                    service_names=[""],
+                    interval=0.05,
+                    timeout=0.01,
+                )
+            )
+            await asyncio.sleep(0.07)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        assert any(
+            "timed out" in r.getMessage() for r in caplog.records
+        ), "expected a 'readiness probe timed out' log"
+        # No "readiness probe failed" log on the timeout path — the cause
+        # warning is sufficient (audit #82 design call).
+        assert not any(
+            "readiness probe failed" in r.getMessage() for r in caplog.records
+        )
+
+    async def test_logs_distinct_warning_on_probe_false(self, caplog) -> None:
+        probe = _FakeProbe("p", [False, False, False, False])
+        health = _RecordingHealth()
+        with caplog.at_level("WARNING"):
+            task = asyncio.create_task(
+                run_supervisor(
+                    probes=[probe],
+                    health_servicer=health,
+                    service_names=[""],
+                    interval=0.01,
+                    timeout=1.0,
+                )
+            )
+            await asyncio.sleep(0.05)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # Probe-returned-False path produces "readiness probe failed", NOT
+        # "timed out" / "raised".
+        assert any(
+            "readiness probe failed" in r.getMessage() for r in caplog.records
+        )
+        assert not any(
+            "timed out" in r.getMessage() for r in caplog.records
+        )
+
 
 # ---------------------------------------------------------------------------
 # Sanity: TransportSignal, isolated
