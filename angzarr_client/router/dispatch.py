@@ -17,7 +17,7 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.message import DecodeError
 
 from angzarr_client.destinations import Destinations
-from angzarr_client.helpers import TYPE_URL_PREFIX, propagate_edition_from
+from angzarr_client.helpers import TYPE_URL_PREFIX
 from angzarr_client.proto.angzarr import (
     BusinessResponse,
     ContextualCommand,
@@ -622,11 +622,8 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
             _merge_saga_output(emitted, response)
             matched += 1
 
-    # Audit #86: always-override edition propagation. Every outgoing
-    # CommandBook / EventBook inherits the source cover's edition,
-    # even if the handler set its own.
-    if source_cover is not None:
-        _propagate_edition_into_books(source_cover, response.commands, response.events)
+    # Audit #86 reverted 2026-04-29: edition propagation moved to
+    # coordinator-contract; outgoing covers ride out as-is.
 
     # P2.5 / audit finding #36: "no handler matched" is a normal runtime
     # condition (no saga subscribed to this event type), not a failure.
@@ -696,8 +693,6 @@ def dispatch_process_manager(
     process_state = request.process_state if request.HasField("process_state") else None
 
     response = ProcessManagerHandleResponse()
-    merged_process_events = EventBook()
-    has_pe = False
     matched = 0
     for cls, factory in factories:
         meta = cls.__angzarr_meta__
@@ -731,27 +726,16 @@ def dispatch_process_manager(
                 response.commands.append(cmd)
             for fact in result.facts or []:
                 response.facts.append(fact)
-            # Audit finding #56 (Option B): `process_events` is now a
-            # list[EventBook]. Iterate; concatenate every book's pages
-            # into the wire's single `process_events`. First non-empty
-            # book's cover wins, matching the existing first-cover
-            # convention.
-            for pe_book in result.process_events or []:
-                merged_process_events.pages.extend(pe_book.pages)
-                if not has_pe:
-                    merged_process_events.cover.CopyFrom(pe_book.cover)
-                    has_pe = True
-    if has_pe:
-        response.process_events.CopyFrom(merged_process_events)
+            # Audit #92 2026-04-29: ProcessManagerHandleResponse.
+            # process_events became `repeated EventBook` so the merge
+            # policy lives at the coordinator with full information.
+            # Pass the handler's books through verbatim — no
+            # first-non-empty-cover-wins on the client side.
+            if result.process_events:
+                response.process_events.extend(result.process_events)
 
-    # Audit #86: always-override edition propagation. Every outgoing
-    # CommandBook / EventBook (commands, facts, process_events)
-    # inherits the trigger cover's edition, even if the handler set
-    # its own.
-    if trigger_cover is not None:
-        _propagate_edition_into_books(trigger_cover, response.commands, response.facts)
-        if response.HasField("process_events"):
-            propagate_edition_from(response.process_events.cover, trigger_cover)
+    # Audit #86 reverted 2026-04-29: edition propagation moved to
+    # coordinator-contract; outgoing covers ride out as-is.
 
     # Audit findings #36/#37: "no handler matched" is a normal runtime
     # condition (no PM subscribed to this trigger). Log at info-level for
@@ -825,21 +809,10 @@ def dispatch_projector(factories: list[Factory], events: EventBook) -> Projectio
     return result
 
 
-def _propagate_edition_into_books(source_cover, commands, events) -> None:
-    """Audit #86: stamp ``source_cover.edition`` onto every outgoing
-    book's cover. Always-override semantics — the framework guarantees
-    timeline consistency on cross-domain emissions; handler choices on
-    outgoing edition are overwritten.
-
-    ``commands`` and ``events`` are protobuf RepeatedCompositeFieldContainer
-    of `CommandBook` / `EventBook`; we mutate each book's cover in place.
-    """
-    for book in commands:
-        if book.HasField("cover"):
-            propagate_edition_from(book.cover, source_cover)
-    for book in events:
-        if book.HasField("cover"):
-            propagate_edition_from(book.cover, source_cover)
+# Audit #86 reverted 2026-04-29: `_propagate_edition_into_books`
+# helper removed. Edition propagation is the coordinator's
+# responsibility — see coordinator-contract/edition_propagation.feature
+# in angzarr-project.
 
 
 def _merge_saga_output(emitted: Any, response: SagaResponse) -> None:

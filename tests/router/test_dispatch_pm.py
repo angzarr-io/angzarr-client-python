@@ -389,13 +389,23 @@ def test_pm_response_facts_and_process_events_propagate():
 
     assert len(response.facts) == 1
     assert response.facts[0].cover.domain == "audit"
-    assert response.process_events.cover.domain == "fulfillment"
+    # Audit #92: process_events is `repeated EventBook`; pass-through
+    # without merge. The handler returned one book; the wire response
+    # has one book.
+    assert len(response.process_events) == 1
+    assert response.process_events[0].cover.domain == "fulfillment"
 
 
-def test_pm_response_process_events_multiple_books_concatenate():
-    """Audit finding #56 (Option B): `process_events` is list[EventBook].
-    Multiple books concatenate into the wire's single
-    `process_events` (first non-empty book's cover wins)."""
+def test_pm_response_process_events_multiple_books_pass_through():
+    """Audit #92 (2026-04-29): `process_events` is `repeated EventBook`
+    on the wire (was singular pre-change). Multiple books emitted by
+    the handler ride out as a list — the coordinator decides any
+    merge / persistence semantics with full information.
+
+    Pre-#92 the framework merged into a single book using
+    "first-non-empty-cover-wins" + page-concatenation; that policy
+    moved to the coordinator (audit memory: "code that wormed its
+    way into the client that is better handled by the coordinators")."""
 
     @process_manager(
         name="pm-x",
@@ -413,7 +423,7 @@ def test_pm_response_process_events_multiple_books_concatenate():
             page_a.header.sequence = 1
 
             book_b = EventBook()
-            book_b.cover.CopyFrom(Cover(domain="other-domain-ignored-second"))
+            book_b.cover.CopyFrom(Cover(domain="audit-trail"))
             page_b1 = book_b.pages.add()
             page_b1.header.sequence = 2
             page_b2 = book_b.pages.add()
@@ -426,9 +436,13 @@ def test_pm_response_process_events_multiple_books_concatenate():
     router = Router("pms").with_handler(P, lambda: P()).build()
     response = router.dispatch(_pm_request([OrderCreated(order_id="o-1")]))
 
-    # Pages from both books concatenate; first book's cover wins.
-    assert len(response.process_events.pages) == 3
-    assert response.process_events.cover.domain == "fulfillment"
+    # Both books emerge intact in the response list — no client-side
+    # cover-merge or page-concatenation policy.
+    assert len(response.process_events) == 2
+    assert response.process_events[0].cover.domain == "fulfillment"
+    assert len(response.process_events[0].pages) == 1
+    assert response.process_events[1].cover.domain == "audit-trail"
+    assert len(response.process_events[1].pages) == 2
 
 
 def test_pm_response_process_events_default_is_empty_list():

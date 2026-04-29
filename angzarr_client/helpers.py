@@ -160,18 +160,14 @@ def implicit_edition(name: str) -> Edition:
     return Edition(name=name)
 
 
-def propagate_edition_from(outgoing: Cover, source: Cover) -> None:
-    """Audit #86: copy ``source.edition`` (full struct, including
-    divergences) onto ``outgoing.edition``, overwriting whatever was
-    there. **Always-override semantics:** the framework guarantees
-    timeline consistency on saga / PM cross-domain emissions; handlers
-    cannot escape into a different edition by setting their own
-    outgoing cover.
-    """
-    if source.HasField("edition"):
-        outgoing.edition.CopyFrom(source.edition)
-    else:
-        outgoing.ClearField("edition")
+# Audit #86 reverted 2026-04-29: edition propagation is a coordinator
+# concern (one canonical implementation across all clients), not
+# per-client framework code. See coordinator-contract/
+# edition_propagation.feature in angzarr-project for the contract the
+# coordinator must enforce. The READ accessor (`edition(obj)`) stays
+# — clients still need it for cache keys, routing keys, and any
+# user-facing inspection — but the WRITE-side helper
+# `propagate_edition_from(outgoing, source)` is gone.
 
 
 def divergence_for(e: Edition | None, domain_name: str) -> int | None:
