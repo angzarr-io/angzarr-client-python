@@ -42,7 +42,6 @@ from angzarr_client.helpers import (
     # EventBook helpers
     next_sequence,
     # Audit #86: edition propagation helper
-    propagate_edition_from,
     # Timestamp helpers
     now,
     parse_timestamp,
@@ -868,49 +867,9 @@ class TestAdditionalHelpers:
         assert decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover) is None
 
 
-class TestPropagateEditionFrom:
-    """Audit #86: always-override semantics — outgoing.edition is
-    overwritten with source.edition (full struct, including divergences).
-    Mirrors Rust ``Cover::propagate_edition_from``."""
-
-    def test_copies_name_when_outgoing_unset(self) -> None:
-        source = Cover()
-        source.edition.name = "speculative"
-        outgoing = Cover()
-        propagate_edition_from(outgoing, source)
-        assert outgoing.HasField("edition")
-        assert outgoing.edition.name == "speculative"
-
-    def test_overrides_handler_set_edition(self) -> None:
-        source = Cover()
-        source.edition.name = "alpha"
-        outgoing = Cover()
-        outgoing.edition.name = "beta"
-        propagate_edition_from(outgoing, source)
-        assert (
-            outgoing.edition.name == "alpha"
-        ), "always-override semantics: source wins"
-
-    def test_clears_when_source_unset(self) -> None:
-        source = Cover()
-        # source has no edition; outgoing had something explicit.
-        outgoing = Cover()
-        outgoing.edition.name = "leftover"
-        propagate_edition_from(outgoing, source)
-        assert not outgoing.HasField(
-            "edition"
-        ), "source had no edition → outgoing must match (cleared)"
-
-    def test_preserves_divergences(self) -> None:
-        source = Cover()
-        source.edition.name = "speculative"
-        source.edition.divergences.add(domain="order", sequence=5)
-        outgoing = Cover()
-        propagate_edition_from(outgoing, source)
-        assert outgoing.edition.name == "speculative"
-        assert len(outgoing.edition.divergences) == 1
-        assert outgoing.edition.divergences[0].domain == "order"
-        assert outgoing.edition.divergences[0].sequence == 5
+# Audit #86 reverted 2026-04-29: edition propagation moved to
+# coordinator-contract; the four `TestPropagateEditionFrom` tests
+# were deleted along with the `propagate_edition_from` helper.
 
 
 class TestIdempotencyKey:

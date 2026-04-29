@@ -36,10 +36,6 @@ class World:
     observed_dest: dict[str, int] = field(default_factory=dict)
     # Observed state fields during dispatch.
     observed: dict[str, Any] = field(default_factory=dict)
-    # Audit #86: source/trigger event edition threaded through saga / PM
-    # dispatch tests. Tuple of (name, [(domain, sequence), ...]) or None
-    # for "no edition set" scenarios.
-    source_edition: tuple[str, list[tuple[str, int]]] | None = None
 
 
 @pytest.fixture
