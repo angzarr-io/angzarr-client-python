@@ -631,3 +631,28 @@ class TestTopLevelTransportExports:
 
         assert "TransportMode" in angzarr_client.__all__
         assert "resolve_ch_endpoint" in angzarr_client.__all__
+
+
+class TestTopLevelBindAddressExports:
+    """Audit #77: ANGZARR_BIND_ADDRESS helpers reachable from crate
+    root, matching Rust's `lib.rs` re-export of `resolve_bind_address`
+    + `ENV_BIND_ADDRESS` + `DEFAULT_BIND_HOST`."""
+
+    def test_resolve_bind_address_reachable(self) -> None:
+        import angzarr_client
+        from angzarr_client.server import resolve_bind_address as srv_fn
+
+        assert angzarr_client.resolve_bind_address is srv_fn
+
+    def test_constants_reachable(self) -> None:
+        import angzarr_client
+
+        assert angzarr_client.ENV_BIND_ADDRESS == "ANGZARR_BIND_ADDRESS"
+        assert angzarr_client.DEFAULT_BIND_HOST == "[::]"
+
+    def test_listed_in_dunder_all(self) -> None:
+        import angzarr_client
+
+        assert "resolve_bind_address" in angzarr_client.__all__
+        assert "ENV_BIND_ADDRESS" in angzarr_client.__all__
+        assert "DEFAULT_BIND_HOST" in angzarr_client.__all__

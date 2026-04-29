@@ -49,12 +49,40 @@ def configure_logging() -> None:
     )
 
 
+#: Audit #77: env var name for the full TCP bind address override
+#: (``host:port``). When set, supersedes the default
+#: ``[::]:{port}`` composition and the ``PORT`` env resolution.
+#: IPv6 hosts must include brackets (e.g. ``[::1]:50052``); IPv4
+#: hosts are written bare.
+ENV_BIND_ADDRESS = "ANGZARR_BIND_ADDRESS"
+
+#: Default TCP bind host. ``"[::]"`` is the IPv6 wildcard, which on
+#: Linux (``IPV6_V6ONLY=0`` by default) accepts both IPv4 (via
+#: IPv4-mapped IPv6) and IPv6 connections.
+DEFAULT_BIND_HOST = "[::]"
+
+
+def resolve_bind_address(default_port: int = 50052) -> str:
+    """Compute the TCP bind address.
+
+    Audit #77: returns ``ANGZARR_BIND_ADDRESS`` verbatim when set,
+    otherwise composes ``[::]:{port}`` where ``port`` comes from the
+    ``PORT`` env var or ``default_port``.
+    """
+    override = os.environ.get(ENV_BIND_ADDRESS)
+    if override:
+        return override
+    port = os.environ.get("PORT", str(default_port))
+    return f"{DEFAULT_BIND_HOST}:{port}"
+
+
 def get_transport_config() -> tuple[str, str]:
     """Get transport configuration from environment.
 
     Returns:
         Tuple of (transport_type, address)
-        - For TCP: ("tcp", "[::]:{port}")
+        - For TCP: ("tcp", "[::]:{port}") — overridable via
+          ``ANGZARR_BIND_ADDRESS``
         - For UDS: ("uds", "unix://{socket_path}")
     """
     transport = os.environ.get("TRANSPORT_TYPE", "tcp").lower()
@@ -82,9 +110,7 @@ def get_transport_config() -> tuple[str, str]:
 
         return ("uds", f"unix:{socket_path}")
 
-    else:
-        port = os.environ.get("PORT", "50052")
-        return ("tcp", f"[::]:{port}")
+    return ("tcp", resolve_bind_address())
 
 
 @dataclass

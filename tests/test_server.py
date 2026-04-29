@@ -89,6 +89,66 @@ class TestGetTransportConfig:
         transport, _ = srv.get_transport_config()
         assert transport == "uds"
 
+    # Audit #77: ANGZARR_BIND_ADDRESS overrides the default
+    # `[::]:{port}` composition.
+
+    def test_bind_address_env_override(self, monkeypatch) -> None:
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "0.0.0.0:9090")
+        transport, address = srv.get_transport_config()
+        assert transport == "tcp"
+        assert address == "0.0.0.0:9090"
+
+    def test_bind_address_env_override_ignores_port(self, monkeypatch) -> None:
+        # When ANGZARR_BIND_ADDRESS is set, PORT is irrelevant.
+        monkeypatch.setenv("PORT", "6000")
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "127.0.0.1:7777")
+        _, address = srv.get_transport_config()
+        assert address == "127.0.0.1:7777"
+
+    def test_bind_address_uds_unaffected(self, monkeypatch, tmp_path) -> None:
+        # UDS path doesn't read the bind-address override.
+        monkeypatch.setenv("TRANSPORT_TYPE", "uds")
+        monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "0.0.0.0:9090")
+        transport, address = srv.get_transport_config()
+        assert transport == "uds"
+        assert address.startswith("unix:")
+
+
+class TestResolveBindAddress:
+    """Audit #77: helper exposed at the crate root for symmetry with
+    Rust's ``resolve_bind_address``."""
+
+    def test_default_is_dual_stack(self, monkeypatch) -> None:
+        monkeypatch.delenv(srv.ENV_BIND_ADDRESS, raising=False)
+        monkeypatch.delenv("PORT", raising=False)
+        assert srv.resolve_bind_address() == "[::]:50052"
+
+    def test_default_with_explicit_port(self, monkeypatch) -> None:
+        monkeypatch.delenv(srv.ENV_BIND_ADDRESS, raising=False)
+        monkeypatch.delenv("PORT", raising=False)
+        assert srv.resolve_bind_address(8080) == "[::]:8080"
+
+    def test_port_env_beats_default_port_arg(self, monkeypatch) -> None:
+        monkeypatch.delenv(srv.ENV_BIND_ADDRESS, raising=False)
+        monkeypatch.setenv("PORT", "6000")
+        # PORT env overrides default_port arg when no full address is set.
+        assert srv.resolve_bind_address(50052) == "[::]:6000"
+
+    def test_env_override_verbatim_ipv4(self, monkeypatch) -> None:
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "127.0.0.1:9090")
+        assert srv.resolve_bind_address(50052) == "127.0.0.1:9090"
+
+    def test_env_override_verbatim_ipv6(self, monkeypatch) -> None:
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "[::1]:8080")
+        assert srv.resolve_bind_address(50052) == "[::1]:8080"
+
+    def test_env_override_supersedes_port(self, monkeypatch) -> None:
+        # Both set: full address wins; PORT is ignored.
+        monkeypatch.setenv("PORT", "6000")
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "0.0.0.0:1234")
+        assert srv.resolve_bind_address() == "0.0.0.0:1234"
+
 
 class TestConfigureLogging:
     def test_calls_structlog_configure(self, monkeypatch) -> None:

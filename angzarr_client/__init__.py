@@ -111,11 +111,14 @@ from .router.server import (
     UpcasterGrpc,
 )
 from .server import (
+    DEFAULT_BIND_HOST,
+    ENV_BIND_ADDRESS,
     ServerConfig,
     cleanup_socket,
     configure_logging,
     create_server,
     get_transport_config,
+    resolve_bind_address,
     run_command_handler_server,
     run_process_manager_server,
     run_projector_server,
@@ -249,6 +252,9 @@ __all__ = [
     # Server
     "configure_logging",
     "get_transport_config",
+    "resolve_bind_address",
+    "ENV_BIND_ADDRESS",
+    "DEFAULT_BIND_HOST",
     "create_server",
     "run_server",
     "run_command_handler_server",
