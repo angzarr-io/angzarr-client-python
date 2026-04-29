@@ -150,9 +150,7 @@ class TestCreateServer:
         monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
         add_servicer = MagicMock()
         servicer = object()
-        handle = srv.create_server(
-            add_servicer_func=add_servicer, servicer=servicer
-        )
+        handle = srv.create_server(add_servicer_func=add_servicer, servicer=servicer)
         assert handle.address.startswith("unix:")
 
     def test_no_service_name_skips_named_health(self, monkeypatch) -> None:

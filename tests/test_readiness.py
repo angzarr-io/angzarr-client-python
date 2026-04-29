@@ -28,7 +28,6 @@ from angzarr_client.readiness import (
     run_supervisor,
 )
 
-
 SERVING = health_pb2.HealthCheckResponse.SERVING
 NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
 
