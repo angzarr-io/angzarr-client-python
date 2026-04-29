@@ -436,12 +436,21 @@ class TestRunSupervisor:
         # Probe was called multiple times — the supervisor stayed alive.
         assert raiser.calls >= 2
         assert all(status == NOT_SERVING for _, status in health.calls)
-        # `_LOG.exception` records the logger message at ERROR level with
-        # exc_info attached.
-        raise_records = [
-            r for r in caplog.records if "raiser" in r.getMessage() and r.exc_info
+        # Audit #90: panic logged at WARN (not ERROR) with structured
+        # `probe` + `error` fields rather than a traceback. Mirrors
+        # Rust's `warn!(probe, error=%msg, "readiness probe panicked")`.
+        panic_records = [
+            r
+            for r in caplog.records
+            if "panicked" in r.getMessage()
+            and r.levelname == "WARNING"
+            and getattr(r, "probe", None) == "raiser"
+            and getattr(r, "error", None)
         ]
-        assert raise_records, "expected an exception log naming the raising probe"
+        assert panic_records, (
+            "expected a WARN 'readiness probe panicked' log with structured "
+            "probe + error fields"
+        )
 
     async def test_logs_distinct_warning_on_timeout(self, caplog) -> None:
         slow = _SlowProbe("slow", delay=1.0)
