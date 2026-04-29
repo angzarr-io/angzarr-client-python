@@ -231,11 +231,33 @@ async def _run_server_async(
     try:
         await handle.server.wait_for_termination()
     finally:
+        # Audit #83: shut down in two phases.
+        # 1. Cancel the supervisor and wait for it to exit so any
+        #    in-flight `health_servicer.set` finishes before we publish
+        #    the final state. Only `CancelledError` is expected here;
+        #    any other exception is a real bug and propagates.
+        # 2. Flip every registered health name to NOT_SERVING so K8s
+        #    readiness goes red and the load balancer drains the pod.
         supervisor_task.cancel()
         try:
             await supervisor_task
-        except (asyncio.CancelledError, BaseException):
+        except asyncio.CancelledError:
             pass
+        await _publish_shutdown_status(handle.health_servicer, service_names)
+        if logger:
+            logger.info("server_shutdown", service=service_name, domain=domain)
+
+
+async def _publish_shutdown_status(health_servicer, service_names: list[str]) -> None:
+    """Audit #83: flip every registered health name to ``NOT_SERVING``
+    so the K8s load balancer drains the pod. Extracted so the shutdown
+    publish can be unit-tested in isolation from the runner's transport
+    plumbing.
+    """
+    for name in service_names:
+        await health_servicer.set(
+            name, health_pb2.HealthCheckResponse.NOT_SERVING
+        )
 
 
 def run_server(
