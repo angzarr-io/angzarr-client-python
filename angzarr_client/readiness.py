@@ -272,8 +272,15 @@ async def run_supervisor(
             except asyncio.TimeoutError:
                 _LOG.warning("readiness probe timed out", extra={"probe": probe.name})
                 ok = False
-            except Exception:  # noqa: BLE001 — supervisor is hard-isolated
-                _LOG.exception("readiness probe %r raised", probe.name)
+            except Exception as exc:  # noqa: BLE001 — supervisor is hard-isolated
+                # Audit #90: align with Rust `warn!(probe, error=%msg,
+                # "readiness probe panicked")`. WARN level matches Rust;
+                # `_LOG.exception` would have logged at ERROR with a
+                # full traceback, asymmetric on alert thresholds.
+                _LOG.warning(
+                    "readiness probe panicked",
+                    extra={"probe": probe.name, "error": str(exc)},
+                )
                 ok = False
             else:
                 if not ok:

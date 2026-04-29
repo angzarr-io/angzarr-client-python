@@ -189,18 +189,25 @@ async def _run_server_async(
 
     transport_type = os.environ.get("TRANSPORT_TYPE", "tcp").lower()
 
-    if logger:
-        logger.info(
-            "server_started",
-            service=service_name,
-            domain=domain,
-            transport=transport_type,
-            address=handle.address,
-        )
-    else:
-        print(
-            f"Server started: {service_name} ({domain}) on {handle.address} ({transport_type})"
-        )
+    # Audit #91: default to a module-level structlog logger when caller
+    # didn't supply one — preserves structured fields across deployments
+    # that don't explicitly initialize logging. Pre-fix this branch fell
+    # through to `print()` which dropped fields entirely.
+    if logger is None:
+        logger = structlog.get_logger(__name__)
+
+    # Audit #89: cross-language log shape. Same event name + same field
+    # set on Rust + Python so operators querying logs by `service` /
+    # `name` / `transport` / `address` see equivalent records from pods
+    # of either language. `name` is the router identifier (saga/PM name
+    # or aggregate domain); `service` is the gRPC service constant.
+    logger.info(
+        "server_started",
+        service=service_name,
+        name=domain,
+        transport=transport_type,
+        address=handle.address,
+    )
 
     await handle.server.start()
     handle.transport_signal.mark_bound()
@@ -244,8 +251,7 @@ async def _run_server_async(
         except asyncio.CancelledError:
             pass
         await _publish_shutdown_status(handle.health_servicer, service_names)
-        if logger:
-            logger.info("server_shutdown", service=service_name, domain=domain)
+        logger.info("server_shutdown", service=service_name, name=domain)
 
 
 async def _publish_shutdown_status(health_servicer, service_names: list[str]) -> None:

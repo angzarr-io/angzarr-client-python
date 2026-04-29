@@ -365,3 +365,39 @@ def test_saga_dispatch_raises_on_missing_event_payload():
         router.dispatch(request)
     assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
     assert "missing event payload" in exc.value.details()
+
+
+def test_saga_dispatch_garbage_payload_surfaces_invalid_argument():
+    """Audit #87: malformed Any.value bytes raise DispatchError(
+    INVALID_ARGUMENT, code=ANY_DECODE_FAILED). Pre-fix the unguarded
+    ParseFromString propagated google.protobuf.message.DecodeError up
+    to _translate_and_abort's catch-all and landed as INTERNAL — Rust's
+    macro-emitted dispatch returns INVALID_ARGUMENT from the same site.
+    """
+    import grpc
+    import pytest
+
+    from angzarr_client.error_codes import codes, keys
+    from angzarr_client.router.dispatch import DispatchError
+
+    @saga(name="s", source="order", target="inventory")
+    class S:
+        @handles(OrderCreated)
+        def on(self, event, destinations):
+            return None
+
+    router = Router("sagas").with_handler(S, lambda: S()).build()
+    request = SagaHandleRequest()
+    request.source.cover.CopyFrom(Cover(domain="order"))
+    page = request.source.pages.add()
+    page.header.sequence = 0
+    # Malformed Any: matching type_url, garbage bytes.
+    page.event.type_url = TYPE_URL_PREFIX + OrderCreated.DESCRIPTOR.full_name
+    page.event.value = b"\xff\xff\xff\xff"  # not a valid OrderCreated body
+
+    with pytest.raises(DispatchError) as exc:
+        router.dispatch(request)
+    assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert exc.value.error_code == codes.ANY_DECODE_FAILED
+    assert keys.TYPE_URL in exc.value.extras
+    assert keys.CAUSE in exc.value.extras

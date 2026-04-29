@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 import grpc
 from google.protobuf.any_pb2 import Any as ProtoAny
+from google.protobuf.message import DecodeError
 
 from angzarr_client.destinations import Destinations
 from angzarr_client.helpers import TYPE_URL_PREFIX, propagate_edition_from
@@ -113,6 +114,57 @@ def _collect_method_names(cls: type, sentinel: str) -> list[tuple[Any, str]]:
     return out
 
 
+#: Decode failures we surface as INVALID_ARGUMENT. Real protobuf
+#: messages raise ``DecodeError``; user-supplied or test-fixture
+#: messages may raise ``UnicodeDecodeError`` / ``ValueError`` when
+#: their custom ``ParseFromString`` encounters garbage. All represent
+#: "the bytes on the wire don't match the declared type" — INTERNAL
+#: would mislead operators about the failure source.
+_DECODE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    DecodeError,
+    UnicodeDecodeError,
+    ValueError,
+)
+
+
+def _parse_any(target, value: bytes, type_url: str) -> None:
+    """Audit #87: decode raw Any bytes into ``target``, surfacing malformed
+    payloads as ``INVALID_ARGUMENT`` with the static
+    ``ANY_DECODE_FAILED`` code/message. Without the wrap, a bad payload
+    propagates ``DecodeError`` (or ``UnicodeDecodeError`` /
+    ``ValueError`` from custom ``ParseFromString`` impls) up to
+    ``_translate_and_abort``'s catch-all and lands as ``INTERNAL`` —
+    Rust's macro-emitted dispatch returns ``INVALID_ARGUMENT`` from the
+    same site.
+    """
+    try:
+        target.ParseFromString(value)
+    except _DECODE_EXCEPTIONS as e:
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.ANY_DECODE_FAILED,
+            error_code=codes.ANY_DECODE_FAILED,
+            extras={keys.TYPE_URL: type_url, keys.CAUSE: str(e)},
+        ) from e
+
+
+def _unpack_any(any_msg, target) -> bool:
+    """Audit #87: ``Any.Unpack`` wrapper that surfaces malformed payloads
+    as ``INVALID_ARGUMENT``. Returns True on successful decode, False on
+    type-URL mismatch (the Unpack contract); raises only on malformed
+    bytes.
+    """
+    try:
+        return any_msg.Unpack(target)
+    except _DECODE_EXCEPTIONS as e:
+        raise DispatchError(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            messages.ANY_DECODE_FAILED,
+            error_code=codes.ANY_DECODE_FAILED,
+            extras={keys.TYPE_URL: any_msg.type_url, keys.CAUSE: str(e)},
+        ) from e
+
+
 def _accepts_source_cover(method: Callable) -> bool:
     """Return True if ``method`` declares a ``source_cover`` parameter.
 
@@ -202,7 +254,7 @@ def _rebuild_state(instance: Any, prior_events) -> Any:
         for event_type, _ in applier_types:
             if event_type.DESCRIPTOR.full_name == suffix:
                 evt = event_type()
-                evt.ParseFromString(event_any.value)
+                _parse_any(evt, event_any.value, event_any.type_url)
                 applier(state, evt)
                 break
     return state
@@ -272,7 +324,7 @@ def dispatch_command(
 
             # Decode the command and invoke the single matching handler.
             cmd = cmd_type()
-            cmd.ParseFromString(command_any.value)
+            _parse_any(cmd, command_any.value, command_any.type_url)
 
             inst = factory()
             state = _rebuild_state(inst, prior)
@@ -295,12 +347,12 @@ def _dispatch_notification(
 ) -> BusinessResponse:
     """Route a Notification to all matching @rejected handlers; merge compensation."""
     notification = _types.Notification()
-    notification.ParseFromString(command_any.value)
+    _parse_any(notification, command_any.value, command_any.type_url)
 
     # Unpack RejectionNotification from the notification's payload Any.
     rejection = _types.RejectionNotification()
     if notification.HasField("payload"):
-        notification.payload.Unpack(rejection)
+        _unpack_any(notification.payload, rejection)
 
     # Extract (domain, command-suffix) from the rejected command book.
     source_domain = ""
@@ -385,6 +437,21 @@ def dispatch_fact(factories: list[Factory], request: Any) -> EventBook:
     base_seq = int(prior.next_sequence) if prior is not None else 0
     current_seq = base_seq
 
+    # Audit #88: build the handler instance + rebuild state ONCE per
+    # request, not per (fact-page × handler-method). Mirrors Rust's
+    # `__angzarr_dispatch_fact` which initializes state from
+    # `prior_events` at the top of the function and reuses it across
+    # the fact loop. Pre-fix Python was rebuilding state O(N) times
+    # for N facts.
+    handler_table: list[tuple[Any, Any, list[tuple[Any, str]]]] = []
+    for cls, factory in factories:
+        method_table = _collect_method_names(cls, "__angzarr_handles_fact__")
+        if not method_table:
+            continue
+        inst = factory()
+        state = _rebuild_state(inst, prior)
+        handler_table.append((inst, state, method_table))
+
     for page in facts.pages:
         if not page.HasField("event"):
             continue
@@ -393,17 +460,13 @@ def dispatch_fact(factories: list[Factory], request: Any) -> EventBook:
             continue
         suffix = type_url[len(TYPE_URL_PREFIX) :]
 
-        for cls, factory in factories:
-            for evt_type, method_name in _collect_method_names(
-                cls, "__angzarr_handles_fact__"
-            ):
+        for inst, state, method_table in handler_table:
+            for evt_type, method_name in method_table:
                 if evt_type.DESCRIPTOR.full_name != suffix:
                     continue
 
-                inst = factory()
-                state = _rebuild_state(inst, prior)
                 evt = evt_type()
-                evt.ParseFromString(page.event.value)
+                _parse_any(evt, page.event.value, page.event.type_url)
                 emitted = getattr(inst, method_name)(evt, state)
 
                 pages = _pack_events(emitted, base_seq=current_seq).pages
@@ -457,7 +520,7 @@ def dispatch_replay(factories: list[Factory], request: Any) -> Any:
         any_state = request.base_snapshot.state
         if any_state.value:
             state = state_type()
-            any_state.Unpack(state)
+            _unpack_any(any_state, state)
 
     # Apply each event through the matching @applies method.
     appliers = _appliers_for(inst)
@@ -475,7 +538,7 @@ def dispatch_replay(factories: list[Factory], request: Any) -> Any:
         for event_type, _ in applier_types:
             if event_type.DESCRIPTOR.full_name == suffix:
                 evt = event_type()
-                evt.ParseFromString(any_evt.value)
+                _parse_any(evt, any_evt.value, any_evt.type_url)
                 applier(state, evt)
                 break
 
@@ -548,7 +611,7 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
             inst = factory()
             # Decode the trigger event.
             evt = evt_type()
-            evt.ParseFromString(trigger.event.value)
+            _parse_any(evt, trigger.event.value, trigger.event.type_url)
             method = getattr(inst, method_name)
             kwargs = {}
             if _accepts_source_cover(method):
@@ -648,7 +711,7 @@ def dispatch_process_manager(
             inst = factory()
             state = _rebuild_state(inst, process_state)
             evt = evt_type()
-            evt.ParseFromString(last.event.value)
+            _parse_any(evt, last.event.value, last.event.type_url)
             method = getattr(inst, method_name)
             if _accepts_source_cover(method):
                 result = method(evt, state, destinations, source_cover=trigger_cover)
@@ -746,7 +809,7 @@ def dispatch_projector(factories: list[Factory], events: EventBook) -> Projectio
                 if evt_type.DESCRIPTOR.full_name != suffix:
                     continue
                 evt = evt_type()
-                evt.ParseFromString(page.event.value)
+                _parse_any(evt, page.event.value, page.event.type_url)
                 getattr(inst, method_name)(evt)
 
     result = Projection()
@@ -871,7 +934,7 @@ def dispatch_upcaster(
                     continue
                 inst = factory()
                 old_evt = from_type()
-                current.Unpack(old_evt)
+                _unpack_any(current, old_evt)
                 new_evt = getattr(inst, method_name)(old_evt)
                 new_any = ProtoAny()
                 new_any.type_url = TYPE_URL_PREFIX + new_evt.DESCRIPTOR.full_name
