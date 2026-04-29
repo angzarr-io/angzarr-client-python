@@ -32,18 +32,17 @@ from angzarr_client.helpers import (
     event_pages,
     # CommandResponse helpers
     events_from_response,
-    explicit_edition,
     has_correlation_id,
-    implicit_edition,
-    is_main_timeline,
     # Edition helpers
-    main_timeline,
+    implicit_edition,
     new_command_book,
     new_command_page,
     # Construction helpers
     new_cover,
     # EventBook helpers
     next_sequence,
+    # Audit #86: edition propagation helper
+    propagate_edition_from,
     # Timestamp helpers
     now,
     parse_timestamp,
@@ -301,46 +300,17 @@ class TestUuidConversion:
 class TestEditionHelpers:
     """Tests for edition helper functions."""
 
-    def test_main_timeline(self) -> None:
-        """main_timeline returns default edition."""
-        ed = main_timeline()
-        assert ed.name == DEFAULT_EDITION
-        assert len(ed.divergences) == 0
-
     def test_implicit_edition(self) -> None:
         """implicit_edition creates named edition without divergences."""
         ed = implicit_edition("branch-a")
         assert ed.name == "branch-a"
         assert len(ed.divergences) == 0
 
-    def test_explicit_edition(self) -> None:
-        """explicit_edition creates edition with divergences."""
-        divergences = [
-            DomainDivergence(domain="orders", sequence=5),
-            DomainDivergence(domain="inventory", sequence=10),
-        ]
-        ed = explicit_edition("branch-b", divergences)
-        assert ed.name == "branch-b"
-        assert len(ed.divergences) == 2
-
-    def test_is_main_timeline_none(self) -> None:
-        """is_main_timeline returns True for None."""
-        assert is_main_timeline(None) is True
-
-    def test_is_main_timeline_empty_name(self) -> None:
-        """is_main_timeline returns True for empty name."""
-        ed = Edition()
-        assert is_main_timeline(ed) is True
-
-    def test_is_main_timeline_default(self) -> None:
-        """is_main_timeline returns True for default edition."""
-        ed = Edition(name=DEFAULT_EDITION)
-        assert is_main_timeline(ed) is True
-
-    def test_is_main_timeline_other(self) -> None:
-        """is_main_timeline returns False for other editions."""
-        ed = Edition(name="speculative")
-        assert is_main_timeline(ed) is False
+    # Audit #86: dead helpers (main_timeline, explicit_edition,
+    # is_main_timeline, edition_is_empty, edition_name_or_default)
+    # deleted — they were stillborn from the unfinished
+    # edition-propagation feature. The live propagation contract is
+    # tested under TestPropagateEditionFrom below.
 
     def test_divergence_for_found(self) -> None:
         """divergence_for returns sequence when found."""
@@ -800,24 +770,8 @@ class TestAdditionalHelpers:
 
         assert root_id_text(Cover()) == ""
 
-    def test_edition_is_empty(self) -> None:
-        from angzarr_client.helpers import edition_is_empty
-        from angzarr_client.proto.angzarr import Edition
-
-        assert edition_is_empty(None) is True
-        assert edition_is_empty(Edition()) is True
-        assert edition_is_empty(Edition(name="v1")) is False
-
-    def test_edition_name_or_default(self) -> None:
-        from angzarr_client.helpers import (
-            DEFAULT_EDITION,
-            edition_name_or_default,
-        )
-        from angzarr_client.proto.angzarr import Edition
-
-        assert edition_name_or_default(None) == DEFAULT_EDITION
-        assert edition_name_or_default(Edition()) == DEFAULT_EDITION
-        assert edition_name_or_default(Edition(name="speculative")) == "speculative"
+    # Audit #86: edition_is_empty + edition_name_or_default deleted as
+    # dead-on-arrival helpers; their tests removed in lockstep.
 
     def test_type_matches_none_returns_false(self) -> None:
         from angzarr_client.helpers import type_matches
@@ -912,6 +866,49 @@ class TestAdditionalHelpers:
         # Patch Unpack on the Any to force the except branch
         monkeypatch.setattr(type(page.event), "Unpack", boom)
         assert decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover) is None
+
+
+class TestPropagateEditionFrom:
+    """Audit #86: always-override semantics — outgoing.edition is
+    overwritten with source.edition (full struct, including divergences).
+    Mirrors Rust ``Cover::propagate_edition_from``."""
+
+    def test_copies_name_when_outgoing_unset(self) -> None:
+        source = Cover()
+        source.edition.name = "speculative"
+        outgoing = Cover()
+        propagate_edition_from(outgoing, source)
+        assert outgoing.HasField("edition")
+        assert outgoing.edition.name == "speculative"
+
+    def test_overrides_handler_set_edition(self) -> None:
+        source = Cover()
+        source.edition.name = "alpha"
+        outgoing = Cover()
+        outgoing.edition.name = "beta"
+        propagate_edition_from(outgoing, source)
+        assert outgoing.edition.name == "alpha", "always-override semantics: source wins"
+
+    def test_clears_when_source_unset(self) -> None:
+        source = Cover()
+        # source has no edition; outgoing had something explicit.
+        outgoing = Cover()
+        outgoing.edition.name = "leftover"
+        propagate_edition_from(outgoing, source)
+        assert not outgoing.HasField("edition"), (
+            "source had no edition → outgoing must match (cleared)"
+        )
+
+    def test_preserves_divergences(self) -> None:
+        source = Cover()
+        source.edition.name = "speculative"
+        source.edition.divergences.add(domain="order", sequence=5)
+        outgoing = Cover()
+        propagate_edition_from(outgoing, source)
+        assert outgoing.edition.name == "speculative"
+        assert len(outgoing.edition.divergences) == 1
+        assert outgoing.edition.divergences[0].domain == "order"
+        assert outgoing.edition.divergences[0].sequence == 5
 
 
 class TestIdempotencyKey:
