@@ -264,9 +264,7 @@ def _then_command_edition(world, expected):
 @then("the emitted command's cover has no edition set")
 def _then_command_no_edition(world):
     cover = _emitted_command_cover(world)
-    assert not cover.HasField("edition"), (
-        f"expected no edition; got {cover.edition!r}"
-    )
+    assert not cover.HasField("edition"), f"expected no edition; got {cover.edition!r}"
 
 
 @then(parsers.parse('the emitted event\'s cover has edition "{expected}"'))

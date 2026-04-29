@@ -887,7 +887,9 @@ class TestPropagateEditionFrom:
         outgoing = Cover()
         outgoing.edition.name = "beta"
         propagate_edition_from(outgoing, source)
-        assert outgoing.edition.name == "alpha", "always-override semantics: source wins"
+        assert (
+            outgoing.edition.name == "alpha"
+        ), "always-override semantics: source wins"
 
     def test_clears_when_source_unset(self) -> None:
         source = Cover()
@@ -895,9 +897,9 @@ class TestPropagateEditionFrom:
         outgoing = Cover()
         outgoing.edition.name = "leftover"
         propagate_edition_from(outgoing, source)
-        assert not outgoing.HasField("edition"), (
-            "source had no edition → outgoing must match (cleared)"
-        )
+        assert not outgoing.HasField(
+            "edition"
+        ), "source had no edition → outgoing must match (cleared)"
 
     def test_preserves_divergences(self) -> None:
         source = Cover()

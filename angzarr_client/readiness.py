@@ -270,18 +270,14 @@ async def run_supervisor(
             try:
                 ok = await asyncio.wait_for(probe.check(), timeout=timeout)
             except asyncio.TimeoutError:
-                _LOG.warning(
-                    "readiness probe timed out", extra={"probe": probe.name}
-                )
+                _LOG.warning("readiness probe timed out", extra={"probe": probe.name})
                 ok = False
             except Exception:  # noqa: BLE001 — supervisor is hard-isolated
                 _LOG.exception("readiness probe %r raised", probe.name)
                 ok = False
             else:
                 if not ok:
-                    _LOG.warning(
-                        "readiness probe failed", extra={"probe": probe.name}
-                    )
+                    _LOG.warning("readiness probe failed", extra={"probe": probe.name})
             if not ok:
                 all_ok = False
         status = SERVING if all_ok else NOT_SERVING

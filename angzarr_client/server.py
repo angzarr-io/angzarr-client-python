@@ -255,9 +255,7 @@ async def _publish_shutdown_status(health_servicer, service_names: list[str]) ->
     plumbing.
     """
     for name in service_names:
-        await health_servicer.set(
-            name, health_pb2.HealthCheckResponse.NOT_SERVING
-        )
+        await health_servicer.set(name, health_pb2.HealthCheckResponse.NOT_SERVING)
 
 
 def run_server(

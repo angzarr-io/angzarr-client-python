@@ -563,9 +563,7 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
     # CommandBook / EventBook inherits the source cover's edition,
     # even if the handler set its own.
     if source_cover is not None:
-        _propagate_edition_into_books(
-            source_cover, response.commands, response.events
-        )
+        _propagate_edition_into_books(source_cover, response.commands, response.events)
 
     # P2.5 / audit finding #36: "no handler matched" is a normal runtime
     # condition (no saga subscribed to this event type), not a failure.
@@ -688,13 +686,9 @@ def dispatch_process_manager(
     # inherits the trigger cover's edition, even if the handler set
     # its own.
     if trigger_cover is not None:
-        _propagate_edition_into_books(
-            trigger_cover, response.commands, response.facts
-        )
+        _propagate_edition_into_books(trigger_cover, response.commands, response.facts)
         if response.HasField("process_events"):
-            propagate_edition_from(
-                response.process_events.cover, trigger_cover
-            )
+            propagate_edition_from(response.process_events.cover, trigger_cover)
 
     # Audit findings #36/#37: "no handler matched" is a normal runtime
     # condition (no PM subscribed to this trigger). Log at info-level for

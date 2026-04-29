@@ -494,12 +494,8 @@ class TestRunSupervisor:
 
         # Probe-returned-False path produces "readiness probe failed", NOT
         # "timed out" / "raised".
-        assert any(
-            "readiness probe failed" in r.getMessage() for r in caplog.records
-        )
-        assert not any(
-            "timed out" in r.getMessage() for r in caplog.records
-        )
+        assert any("readiness probe failed" in r.getMessage() for r in caplog.records)
+        assert not any("timed out" in r.getMessage() for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

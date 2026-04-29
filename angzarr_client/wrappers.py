@@ -249,7 +249,11 @@ class CommandBookW:
     def cache_key(self) -> str:
         """Generate a cache key based on edition + domain + root."""
         cover = self._cover()
-        root_hex = cover.root.value.hex() if cover is not None and cover.HasField("root") else ""
+        root_hex = (
+            cover.root.value.hex()
+            if cover is not None and cover.HasField("root")
+            else ""
+        )
         return f"{self.edition() or ''}:{self.domain()}:{root_hex}"
 
     def cover_wrapper(self) -> "CoverW":

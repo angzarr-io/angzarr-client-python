@@ -580,6 +580,7 @@ class TestCommandBookWAdditional:
     def test_cache_key_matches_sibling_wrappers(self) -> None:
         # Audit #75: parity with CoverW/EventBookW formula across all book wrappers.
         from angzarr_client.wrappers import CoverW
+
         proto = CommandBook()
         proto.cover.domain = "orders"
         proto.cover.edition.name = "alt"

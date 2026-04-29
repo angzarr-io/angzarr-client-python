@@ -310,8 +310,7 @@ class TestRunServerLogging:
         publishes = [
             (args[0], args[1])
             for args, _ in (call for call in calls)
-            if len(args) >= 2
-            and args[1] == health_pb2.HealthCheckResponse.NOT_SERVING
+            if len(args) >= 2 and args[1] == health_pb2.HealthCheckResponse.NOT_SERVING
         ]
         published_names = {name for name, _ in publishes}
         assert "" in published_names
@@ -332,9 +331,7 @@ class TestPublishShutdownStatus:
 
         calls = servicer.set.await_args_list
         assert len(calls) == 3
-        for call, expected_name in zip(
-            calls, ["", "svc.A", "svc.B"], strict=True
-        ):
+        for call, expected_name in zip(calls, ["", "svc.A", "svc.B"], strict=True):
             args, _ = call
             assert args[0] == expected_name
             assert args[1] == health_pb2.HealthCheckResponse.NOT_SERVING
