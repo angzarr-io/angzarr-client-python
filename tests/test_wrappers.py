@@ -565,16 +565,25 @@ class TestCommandBookWAdditional:
         assert CommandBookW(proto).routing_key() == "orders"
 
     def test_cache_key_with_root(self) -> None:
+        # Audit #75: empty edition → empty leading segment, NOT literal "None".
         test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
         proto = CommandBook()
         proto.cover.domain = "orders"
         proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
-        assert CommandBookW(proto).cache_key() == f"None:orders:{test_uuid.bytes.hex()}"
+        assert CommandBookW(proto).cache_key() == f":orders:{test_uuid.bytes.hex()}"
 
     def test_cache_key_without_root(self) -> None:
         proto = CommandBook()
         proto.cover.domain = "orders"
-        assert CommandBookW(proto).cache_key() == "None:orders:"
+        assert CommandBookW(proto).cache_key() == ":orders:"
+
+    def test_cache_key_matches_sibling_wrappers(self) -> None:
+        # Audit #75: parity with CoverW/EventBookW formula across all book wrappers.
+        from angzarr_client.wrappers import CoverW
+        proto = CommandBook()
+        proto.cover.domain = "orders"
+        proto.cover.edition.name = "alt"
+        assert CommandBookW(proto).cache_key() == CoverW(proto.cover).cache_key()
 
     def test_cover_wrapper(self) -> None:
         proto = CommandBook()
@@ -619,6 +628,38 @@ class TestQueryWAdditional:
         proto = Query()
         proto.cover.domain = "inv"
         assert QueryW(proto).routing_key() == "inv"
+
+    # Audit #81: edition / root_id_hex / cache_key parity with sibling wrappers.
+
+    def test_edition_returns_value(self) -> None:
+        proto = Query()
+        proto.cover.edition.name = "alt"
+        assert QueryW(proto).edition() == "alt"
+
+    def test_edition_none_when_unset(self) -> None:
+        assert QueryW(Query()).edition() is None
+
+    def test_root_id_hex_returns_value(self) -> None:
+        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
+        proto = Query()
+        proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
+        assert QueryW(proto).root_id_hex() == test_uuid.bytes.hex()
+
+    def test_root_id_hex_empty_when_no_cover(self) -> None:
+        assert QueryW(Query()).root_id_hex() == ""
+
+    def test_cache_key_full_shape(self) -> None:
+        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
+        proto = Query()
+        proto.cover.domain = "inv"
+        proto.cover.edition.name = "alt"
+        proto.cover.root.CopyFrom(uuid_to_proto(test_uuid))
+        assert QueryW(proto).cache_key() == f"alt:inv:{test_uuid.bytes.hex()}"
+
+    def test_cache_key_empty_edition_no_root(self) -> None:
+        proto = Query()
+        proto.cover.domain = "inv"
+        assert QueryW(proto).cache_key() == ":inv:"
 
     def test_cover_wrapper_returns_empty_when_no_cover(self) -> None:
         assert QueryW(Query()).cover_wrapper().domain() == UNKNOWN_DOMAIN

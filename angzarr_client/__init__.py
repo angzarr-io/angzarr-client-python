@@ -10,6 +10,8 @@ from .client import (
     DomainClient,
     QueryClient,
     SpeculativeClient,
+    TransportMode,
+    resolve_ch_endpoint,
 )
 from .compensation import (
     CompensationContext,
@@ -161,6 +163,8 @@ __all__ = [
     "QueryClient",
     "SpeculativeClient",
     "DomainClient",
+    "TransportMode",
+    "resolve_ch_endpoint",
     # Router (unified)
     "Router",
     "BuildError",

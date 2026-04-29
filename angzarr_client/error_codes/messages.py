@@ -32,6 +32,8 @@ ENDPOINT_PARSE_FAILED = "failed to parse fallback endpoint"
 ENDPOINT_INVALID_URI = "endpoint URI is invalid"
 CONNECTION_FAILED = "connection failed"
 CONNECTION_FAILED_MAX_RETRIES = "connection failed after max retries"
+TRANSPORT_ERROR = "transport error"
+GRPC_ERROR = "grpc error"
 INVALID_TRANSPORT_MODE = "invalid transport mode env value"
 INVALID_PORT = "invalid port env value"
 

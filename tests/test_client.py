@@ -608,3 +608,26 @@ class TestCorrelationIdMetadataPropagation:
         client.get_event_book(Query())  # default-constructed, no cover
         md = self._captured_metadata(client._stub.GetEventBook)
         assert all(k != self.HEADER for k, _ in md)
+
+
+class TestTopLevelTransportExports:
+    """Audit #79: TransportMode + resolve_ch_endpoint reachable from
+    the crate root, matching Rust's `lib.rs` `pub use transport::{...}`."""
+
+    def test_transport_mode_reachable_at_top_level(self) -> None:
+        import angzarr_client
+        from angzarr_client.client import TransportMode as ClientTransportMode
+
+        assert angzarr_client.TransportMode is ClientTransportMode
+
+    def test_resolve_ch_endpoint_reachable_at_top_level(self) -> None:
+        import angzarr_client
+        from angzarr_client.client import resolve_ch_endpoint as client_resolve
+
+        assert angzarr_client.resolve_ch_endpoint is client_resolve
+
+    def test_listed_in_dunder_all(self) -> None:
+        import angzarr_client
+
+        assert "TransportMode" in angzarr_client.__all__
+        assert "resolve_ch_endpoint" in angzarr_client.__all__
