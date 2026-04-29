@@ -77,13 +77,25 @@ def command_handler(
     return decorate
 
 
-def saga(*, name: str, source: str, target: str) -> Callable[[T], T]:
+def saga(
+    *, name: str, source: str, target: str, sync: bool = False
+) -> Callable[[T], T]:
     """Mark a class as a saga translating events from ``source`` to commands
     for ``target``.
+
+    Audit #74: ``sync`` declares whether commands emitted to ``target``
+    ever use sync mode (SIMPLE / CASCADE / DECISION / ISOLATED). Default
+    ``False`` — target commands flow through the async bus and the
+    readiness supervisor will not probe ``target``'s coordinator. Flip to
+    ``True`` when the saga blocks on the downstream response.
     """
 
     def decorate(cls: T) -> T:
-        _stamp(cls, "saga", {"name": name, "source": source, "target": target})
+        _stamp(
+            cls,
+            "saga",
+            {"name": name, "source": source, "target": target, "sync": sync},
+        )
         return cls
 
     return decorate
@@ -96,12 +108,27 @@ def process_manager(
     sources: list[str],
     targets: list[str],
     state: type,
+    sync_targets: list[str] | None = None,
 ) -> Callable[[T], T]:
     """Mark a class as a process manager.
 
     ``pm_domain`` is the PM's own state-storage domain; ``sources`` lists
     incoming event domains; ``targets`` lists downstream command domains.
+
+    Audit #74: ``sync_targets`` declares the subset of ``targets`` the PM
+    ever addresses with sync mode (SIMPLE / CASCADE / DECISION /
+    ISOLATED) — those are the targets whose coordinator must be reachable
+    for readiness. Default ``None`` (no sync targets) — every command
+    goes through the async bus and the readiness supervisor will not
+    probe any target's coordinator.
+
+    Raises ``ValueError`` if ``sync_targets`` contains a domain that is
+    not in ``targets``.
     """
+    sync_set = list(sync_targets) if sync_targets else []
+    extra = [t for t in sync_set if t not in targets]
+    if extra:
+        raise ValueError(f"sync_targets {extra!r} are not in targets {targets!r}")
 
     def decorate(cls: T) -> T:
         _stamp(
@@ -113,6 +140,7 @@ def process_manager(
                 "sources": sources,
                 "targets": targets,
                 "state": state,
+                "sync_targets": sync_set,
             },
         )
         return cls

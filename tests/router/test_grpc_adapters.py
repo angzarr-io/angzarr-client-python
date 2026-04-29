@@ -17,7 +17,7 @@ the old handler path which remains intact until R15.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import Mock
+from unittest.mock import AsyncMock
 
 import grpc
 from google.protobuf.any_pb2 import Any as ProtoAny
@@ -52,6 +52,8 @@ from tests.fixtures import (
     CreateOrder,
     OrderCompleted,
     OrderCreated,
+    ReserveStock,
+    StockReserved,
 )
 
 
@@ -80,7 +82,7 @@ def _contextual_command(cmd, domain: str = "order") -> ContextualCommand:
 # --------------------------------------------------------------------------
 
 
-def test_command_handler_grpc_handles_successful_command():
+async def test_command_handler_grpc_handles_successful_command():
     @command_handler(domain="order", state=State)
     class Agg:
         @handles(CreateOrder)
@@ -90,14 +92,16 @@ def test_command_handler_grpc_handles_successful_command():
     router = Router("agg").with_handler(Agg, lambda: Agg()).build()
     servicer = CommandHandlerGrpc(router)
 
-    ctx = Mock(spec=grpc.ServicerContext)
-    response = servicer.Handle(_contextual_command(CreateOrder(order_id="o-1")), ctx)
+    ctx = AsyncMock()
+    response = await servicer.Handle(
+        _contextual_command(CreateOrder(order_id="o-1")), ctx
+    )
 
     assert response.HasField("events")
     assert len(response.events.pages) == 1
 
 
-def test_command_handler_grpc_translates_rejected_error_to_failed_precondition():
+async def test_command_handler_grpc_translates_rejected_error_to_failed_precondition():
     @command_handler(domain="order", state=State)
     class Agg:
         @handles(CreateOrder)
@@ -107,16 +111,16 @@ def test_command_handler_grpc_translates_rejected_error_to_failed_precondition()
     router = Router("agg").with_handler(Agg, lambda: Agg()).build()
     servicer = CommandHandlerGrpc(router)
 
-    ctx = Mock(spec=grpc.ServicerContext)
-    servicer.Handle(_contextual_command(CreateOrder(order_id="o-1")), ctx)
+    ctx = AsyncMock()
+    await servicer.Handle(_contextual_command(CreateOrder(order_id="o-1")), ctx)
 
     # The servicer should have called context.abort with FAILED_PRECONDITION.
-    ctx.abort.assert_called_once()
-    code, _msg = ctx.abort.call_args[0]
+    ctx.abort.assert_awaited_once()
+    code, _msg = ctx.abort.await_args[0]
     assert code == grpc.StatusCode.FAILED_PRECONDITION
 
 
-def test_command_handler_grpc_translates_dispatch_error_to_invalid_argument():
+async def test_command_handler_grpc_translates_dispatch_error_to_invalid_argument():
     @command_handler(domain="order", state=State)
     class Agg:
         @handles(CreateOrder)
@@ -125,16 +129,16 @@ def test_command_handler_grpc_translates_dispatch_error_to_invalid_argument():
 
     router = Router("agg").with_handler(Agg, lambda: Agg()).build()
     servicer = CommandHandlerGrpc(router)
-    ctx = Mock(spec=grpc.ServicerContext)
+    ctx = AsyncMock()
 
     # Unknown type_url triggers DispatchError(INVALID_ARGUMENT)
-    servicer.Handle(_contextual_command(OrderCompleted(order_id="o-1")), ctx)
-    ctx.abort.assert_called_once()
-    code, _msg = ctx.abort.call_args[0]
+    await servicer.Handle(_contextual_command(OrderCompleted(order_id="o-1")), ctx)
+    ctx.abort.assert_awaited_once()
+    code, _msg = ctx.abort.await_args[0]
     assert code == grpc.StatusCode.INVALID_ARGUMENT
 
 
-def _abort_code_for(exc_to_raise: Exception) -> grpc.StatusCode:
+async def _abort_code_for(exc_to_raise: Exception) -> grpc.StatusCode:
     """Drive a CommandHandlerGrpc dispatch with `exc_to_raise` and return the
     gRPC status code the adapter chose."""
 
@@ -146,59 +150,63 @@ def _abort_code_for(exc_to_raise: Exception) -> grpc.StatusCode:
 
     router = Router("agg").with_handler(Agg, lambda: Agg()).build()
     servicer = CommandHandlerGrpc(router)
-    ctx = Mock(spec=grpc.ServicerContext)
-    servicer.Handle(_contextual_command(CreateOrder(order_id="o-1")), ctx)
-    ctx.abort.assert_called_once()
-    code, _ = ctx.abort.call_args[0]
+    ctx = AsyncMock()
+    await servicer.Handle(_contextual_command(CreateOrder(order_id="o-1")), ctx)
+    ctx.abort.assert_awaited_once()
+    code, _ = ctx.abort.await_args[0]
     return code
 
 
-def test_command_rejected_error_invalid_argument_status_maps_to_invalid_argument():
+async def test_command_rejected_error_invalid_argument_status_maps_to_invalid_argument():
     # Previously collapsed every CommandRejectedError to FAILED_PRECONDITION,
     # losing the rejection's own status_code. Mirrors Rust's From<CommandRejectedError>.
     # Audit #59: factories now take (code, message, details).
     err = CommandRejectedError.invalid_argument("BAD_INPUT", "bad input")
-    assert _abort_code_for(err) == grpc.StatusCode.INVALID_ARGUMENT
+    assert await _abort_code_for(err) == grpc.StatusCode.INVALID_ARGUMENT
 
 
-def test_command_rejected_error_not_found_status_maps_to_not_found():
+async def test_command_rejected_error_not_found_status_maps_to_not_found():
     err = CommandRejectedError.not_found("MISSING_AGGREGATE", "missing aggregate")
-    assert _abort_code_for(err) == grpc.StatusCode.NOT_FOUND
+    assert await _abort_code_for(err) == grpc.StatusCode.NOT_FOUND
 
 
-def test_invalid_argument_error_maps_to_invalid_argument():
+async def test_invalid_argument_error_maps_to_invalid_argument():
     from angzarr_client.errors import InvalidArgumentError
 
     assert (
-        _abort_code_for(InvalidArgumentError("bad")) == grpc.StatusCode.INVALID_ARGUMENT
-    )
-
-
-def test_invalid_timestamp_error_maps_to_invalid_argument():
-    from angzarr_client.errors import InvalidTimestampError
-
-    assert (
-        _abort_code_for(InvalidTimestampError("not rfc3339"))
+        await _abort_code_for(InvalidArgumentError("bad"))
         == grpc.StatusCode.INVALID_ARGUMENT
     )
 
 
-def test_connection_error_maps_to_unavailable():
-    from angzarr_client.errors import ConnectionError as AngzarrConnectionError
-
-    assert _abort_code_for(AngzarrConnectionError("dns")) == grpc.StatusCode.UNAVAILABLE
-
-
-def test_transport_error_maps_to_unavailable():
-    from angzarr_client.errors import TransportError
+async def test_invalid_timestamp_error_maps_to_invalid_argument():
+    from angzarr_client.errors import InvalidTimestampError
 
     assert (
-        _abort_code_for(TransportError(RuntimeError("eof")))
+        await _abort_code_for(InvalidTimestampError("not rfc3339"))
+        == grpc.StatusCode.INVALID_ARGUMENT
+    )
+
+
+async def test_connection_error_maps_to_unavailable():
+    from angzarr_client.errors import ConnectionError as AngzarrConnectionError
+
+    assert (
+        await _abort_code_for(AngzarrConnectionError("dns"))
         == grpc.StatusCode.UNAVAILABLE
     )
 
 
-def test_grpc_error_passes_through_upstream_code():
+async def test_transport_error_maps_to_unavailable():
+    from angzarr_client.errors import TransportError
+
+    assert (
+        await _abort_code_for(TransportError(RuntimeError("eof")))
+        == grpc.StatusCode.UNAVAILABLE
+    )
+
+
+async def test_grpc_error_passes_through_upstream_code():
     import grpc
     from angzarr_client.errors import GRPCError
 
@@ -211,7 +219,7 @@ def test_grpc_error_passes_through_upstream_code():
 
     # GRPCError inspects the upstream code via .grpc_code (post-#59 rename).
     err = GRPCError(_RpcErr())
-    abort_code = _abort_code_for(err)
+    abort_code = await _abort_code_for(err)
     assert abort_code == grpc.StatusCode.RESOURCE_EXHAUSTED
 
 
@@ -220,7 +228,7 @@ def test_grpc_error_passes_through_upstream_code():
 # --------------------------------------------------------------------------
 
 
-def test_saga_grpc_handles_event_translation():
+async def test_saga_grpc_handles_event_translation():
     @saga(name="s", source="order", target="inventory")
     class S:
         @handles(OrderCreated)
@@ -248,8 +256,8 @@ def test_saga_grpc_handles_event_translation():
     req = SagaHandleRequest()
     req.source.CopyFrom(book)
 
-    ctx = Mock(spec=grpc.ServicerContext)
-    response = servicer.Handle(req, ctx)
+    ctx = AsyncMock()
+    response = await servicer.Handle(req, ctx)
 
     assert len(response.commands) == 1
 
@@ -259,7 +267,7 @@ def test_saga_grpc_handles_event_translation():
 # --------------------------------------------------------------------------
 
 
-def test_pm_grpc_handles_trigger_event():
+async def test_pm_grpc_handles_trigger_event():
     from angzarr_client.router import ProcessManagerResponse
 
     @process_manager(
@@ -294,8 +302,8 @@ def test_pm_grpc_handles_trigger_event():
     book.pages.append(page)
     req.trigger.CopyFrom(book)
 
-    ctx = Mock(spec=grpc.ServicerContext)
-    response = servicer.Handle(req, ctx)
+    ctx = AsyncMock()
+    response = await servicer.Handle(req, ctx)
 
     assert len(response.commands) == 1
 
@@ -305,7 +313,7 @@ def test_pm_grpc_handles_trigger_event():
 # --------------------------------------------------------------------------
 
 
-def test_projector_grpc_handles_event_book():
+async def test_projector_grpc_handles_event_book():
     written = []
 
     @projector(name="prj", domains=["order"])
@@ -329,8 +337,8 @@ def test_projector_grpc_handles_event_book():
     page.event.CopyFrom(any_evt)
     book.pages.append(page)
 
-    ctx = Mock(spec=grpc.ServicerContext)
-    response = servicer.Handle(book, ctx)
+    ctx = AsyncMock()
+    response = await servicer.Handle(book, ctx)
 
     assert written == ["o-1"]
     assert response.cover.domain == "order"

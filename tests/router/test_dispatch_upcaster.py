@@ -302,8 +302,8 @@ def test_dispatch_passthrough_with_empty_upcaster():
 # --------------------------------------------------------------------------
 
 
-def test_upcaster_grpc_adapter_delegates_to_router():
-    from unittest.mock import Mock
+async def test_upcaster_grpc_adapter_delegates_to_router():
+    from unittest.mock import AsyncMock
 
     from angzarr_client.router.server import UpcasterGrpc
 
@@ -317,17 +317,17 @@ def test_upcaster_grpc_adapter_delegates_to_router():
     servicer = UpcasterGrpc(router)
 
     request = _request([_page(OrderCreatedV1(order_id="o-1"))])
-    context = Mock()
-    response = servicer.Upcast(request, context)
+    context = AsyncMock()
+    response = await servicer.Upcast(request, context)
 
-    context.abort.assert_not_called()
+    context.abort.assert_not_awaited()
     assert isinstance(response, UpcastResponse)
     assert len(response.events) == 1
     assert response.events[0].event.type_url == TYPE_URL_PREFIX + "order.OrderCreated"
 
 
-def test_upcaster_grpc_adapter_translates_exception_to_internal():
-    from unittest.mock import Mock
+async def test_upcaster_grpc_adapter_translates_exception_to_internal():
+    from unittest.mock import AsyncMock
 
     import grpc
 
@@ -343,15 +343,15 @@ def test_upcaster_grpc_adapter_translates_exception_to_internal():
     servicer = UpcasterGrpc(router)
 
     request = _request([_page(OrderCreatedV1(order_id="o-1"))])
-    context = Mock()
+    context = AsyncMock()
     context.abort.side_effect = grpc.RpcError
     import pytest as _pytest
 
     with _pytest.raises(grpc.RpcError):
-        servicer.Upcast(request, context)
+        await servicer.Upcast(request, context)
 
-    context.abort.assert_called_once()
-    args = context.abort.call_args
+    context.abort.assert_awaited_once()
+    args = context.abort.await_args
     assert args.args[0] == grpc.StatusCode.INTERNAL
 
 
