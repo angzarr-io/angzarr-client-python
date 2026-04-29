@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -105,77 +105,73 @@ class TestConfigureLogging:
         assert called["context_class"] is dict
 
 
+def _fake_server_handle(address: str = "[::]:9999"):
+    """Build a ``ServerHandle`` whose ``server.wait_for_termination`` raises
+    ``KeyboardInterrupt`` so ``run_server`` exits the asyncio loop cleanly.
+    """
+    fake_server = MagicMock()
+    fake_server.start = AsyncMock()
+    fake_server.wait_for_termination = AsyncMock(side_effect=KeyboardInterrupt)
+    handle = srv.ServerHandle(
+        server=fake_server,
+        address=address,
+        transport_signal=srv.TransportSignal(),
+        health_servicer=AsyncMock(),
+    )
+    return handle, fake_server
+
+
 class TestCreateServer:
-    # Audit #68: create_server now returns (server, address, health_servicer)
-    # so the per-kind runner can pass the health servicer to the
-    # readiness supervisor.
     def test_tcp_default_builds_server(self, monkeypatch) -> None:
         add_servicer = MagicMock()
         servicer = object()
-        server, address, health_servicer = srv.create_server(
+        handle = srv.create_server(
             add_servicer_func=add_servicer,
             servicer=servicer,
             service_name="angzarr_client.proto.angzarr.Test",
         )
         assert add_servicer.call_count == 1
-        assert address.startswith("[::]:")
-        assert health_servicer is not None
+        assert handle.address.startswith("[::]:")
+        assert isinstance(handle.transport_signal, srv.TransportSignal)
+        # Health starts NOT_SERVING for both the overall ("") and named services.
+        from grpc_health.v1 import health_pb2
+
+        assert (
+            handle.health_servicer._server_status[""]
+            == health_pb2.HealthCheckResponse.NOT_SERVING
+        )
+        assert (
+            handle.health_servicer._server_status["angzarr_client.proto.angzarr.Test"]
+            == health_pb2.HealthCheckResponse.NOT_SERVING
+        )
 
     def test_uds_builds_server(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setenv("TRANSPORT_TYPE", "uds")
         monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
         add_servicer = MagicMock()
         servicer = object()
-        server, address, _hs = srv.create_server(
+        handle = srv.create_server(
             add_servicer_func=add_servicer, servicer=servicer
         )
-        assert address.startswith("unix:")
+        assert handle.address.startswith("unix:")
 
     def test_no_service_name_skips_named_health(self, monkeypatch) -> None:
         add_servicer = MagicMock()
-        server, _addr, _hs = srv.create_server(
+        handle = srv.create_server(
             add_servicer_func=add_servicer,
             servicer=object(),
             service_name="",
         )
         assert add_servicer.call_count == 1
-
-    def test_initial_health_state_is_not_serving(self, monkeypatch) -> None:
-        # Audit #68: health starts NOT_SERVING; the supervisor flips it
-        # to SERVING once probes pass. Pre-#68 behavior set it SERVING
-        # immediately, which made K8s readiness gate vacuously true.
-        from grpc_health.v1 import health_pb2
-
-        add_servicer = MagicMock()
-        _server, _addr, health_servicer = srv.create_server(
-            add_servicer_func=add_servicer,
-            servicer=object(),
-            service_name="angzarr_client.proto.angzarr.Test",
-        )
-        # HealthServicer doesn't expose a public getter; reach into the
-        # internal status map. Pin both the empty (overall) name and
-        # the kind-specific name.
-        statuses = getattr(health_servicer, "_server_status", None) or getattr(
-            health_servicer, "_servicer_status", None
-        )
-        assert statuses is not None, "could not introspect HealthServicer state"
-        assert statuses[""] == health_pb2.HealthCheckResponse.NOT_SERVING
-        assert (
-            statuses["angzarr_client.proto.angzarr.Test"]
-            == health_pb2.HealthCheckResponse.NOT_SERVING
-        )
+        # Only the overall ("") name is registered; no per-service entry.
+        assert list(handle.health_servicer._server_status.keys()) == [""]
 
 
 class TestRunServerLogging:
     def test_sets_default_port_when_missing(self, monkeypatch) -> None:
         monkeypatch.delenv("PORT", raising=False)
-        fake_server = MagicMock()
-        fake_server.wait_for_termination.side_effect = KeyboardInterrupt
-        monkeypatch.setattr(
-            srv,
-            "create_server",
-            lambda *a, **kw: (fake_server, "[::]:9999", MagicMock()),
-        )
+        handle, fake_server = _fake_server_handle()
+        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
         logger = MagicMock()
         with pytest.raises(KeyboardInterrupt):
             srv.run_server(
@@ -188,17 +184,12 @@ class TestRunServerLogging:
             )
         assert os.environ["PORT"] == "9999"
         logger.info.assert_called_once()
-        fake_server.start.assert_called_once()
+        fake_server.start.assert_awaited_once()
 
     def test_preserves_existing_port(self, monkeypatch) -> None:
         monkeypatch.setenv("PORT", "4242")
-        fake_server = MagicMock()
-        fake_server.wait_for_termination.side_effect = KeyboardInterrupt
-        monkeypatch.setattr(
-            srv,
-            "create_server",
-            lambda *a, **kw: (fake_server, "[::]:4242", MagicMock()),
-        )
+        handle, _ = _fake_server_handle("[::]:4242")
+        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
         with pytest.raises(KeyboardInterrupt):
             srv.run_server(
                 add_servicer_func=lambda *a, **kw: None,
@@ -208,13 +199,8 @@ class TestRunServerLogging:
         assert os.environ["PORT"] == "4242"
 
     def test_prints_when_no_logger(self, monkeypatch, capsys) -> None:
-        fake_server = MagicMock()
-        fake_server.wait_for_termination.side_effect = KeyboardInterrupt
-        monkeypatch.setattr(
-            srv,
-            "create_server",
-            lambda *a, **kw: (fake_server, "[::]:50052", MagicMock()),
-        )
+        handle, _ = _fake_server_handle("[::]:50052")
+        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
         with pytest.raises(KeyboardInterrupt):
             srv.run_server(
                 add_servicer_func=lambda *a, **kw: None,
@@ -225,6 +211,21 @@ class TestRunServerLogging:
         out = capsys.readouterr().out
         assert "angzarr_client.proto.angzarr.Test" in out
         assert "orders" in out
+
+    def test_marks_transport_bound_after_start(self, monkeypatch) -> None:
+        handle, fake_server = _fake_server_handle()
+        signal = handle.transport_signal
+        assert not signal.is_bound()
+        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
+        with pytest.raises(KeyboardInterrupt):
+            srv.run_server(
+                add_servicer_func=lambda *a, **kw: None,
+                servicer=object(),
+                default_port="9999",
+            )
+        # The supervisor coroutine sees this signal as bound after start().
+        assert signal.is_bound()
+        fake_server.start.assert_awaited_once()
 
 
 class TestCleanupSocket:

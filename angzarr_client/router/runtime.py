@@ -73,6 +73,25 @@ class _BuiltRouterBase:
         """
         return []
 
+    def sync_output_domains(self) -> list[str]:
+        """Audit #74: subset of :meth:`output_domains` that the
+        registered handlers ever address with sync mode (SIMPLE /
+        CASCADE / DECISION / ISOLATED). Drives readiness probing —
+        only sync targets need their coordinator reachable for
+        traffic to be safe. Default empty; saga / PM routers override.
+        """
+        return []
+
+    def has_async_outputs(self) -> bool:
+        """Audit #74: ``True`` if any registered handler emits to at
+        least one async target — i.e. ever publishes through the async
+        bus rather than synchronously calling a downstream coordinator.
+        Drives whether the readiness supervisor includes a
+        :class:`~angzarr_client.readiness.BusProbe`. Default ``False``
+        (CH / Projector / Upcaster never cross-emit).
+        """
+        return False
+
 
 class CommandHandlerRouter(_BuiltRouterBase, Generic[S]):
     """Runtime router dispatching commands to registered @command_handler instances."""
@@ -162,6 +181,24 @@ class SagaRouter(_BuiltRouterBase):
                 seen.append(target)
         return seen
 
+    def sync_output_domains(self) -> list[str]:
+        seen: list[str] = []
+        for cls, _factory in self._factories:
+            meta = getattr(cls, "__angzarr_meta__", {})
+            if not meta.get("sync"):
+                continue
+            target = meta.get("target")
+            if target and target not in seen:
+                seen.append(target)
+        return seen
+
+    def has_async_outputs(self) -> bool:
+        for cls, _factory in self._factories:
+            meta = getattr(cls, "__angzarr_meta__", {})
+            if not meta.get("sync") and meta.get("target"):
+                return True
+        return False
+
 
 class ProcessManagerRouter(_BuiltRouterBase, Generic[S]):
     """Runtime router dispatching events to registered @process_manager instances."""
@@ -180,6 +217,24 @@ class ProcessManagerRouter(_BuiltRouterBase, Generic[S]):
                 if target and target not in seen:
                     seen.append(target)
         return seen
+
+    def sync_output_domains(self) -> list[str]:
+        seen: list[str] = []
+        for cls, _factory in self._factories:
+            meta = getattr(cls, "__angzarr_meta__", {})
+            for target in meta.get("sync_targets", []):
+                if target and target not in seen:
+                    seen.append(target)
+        return seen
+
+    def has_async_outputs(self) -> bool:
+        for cls, _factory in self._factories:
+            meta = getattr(cls, "__angzarr_meta__", {})
+            sync_targets = meta.get("sync_targets") or []
+            for target in meta.get("targets", []):
+                if target and target not in sync_targets:
+                    return True
+        return False
 
 
 class ProjectorRouter(_BuiltRouterBase):

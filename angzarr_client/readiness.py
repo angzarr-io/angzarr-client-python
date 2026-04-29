@@ -14,47 +14,51 @@ Aggregation is binary — ``all up`` is ``SERVING``, anything else is
 ("the process answers") and readiness ("it's safe to send traffic")
 share one wire surface and are distinguished by the response status.
 
-Sync/async note: Python's ``grpcio`` server is synchronous (runs on a
-``ThreadPoolExecutor``), so the supervisor runs in a daemon thread
-rather than an asyncio task. Probes have ``check() -> bool``
-synchronous signatures; per-probe timeouts are enforced via socket
-timeouts. Mirrors Rust's tokio-async supervisor at the wire-behavior
-level, not the language-runtime level.
+Async architecture (audit #68 design call): the runner runs on
+``grpc.aio.server`` so the supervisor lives as an asyncio task on the
+same event loop, mirroring Rust's tokio-async supervisor 1:1. Probes
+have ``async check() -> bool`` signatures; per-probe timeouts are
+enforced via ``asyncio.wait_for``.
 """
 
 from __future__ import annotations
 
+import abc
+import asyncio
+import logging
 import os
-import socket
-import threading
-from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Union
 
-from grpc_health.v1 import health, health_pb2
-
-from .client import resolve_ch_endpoint
-
-# Default cadence for re-evaluating output-domain probes (seconds).
 DEFAULT_PROBE_INTERVAL = 30.0
-# Default per-probe timeout (seconds).
+"""Default cadence for re-evaluating output-domain probes (seconds)."""
+
 DEFAULT_PROBE_TIMEOUT = 2.0
+"""Default per-probe timeout (seconds)."""
 
 ENV_INTERVAL = "ANGZARR_READINESS_PROBE_INTERVAL"
 ENV_TIMEOUT = "ANGZARR_READINESS_PROBE_TIMEOUT"
+ENV_BUS_ENDPOINT = "ANGZARR_BUS_ENDPOINT"
+"""Audit #74: optional async-bus endpoint (Kafka / RabbitMQ / SQS /
+SNS / NATS / etc.). When set, a single :class:`BusProbe` covers
+reachability of the async path for every async-only saga / PM target.
+When unset, no bus probe is added — async-only targets are simply not
+part of readiness."""
+
+_LOG = logging.getLogger(__name__)
 
 
 def probe_config_from_env() -> tuple[float, float]:
     """Read supervisor cadence + per-probe timeout from env, falling
     back to :data:`DEFAULT_PROBE_INTERVAL` / :data:`DEFAULT_PROBE_TIMEOUT`.
 
-    Same env-var contract as Rust (``ANGZARR_READINESS_PROBE_INTERVAL``
-    + ``_TIMEOUT``, integer seconds). Returns ``(interval, timeout)``
-    in seconds (float). Bad values (non-numeric) silently fall back to
-    defaults — matches Rust's ``.parse::<u64>().ok()`` behavior.
+    Same env-var contract as Rust. Bad values (non-numeric) silently
+    fall back to defaults — matches Rust's ``.parse::<u64>().ok()``.
     """
 
     def _read(env_var: str, default: float) -> float:
         raw = os.environ.get(env_var)
-        if raw is None:
+        if raw is None or raw == "":
             return default
         try:
             return float(raw)
@@ -67,221 +71,209 @@ def probe_config_from_env() -> tuple[float, float]:
     )
 
 
-class Probe(ABC):
-    """Single readiness probe — evaluated once per supervisor tick.
+class Probe(abc.ABC):
+    """Single readiness probe — evaluated once per supervisor tick."""
 
-    Subclasses implement ``name`` (stable identifier for log lines)
-    and ``check`` (returns ``True`` when the underlying dependency is
-    healthy). ``check`` is called in the supervisor thread; per-probe
-    timeouts are enforced by the supervisor via socket-level timeouts
-    (subclasses don't need their own timeout handling unless they do
-    non-socket work).
-    """
-
-    @abstractmethod
+    @property
+    @abc.abstractmethod
     def name(self) -> str:
-        """Stable identifier for log lines and per-probe service names."""
+        """Stable identifier for log lines."""
 
-    @abstractmethod
-    def check(self, timeout: float) -> bool:
-        """Return ``True`` if the underlying dependency is currently healthy.
-
-        Args:
-            timeout: Wall-clock seconds the probe is allowed to take.
-                Subclasses should use this as an upper bound on any
-                blocking I/O they do (e.g. ``socket.settimeout``).
-        """
+    @abc.abstractmethod
+    async def check(self) -> bool:
+        """``True`` when the underlying dependency is currently healthy."""
 
 
 class TransportSignal:
-    """Side of the :class:`TransportProbe` used by the runner to mark
-    "bound and serving"."""
+    """Side of a :class:`TransportProbe` used by the runner to mark
+    'bound and serving'.
+    """
 
-    def __init__(self, event: threading.Event) -> None:
-        self._event = event
+    def __init__(self) -> None:
+        self._bound = False
 
     def mark_bound(self) -> None:
-        """Mark the transport as accepting traffic. From this point the
-        sibling :class:`TransportProbe` reports ``True``."""
-        self._event.set()
+        self._bound = True
+
+    def is_bound(self) -> bool:
+        return self._bound
 
 
 class TransportProbe(Probe):
     """One-shot transport probe — flipped ``True`` once the listener has
     bound and the server is accepting traffic. From that point its
     result never changes.
+    """
 
-    Mirrors Rust's :rust:`TransportProbe` /
-    :rust:`TransportSignal::mark_bound()` pair. Use
-    :meth:`new` to construct both halves."""
-
-    def __init__(self, event: threading.Event) -> None:
-        self._event = event
+    def __init__(self, signal: TransportSignal) -> None:
+        self._signal = signal
 
     @classmethod
-    def new(cls) -> tuple[TransportProbe, TransportSignal]:
-        """Build the probe + signal pair.
+    def new(cls) -> tuple["TransportProbe", TransportSignal]:
+        signal = TransportSignal()
+        return cls(signal), signal
 
-        The probe is registered with the supervisor; the signal is held
-        by the runner and flipped once the gRPC server has bound its
-        listener and called ``server.start()``.
-        """
-        ev = threading.Event()
-        return (cls(ev), TransportSignal(ev))
-
+    @property
     def name(self) -> str:
         return "transport"
 
-    def check(self, timeout: float) -> bool:
-        # No-op timeout — flag flip is in-process, doesn't block.
-        return self._event.is_set()
+    async def check(self) -> bool:
+        return self._signal.is_bound()
+
+
+@dataclass(frozen=True)
+class _TcpEndpoint:
+    addr: str  # "host:port"
+
+
+@dataclass(frozen=True)
+class _UdsEndpoint:
+    path: str
+
+
+_Endpoint = Union[_TcpEndpoint, _UdsEndpoint]
+
+
+def _parse_endpoint(raw: str) -> _Endpoint:
+    """Classify a resolved endpoint string into TCP or UDS. ``unix:``
+    prefix or leading ``/`` selects UDS; otherwise TCP.
+    """
+    if raw.startswith("unix:"):
+        return _UdsEndpoint(raw[len("unix:") :])
+    if raw.startswith("/"):
+        return _UdsEndpoint(raw)
+    return _TcpEndpoint(raw)
+
+
+async def _try_tcp_connect(addr: str) -> bool:
+    host, sep, port_s = addr.rpartition(":")
+    if not sep or not port_s:
+        return False
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    try:
+        port = int(port_s)
+    except ValueError:
+        return False
+    try:
+        _, writer = await asyncio.open_connection(host or "localhost", port)
+    except OSError:
+        return False
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except OSError:
+        pass
+    return True
+
+
+async def _try_uds_connect(path: str) -> bool:
+    try:
+        _, writer = await asyncio.open_unix_connection(path)
+    except (OSError, FileNotFoundError):
+        return False
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except OSError:
+        pass
+    return True
 
 
 class OutputDomainProbe(Probe):
-    """Per-output-domain coordinator probe — attempts to open a
-    connection to the downstream domain's command handler coordinator
-    endpoint.
+    """Per-output-domain coordinator probe — attempts to open a connection
+    to the downstream domain's command-handler coordinator endpoint.
 
-    Resolves the endpoint at construction time via
-    :func:`resolve_ch_endpoint(domain)`; failures of the env config
-    surface here (not at first probe tick) — matches Rust's startup-time
-    resolution.
+    Audit #74: built only for **sync** output domains (declared via
+    ``@saga(sync=True)`` or ``@process_manager(sync_targets=[...])``).
+    Async-only targets ride the bus; see :class:`BusProbe`.
     """
 
-    def __init__(self, domain: str) -> None:
+    def __init__(self, domain: str, endpoint: _Endpoint) -> None:
         self._domain = domain
-        raw = resolve_ch_endpoint(domain)
-        # Strip an optional unix: prefix so the connect path can branch
-        # on raw filesystem path vs host:port. resolve_ch_endpoint
-        # returns either ``host:port`` (distributed) or
-        # ``{base}/ch-{domain}.sock`` (standalone, no prefix).
-        if raw.startswith("unix:"):
-            self._uds_path: str | None = raw[len("unix:") :]
-        elif raw.startswith("/"):
-            self._uds_path = raw
-        else:
-            self._uds_path = None
-        self._tcp_addr: str | None = None if self._uds_path else raw
+        self._endpoint = endpoint
 
     @classmethod
-    def for_domain(cls, domain: str) -> OutputDomainProbe:
-        return cls(domain)
+    def for_domain(cls, domain: str) -> "OutputDomainProbe":
+        from .client import resolve_ch_endpoint
 
+        raw = resolve_ch_endpoint(domain)
+        return cls(domain, _parse_endpoint(raw))
+
+    @property
     def name(self) -> str:
         return self._domain
 
-    def check(self, timeout: float) -> bool:
-        if self._uds_path is not None:
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            try:
-                sock.connect(self._uds_path)
-                return True
-            except OSError:
-                return False
-            finally:
-                sock.close()
-
-        # TCP host:port.
-        host, _, port_str = (self._tcp_addr or "").rpartition(":")
-        if not host or not port_str:
-            return False
-        try:
-            port = int(port_str)
-        except ValueError:
-            return False
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                return True
-        except OSError:
-            return False
+    async def check(self) -> bool:
+        if isinstance(self._endpoint, _TcpEndpoint):
+            return await _try_tcp_connect(self._endpoint.addr)
+        return await _try_uds_connect(self._endpoint.path)
 
 
-class _SupervisorThread(threading.Thread):
-    """Daemon thread running the readiness supervisor loop.
+class BusProbe(Probe):
+    """Async-bus reachability probe (audit #74) — covers the path that
+    async-only saga / PM targets ride. The endpoint is operator-supplied
+    via :data:`ENV_BUS_ENDPOINT` and points at whatever broker the
+    deployment uses (Kafka, RabbitMQ, SQS/SNS, NATS, etc.).
 
-    Held internally by :func:`run_supervisor` so callers can ``stop()``
-    on shutdown. Mirrors Rust's ``tokio::spawn(run_supervisor(...))``
-    + ``supervisor.abort()`` lifecycle.
+    Connection-only — confirms the broker is reachable, not that
+    publishes will succeed end-to-end. Same contract as
+    :class:`OutputDomainProbe` for sync targets.
     """
 
-    def __init__(
-        self,
-        probes: list[Probe],
-        health_servicer: health.HealthServicer,
-        service_names: list[str],
-        interval: float,
-        timeout: float,
-    ) -> None:
-        super().__init__(name="angzarr-readiness", daemon=True)
-        self._probes = probes
-        self._health = health_servicer
-        self._service_names = service_names
-        self._interval = interval
-        self._timeout = timeout
-        self._stop_event = threading.Event()
+    def __init__(self, endpoint: _Endpoint) -> None:
+        self._endpoint = endpoint
 
-    def stop(self) -> None:
-        """Signal the supervisor to exit on its next loop iteration."""
-        self._stop_event.set()
+    @classmethod
+    def from_env(cls) -> "BusProbe | None":
+        raw = os.environ.get(ENV_BUS_ENDPOINT)
+        if not raw:
+            return None
+        return cls(_parse_endpoint(raw))
 
-    def run(self) -> None:
-        while not self._stop_event.is_set():
-            all_ok = True
-            for probe in self._probes:
-                try:
-                    ok = probe.check(self._timeout)
-                except Exception:  # noqa: BLE001 — broad on purpose; probe
-                    # failures must not crash the supervisor thread.
-                    ok = False
-                if not ok:
-                    all_ok = False
-            status = (
-                health_pb2.HealthCheckResponse.SERVING
-                if all_ok
-                else health_pb2.HealthCheckResponse.NOT_SERVING
-            )
-            for name in self._service_names:
-                self._health.set(name, status)
-            # Sleep in small chunks so stop() is responsive on shutdown.
-            self._stop_event.wait(timeout=self._interval)
+    @property
+    def name(self) -> str:
+        return "bus"
+
+    async def check(self) -> bool:
+        if isinstance(self._endpoint, _TcpEndpoint):
+            return await _try_tcp_connect(self._endpoint.addr)
+        return await _try_uds_connect(self._endpoint.path)
 
 
-def run_supervisor(
+async def run_supervisor(
     probes: list[Probe],
-    health_servicer: health.HealthServicer,
+    health_servicer,
     service_names: list[str],
     interval: float,
     timeout: float,
-) -> _SupervisorThread:
-    """Start the readiness supervisor.
+) -> None:
+    """Poll every probe on each tick, aggregate (`all_ok` → ``SERVING``,
+    else ``NOT_SERVING``), publish to every service name. Loops until
+    cancelled.
 
-    Spawns a daemon thread that polls every probe on each tick,
-    aggregates ``all_ok``, and publishes ``SERVING`` / ``NOT_SERVING``
-    on every health-service name registered with ``health_servicer``.
-
-    Returns the thread so the caller can ``.stop()`` it on shutdown.
-    The thread is a daemon, so process exit also terminates it.
-
-    Args:
-        probes: List of :class:`Probe` instances to evaluate.
-        health_servicer: The gRPC health servicer registered with the
-            server. The supervisor calls ``set(name, status)`` per
-            service name on each tick.
-        service_names: Names to publish status under (typically
-            ``["", "<kind-specific-service-name>"]`` — empty string is
-            the overall server status, the kind-specific name is what
-            ``Health.Check(service=...)`` matches).
-        interval: Seconds between supervisor ticks.
-        timeout: Per-probe timeout in seconds (passed to each
-            ``Probe.check``).
+    ``health_servicer`` is an async ``grpc_health.v1.health.aio.HealthServicer``
+    — its ``set(service, status)`` is awaitable.
     """
-    thread = _SupervisorThread(
-        probes,
-        health_servicer,
-        service_names,
-        interval,
-        timeout,
-    )
-    thread.start()
-    return thread
+    from grpc_health.v1 import health_pb2
+
+    SERVING = health_pb2.HealthCheckResponse.SERVING
+    NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
+
+    while True:
+        all_ok = True
+        for probe in probes:
+            try:
+                ok = await asyncio.wait_for(probe.check(), timeout=timeout)
+            except asyncio.TimeoutError:
+                ok = False
+            except Exception:  # noqa: BLE001 — supervisor is hard-isolated
+                _LOG.exception("readiness probe %r raised", probe.name)
+                ok = False
+            if not ok:
+                all_ok = False
+                _LOG.warning("readiness probe failed", extra={"probe": probe.name})
+        status = SERVING if all_ok else NOT_SERVING
+        for name in service_names:
+            await health_servicer.set(name, status)
+        await asyncio.sleep(interval)

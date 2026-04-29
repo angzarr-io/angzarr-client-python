@@ -69,6 +69,7 @@ packages = ["angzarr_client"]
 bdd_features_base_dir = "angzarr-project/features/client"
 testpaths = ["tests"]
 norecursedirs = ["mutants"]
+asyncio_mode = "auto"
 filterwarnings = [
     # pytest-bdd converts each Gherkin tag into a pytest mark. Scenario IDs
     # (@C-NNNN, @EU-NNNN, @EA-NNNN) collide with PytestUnknownMarkWarning.
