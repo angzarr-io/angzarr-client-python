@@ -13,7 +13,6 @@ from .proto.angzarr import (
     CommandBook,
     CommandPage,
     Cover,
-    DomainDivergence,
     Edition,
     EventBook,
     EventPage,
