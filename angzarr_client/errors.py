@@ -24,6 +24,8 @@ from typing import Any
 
 import grpc
 
+from .error_codes import codes, messages
+
 
 class ClientError(Exception):
     """Base class for client errors.
@@ -97,10 +99,10 @@ class TransportError(ClientError):
         self,
         cause: Exception,
         *,
-        code: str = "TRANSPORT_ERROR",
+        code: str = codes.TRANSPORT_ERROR,
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__("transport error", cause, code=code, details=details)
+        super().__init__(messages.TRANSPORT_ERROR, cause, code=code, details=details)
 
     def is_connection_error(self) -> bool:
         return True
@@ -113,10 +115,10 @@ class GRPCError(ClientError):
         self,
         cause: grpc.RpcError,
         *,
-        code: str = "GRPC_ERROR",
+        code: str = codes.GRPC_ERROR,
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__("grpc error", cause, code=code, details=details)
+        super().__init__(messages.GRPC_ERROR, cause, code=code, details=details)
         self._rpc_error = cause
 
     @property

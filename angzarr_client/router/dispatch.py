@@ -16,7 +16,7 @@ import grpc
 from google.protobuf.any_pb2 import Any as ProtoAny
 
 from angzarr_client.destinations import Destinations
-from angzarr_client.helpers import TYPE_URL_PREFIX
+from angzarr_client.helpers import TYPE_URL_PREFIX, propagate_edition_from
 from angzarr_client.proto.angzarr import (
     BusinessResponse,
     ContextualCommand,
@@ -559,6 +559,12 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
             _merge_saga_output(emitted, response)
             matched += 1
 
+    # Audit #86: always-override edition propagation. Every outgoing
+    # CommandBook / EventBook inherits the source cover's edition,
+    # even if the handler set its own.
+    if source_cover is not None:
+        _propagate_edition_into_books(source_cover, response.commands, response.events)
+
     # P2.5 / audit finding #36: "no handler matched" is a normal runtime
     # condition (no saga subscribed to this event type), not a failure.
     # Log at info-level for observability and return the empty
@@ -675,6 +681,15 @@ def dispatch_process_manager(
     if has_pe:
         response.process_events.CopyFrom(merged_process_events)
 
+    # Audit #86: always-override edition propagation. Every outgoing
+    # CommandBook / EventBook (commands, facts, process_events)
+    # inherits the trigger cover's edition, even if the handler set
+    # its own.
+    if trigger_cover is not None:
+        _propagate_edition_into_books(trigger_cover, response.commands, response.facts)
+        if response.HasField("process_events"):
+            propagate_edition_from(response.process_events.cover, trigger_cover)
+
     # Audit findings #36/#37: "no handler matched" is a normal runtime
     # condition (no PM subscribed to this trigger). Log at info-level for
     # observability and return the empty response — Rust matches via the
@@ -745,6 +760,23 @@ def dispatch_projector(factories: list[Factory], events: EventBook) -> Projectio
     # model on both sides; #63 is the missed sequence-field carry.
     result.sequence = events.next_sequence
     return result
+
+
+def _propagate_edition_into_books(source_cover, commands, events) -> None:
+    """Audit #86: stamp ``source_cover.edition`` onto every outgoing
+    book's cover. Always-override semantics — the framework guarantees
+    timeline consistency on cross-domain emissions; handler choices on
+    outgoing edition are overwritten.
+
+    ``commands`` and ``events`` are protobuf RepeatedCompositeFieldContainer
+    of `CommandBook` / `EventBook`; we mutate each book's cover in place.
+    """
+    for book in commands:
+        if book.HasField("cover"):
+            propagate_edition_from(book.cover, source_cover)
+    for book in events:
+        if book.HasField("cover"):
+            propagate_edition_from(book.cover, source_cover)
 
 
 def _merge_saga_output(emitted: Any, response: SagaResponse) -> None:

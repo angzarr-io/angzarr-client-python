@@ -89,6 +89,66 @@ class TestGetTransportConfig:
         transport, _ = srv.get_transport_config()
         assert transport == "uds"
 
+    # Audit #77: ANGZARR_BIND_ADDRESS overrides the default
+    # `[::]:{port}` composition.
+
+    def test_bind_address_env_override(self, monkeypatch) -> None:
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "0.0.0.0:9090")
+        transport, address = srv.get_transport_config()
+        assert transport == "tcp"
+        assert address == "0.0.0.0:9090"
+
+    def test_bind_address_env_override_ignores_port(self, monkeypatch) -> None:
+        # When ANGZARR_BIND_ADDRESS is set, PORT is irrelevant.
+        monkeypatch.setenv("PORT", "6000")
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "127.0.0.1:7777")
+        _, address = srv.get_transport_config()
+        assert address == "127.0.0.1:7777"
+
+    def test_bind_address_uds_unaffected(self, monkeypatch, tmp_path) -> None:
+        # UDS path doesn't read the bind-address override.
+        monkeypatch.setenv("TRANSPORT_TYPE", "uds")
+        monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "0.0.0.0:9090")
+        transport, address = srv.get_transport_config()
+        assert transport == "uds"
+        assert address.startswith("unix:")
+
+
+class TestResolveBindAddress:
+    """Audit #77: helper exposed at the crate root for symmetry with
+    Rust's ``resolve_bind_address``."""
+
+    def test_default_is_dual_stack(self, monkeypatch) -> None:
+        monkeypatch.delenv(srv.ENV_BIND_ADDRESS, raising=False)
+        monkeypatch.delenv("PORT", raising=False)
+        assert srv.resolve_bind_address() == "[::]:50052"
+
+    def test_default_with_explicit_port(self, monkeypatch) -> None:
+        monkeypatch.delenv(srv.ENV_BIND_ADDRESS, raising=False)
+        monkeypatch.delenv("PORT", raising=False)
+        assert srv.resolve_bind_address(8080) == "[::]:8080"
+
+    def test_port_env_beats_default_port_arg(self, monkeypatch) -> None:
+        monkeypatch.delenv(srv.ENV_BIND_ADDRESS, raising=False)
+        monkeypatch.setenv("PORT", "6000")
+        # PORT env overrides default_port arg when no full address is set.
+        assert srv.resolve_bind_address(50052) == "[::]:6000"
+
+    def test_env_override_verbatim_ipv4(self, monkeypatch) -> None:
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "127.0.0.1:9090")
+        assert srv.resolve_bind_address(50052) == "127.0.0.1:9090"
+
+    def test_env_override_verbatim_ipv6(self, monkeypatch) -> None:
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "[::1]:8080")
+        assert srv.resolve_bind_address(50052) == "[::1]:8080"
+
+    def test_env_override_supersedes_port(self, monkeypatch) -> None:
+        # Both set: full address wins; PORT is ignored.
+        monkeypatch.setenv("PORT", "6000")
+        monkeypatch.setenv(srv.ENV_BIND_ADDRESS, "0.0.0.0:1234")
+        assert srv.resolve_bind_address() == "0.0.0.0:1234"
+
 
 class TestConfigureLogging:
     def test_calls_structlog_configure(self, monkeypatch) -> None:
@@ -181,7 +241,10 @@ class TestRunServerLogging:
                 logger=logger,
             )
         assert os.environ["PORT"] == "9999"
-        logger.info.assert_called_once()
+        # Audit #83: two info calls — `server_started` on the way in
+        # and `server_shutdown` in the finally block.
+        events = [c.args[0] for c in logger.info.call_args_list]
+        assert events == ["server_started", "server_shutdown"]
         fake_server.start.assert_awaited_once()
 
     def test_preserves_existing_port(self, monkeypatch) -> None:
@@ -224,6 +287,61 @@ class TestRunServerLogging:
         # The supervisor coroutine sees this signal as bound after start().
         assert signal.is_bound()
         fake_server.start.assert_awaited_once()
+
+    def test_run_server_publishes_not_serving_on_shutdown(self, monkeypatch) -> None:
+        # Audit #83: every registered health name flipped to NOT_SERVING
+        # in the finally block after `wait_for_termination` returns.
+        from grpc_health.v1 import health_pb2
+
+        handle, _ = _fake_server_handle()
+        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
+        with pytest.raises(KeyboardInterrupt):
+            srv.run_server(
+                add_servicer_func=lambda *a, **kw: None,
+                servicer=object(),
+                service_name="angzarr_client.proto.angzarr.Test",
+                domain="orders",
+                default_port="9999",
+            )
+        # Every awaited call on the mock health_servicer is recorded;
+        # we expect at least one set(name, NOT_SERVING) per registered
+        # service name (overall "" and the explicit service_name).
+        calls = handle.health_servicer.set.await_args_list
+        publishes = [
+            (args[0], args[1])
+            for args, _ in (call for call in calls)
+            if len(args) >= 2 and args[1] == health_pb2.HealthCheckResponse.NOT_SERVING
+        ]
+        published_names = {name for name, _ in publishes}
+        assert "" in published_names
+        assert "angzarr_client.proto.angzarr.Test" in published_names
+
+
+class TestPublishShutdownStatus:
+    """Audit #83: helper flips every registered health name to
+    NOT_SERVING so K8s drains the pod on shutdown."""
+
+    async def test_flips_every_name(self) -> None:
+        from grpc_health.v1 import health_pb2
+
+        from angzarr_client.server import _publish_shutdown_status
+
+        servicer = AsyncMock()
+        await _publish_shutdown_status(servicer, ["", "svc.A", "svc.B"])
+
+        calls = servicer.set.await_args_list
+        assert len(calls) == 3
+        for call, expected_name in zip(calls, ["", "svc.A", "svc.B"], strict=True):
+            args, _ = call
+            assert args[0] == expected_name
+            assert args[1] == health_pb2.HealthCheckResponse.NOT_SERVING
+
+    async def test_empty_names_is_noop(self) -> None:
+        from angzarr_client.server import _publish_shutdown_status
+
+        servicer = AsyncMock()
+        await _publish_shutdown_status(servicer, [])
+        servicer.set.assert_not_awaited()
 
 
 class TestCleanupSocket:

@@ -263,16 +263,23 @@ async def run_supervisor(
     while True:
         all_ok = True
         for probe in probes:
+            # Audit #82: each cause (timeout / probe-raised / probe-returned-
+            # False) emits its own warning; there is no aggregate "failed"
+            # log on top — the cause warning is sufficient. Exceptions are
+            # caught so a misbehaving probe can never kill the supervisor.
             try:
                 ok = await asyncio.wait_for(probe.check(), timeout=timeout)
             except asyncio.TimeoutError:
+                _LOG.warning("readiness probe timed out", extra={"probe": probe.name})
                 ok = False
             except Exception:  # noqa: BLE001 — supervisor is hard-isolated
                 _LOG.exception("readiness probe %r raised", probe.name)
                 ok = False
+            else:
+                if not ok:
+                    _LOG.warning("readiness probe failed", extra={"probe": probe.name})
             if not ok:
                 all_ok = False
-                _LOG.warning("readiness probe failed", extra={"probe": probe.name})
         status = SERVING if all_ok else NOT_SERVING
         for name in service_names:
             await health_servicer.set(name, status)

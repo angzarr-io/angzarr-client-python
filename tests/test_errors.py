@@ -76,6 +76,14 @@ class TestTransportError:
         err = TransportError(cause)
         assert isinstance(err, ClientError)
 
+    def test_uses_inventory_constants(self) -> None:
+        """Audit #84: code + message must come from error_codes inventory."""
+        from angzarr_client.error_codes import codes, messages
+
+        err = TransportError(OSError("x"))
+        assert err.code == codes.TRANSPORT_ERROR
+        assert err.message == messages.TRANSPORT_ERROR
+
 
 class MockRpcError(grpc.RpcError):
     """Mock RpcError for testing.
@@ -113,10 +121,14 @@ class TestGRPCError:
     def test_code_property(self) -> None:
         """Audit #59: ``.grpc_code`` is the upstream gRPC StatusCode.
         ``.code`` is now the SCREAMING_SNAKE structural identifier."""
+        from angzarr_client.error_codes import codes, messages
+
         rpc_error = self._mock_rpc_error(grpc.StatusCode.NOT_FOUND, "not found")
         err = GRPCError(rpc_error)
         assert err.grpc_code == grpc.StatusCode.NOT_FOUND
-        assert err.code == "GRPC_ERROR"
+        # Audit #84: code + message routed through inventory.
+        assert err.code == codes.GRPC_ERROR
+        assert err.message == messages.GRPC_ERROR
 
     def test_details_property(self) -> None:
         """Audit #59: ``.grpc_details`` is the upstream gRPC details

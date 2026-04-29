@@ -13,7 +13,6 @@ from .proto.angzarr import (
     CommandBook,
     CommandPage,
     Cover,
-    DomainDivergence,
     Edition,
     EventBook,
     EventPage,
@@ -156,36 +155,23 @@ def root_id_text(obj: CoverBearer) -> str:
 # Edition helpers
 
 
-def main_timeline() -> Edition:
-    """Return an Edition representing the main timeline."""
-    return Edition(name=DEFAULT_EDITION)
-
-
 def implicit_edition(name: str) -> Edition:
     """Create an edition with the given name but no divergences."""
     return Edition(name=name)
 
 
-def explicit_edition(name: str, divergences: list[DomainDivergence]) -> Edition:
-    """Create an edition with divergence points."""
-    return Edition(name=name, divergences=divergences)
-
-
-def is_main_timeline(e: Edition | None) -> bool:
-    """Check if an edition represents the main timeline."""
-    return e is None or not e.name or e.name == DEFAULT_EDITION
-
-
-def edition_is_empty(e: Edition | None) -> bool:
-    """Check if an edition is empty (no name set)."""
-    return e is None or not e.name
-
-
-def edition_name_or_default(e: Edition | None) -> str:
-    """Return the edition name, or DEFAULT_EDITION if not set."""
-    if e is None or not e.name:
-        return DEFAULT_EDITION
-    return e.name
+def propagate_edition_from(outgoing: Cover, source: Cover) -> None:
+    """Audit #86: copy ``source.edition`` (full struct, including
+    divergences) onto ``outgoing.edition``, overwriting whatever was
+    there. **Always-override semantics:** the framework guarantees
+    timeline consistency on saga / PM cross-domain emissions; handlers
+    cannot escape into a different edition by setting their own
+    outgoing cover.
+    """
+    if source.HasField("edition"):
+        outgoing.edition.CopyFrom(source.edition)
+    else:
+        outgoing.ClearField("edition")
 
 
 def divergence_for(e: Edition | None, domain_name: str) -> int | None:
