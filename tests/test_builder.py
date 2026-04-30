@@ -2,6 +2,7 @@
 
 from unittest.mock import Mock
 from uuid import UUID as PyUUID
+from uuid import uuid4
 
 import pytest
 from google.protobuf.wrappers_pb2 import StringValue
@@ -9,10 +10,6 @@ from google.protobuf.wrappers_pb2 import StringValue
 from angzarr_client.builder import (
     CommandBuilder,
     QueryBuilder,
-    command,
-    command_new,
-    query,
-    query_domain,
 )
 from angzarr_client.errors import InvalidArgumentError, InvalidTimestampError
 from angzarr_client.helpers import proto_to_uuid
@@ -60,7 +57,7 @@ class TestCommandBuilder:
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
-        builder = command_new(client, "orders")
+        builder = CommandBuilder(client, "orders", uuid4())
         builder.with_sequence(0)
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
         book = builder.build()
@@ -88,13 +85,13 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         a = (
-            command_new(client, "orders")
+            CommandBuilder(client, "orders", uuid4())
             .with_sequence(0)
             .with_command("type/Cmd", msg)
             .build()
         )
         b = (
-            command_new(client, "orders")
+            CommandBuilder(client, "orders", uuid4())
             .with_sequence(0)
             .with_command("type/Cmd", msg)
             .build()
@@ -106,7 +103,7 @@ class TestCommandBuilder:
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
-        builder = command_new(client, "orders")
+        builder = CommandBuilder(client, "orders", uuid4())
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
 
         with pytest.raises(InvalidArgumentError):
@@ -117,7 +114,7 @@ class TestCommandBuilder:
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
-        builder = command_new(client, "orders")
+        builder = CommandBuilder(client, "orders", uuid4())
         builder.with_sequence(0)
         builder.with_command("type.googleapis.com/test.CreateOrder", msg)
         book = builder.build()
@@ -130,7 +127,7 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = (
-            command_new(client, "orders")
+            CommandBuilder(client, "orders", uuid4())
             .with_correlation_id("my-corr-123")
             .with_sequence(0)
             .with_command("type/Cmd", msg)
@@ -145,7 +142,7 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = (
-            command_new(client, "orders").with_sequence(5).with_command("type/Cmd", msg)
+            CommandBuilder(client, "orders", uuid4()).with_sequence(5).with_command("type/Cmd", msg)
         )
         book = builder.build()
 
@@ -154,7 +151,7 @@ class TestCommandBuilder:
     def test_build_without_type_url_raises(self) -> None:
         """Build without type_url raises InvalidArgumentError."""
         client = self._mock_aggregate_client()
-        builder = command_new(client, "orders")
+        builder = CommandBuilder(client, "orders", uuid4())
 
         with pytest.raises(InvalidArgumentError) as exc_info:
             builder.build()
@@ -163,7 +160,7 @@ class TestCommandBuilder:
     def test_build_without_payload_raises(self) -> None:
         """Build with type_url but no payload raises."""
         client = self._mock_aggregate_client()
-        builder = command_new(client, "orders")
+        builder = CommandBuilder(client, "orders", uuid4())
         builder._type_url = "type/Cmd"
 
         with pytest.raises(InvalidArgumentError) as exc_info:
@@ -180,7 +177,7 @@ class TestCommandBuilder:
 
         msg = StringValue(value="test")
         builder = (
-            command_new(client, "orders").with_sequence(0).with_command("type/Cmd", msg)
+            CommandBuilder(client, "orders", uuid4()).with_sequence(0).with_command("type/Cmd", msg)
         )
         response = builder.execute()
 
@@ -384,49 +381,3 @@ class TestQueryBuilder:
         assert isinstance(result, QueryBuilder)
 
 
-class TestConvenienceFunctions:
-    """Tests for convenience functions."""
-
-    def test_command_creates_builder_with_root(self) -> None:
-        """command creates builder for existing aggregate."""
-        client = Mock()
-        root = PyUUID("12345678-1234-5678-1234-567812345678")
-
-        builder = command(client, "orders", root)
-
-        assert isinstance(builder, CommandBuilder)
-        assert builder._domain == "orders"
-        assert builder._root == root
-
-    def test_command_new_creates_builder_with_generated_root(self) -> None:
-        """command_new generates a client-side root UUID for a new aggregate."""
-        client = Mock()
-
-        builder = command_new(client, "orders")
-
-        assert isinstance(builder, CommandBuilder)
-        assert builder._domain == "orders"
-        # Tier 2: client-side UUID generation in command_new.
-        assert builder._root is not None
-        assert isinstance(builder._root, PyUUID)
-
-    def test_query_creates_builder_with_root(self) -> None:
-        """query creates builder for specific aggregate."""
-        client = Mock()
-        root = PyUUID("12345678-1234-5678-1234-567812345678")
-
-        builder = query(client, "orders", root)
-
-        assert isinstance(builder, QueryBuilder)
-        assert builder._domain == "orders"
-        assert builder._root == root
-
-    def test_query_domain_creates_builder_without_root(self) -> None:
-        """query_domain creates builder without root."""
-        client = Mock()
-
-        builder = query_domain(client, "orders")
-
-        assert isinstance(builder, QueryBuilder)
-        assert builder._domain == "orders"
-        assert builder._root is None

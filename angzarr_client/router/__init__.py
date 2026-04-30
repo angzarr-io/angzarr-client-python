@@ -1,12 +1,4 @@
-"""Unified Router — Tier 5 Phase 1 (Python reference implementation).
-
-Package name is transitional: kept separate from the existing ``router.py``
-module during R1–R14. In R15, the old flat ``router.py`` is deleted and this
-package is renamed to ``router`` to become the public surface.
-
-Do not import directly from ``angzarr_client.router`` in user code; wait
-for the R15 cutover when the package moves to its final location.
-"""
+"""Unified Router — public surface for handler registration and dispatch."""
 
 from .builder import BuildError, Router
 from .decorators import (

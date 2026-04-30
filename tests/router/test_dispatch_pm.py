@@ -219,8 +219,9 @@ def test_pm_handler_receives_source_cover_when_declared():
 
     cover = captured["source_cover"]
     assert cover is not None
-    assert cover.domain == "order"
-    assert cover.root.value == b"\x02" * 16
+    # B2: PM handlers receive a Cover wrapper; raw proto fields go via ``.proto()``.
+    assert cover.domain() == "order"
+    assert cover.proto().root.value == b"\x02" * 16
 
 
 def test_pm_handler_without_source_cover_param_unaffected():

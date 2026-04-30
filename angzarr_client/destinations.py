@@ -117,10 +117,15 @@ class Destinations:
 
     @staticmethod
     def deferred_header(
-        source_cover: types.Cover,
+        source_cover,
         source_seq: int,
     ) -> types.PageHeader:
         """Build a PageHeader carrying an ``AngzarrDeferredSequence``.
+
+        Accepts either a :class:`~angzarr_client.wrappers.Cover` wrapper
+        (the canonical post-B2 form passed to handlers by the framework)
+        or a raw ``Cover`` proto. Internally the proto is what gets
+        copied into the ``AngzarrDeferredSequence`` payload.
 
         Use this on saga-produced commands so the framework can dedupe
         on ``(source.root, source_seq, target.root)``. AMQP at-least-once
@@ -129,9 +134,15 @@ class Destinations:
         re-invoking business logic), instead of relying on a business
         guard that surfaces as an idempotent-failure-shaped retry storm.
         """
+        # Allow the canonical wrapper form without forcing callers to
+        # unwrap manually — Destinations is part of the framework
+        # surface, so it speaks both shapes.
+        from .wrappers import Cover as CoverW
+
+        cover_proto = source_cover.proto() if isinstance(source_cover, CoverW) else source_cover
         return types.PageHeader(
             angzarr_deferred=types.AngzarrDeferredSequence(
-                source=source_cover,
+                source=cover_proto,
                 source_seq=source_seq,
             ),
         )

@@ -20,7 +20,7 @@ import pytest
 from google.protobuf.wrappers_pb2 import StringValue
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.builder import command
+from angzarr_client.builder import CommandBuilder
 from angzarr_client.errors import (
     ConnectionError as ClientConnectionError,
     GRPCError,
@@ -183,7 +183,7 @@ def _do_execute(
 ) -> None:
     """Build + execute via real CommandBuilder, capturing response or error."""
     assert state.root is not None
-    builder = command(state.cmd, state.domain, state.root)  # type: ignore[arg-type]
+    builder = CommandBuilder(state.cmd, state.domain, state.root)  # type: ignore[arg-type]
     if state.correlation_id:
         builder = builder.with_correlation_id(state.correlation_id)
     builder = builder.with_sequence(sequence)
@@ -440,7 +440,7 @@ def _when_execute_with_timeout(state: _World, timeout: int) -> None:
     timeout_s = timeout / 1000.0
     state.timeout_used = timeout_s
     builder = (
-        command(state.cmd, state.domain, state.root)  # type: ignore[arg-type]
+        CommandBuilder(state.cmd, state.domain, state.root)  # type: ignore[arg-type]
         .with_sequence(0)
         .with_command("type.googleapis.com/test.Cmd", StringValue(value="x"))
     )

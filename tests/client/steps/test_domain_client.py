@@ -201,15 +201,14 @@ def _when_create_domain(state: _World, domain: str) -> None:
 
 @when("I use the command builder to send a command")
 def _when_command_builder(state: _World) -> None:
-    """Real `client.command(domain, root).execute()` round-trips through
-    the recording mock."""
-    from angzarr_client.builder import command
+    """Real CommandBuilder round-trips through the recording mock."""
+    from angzarr_client.builder import CommandBuilder
     from google.protobuf.wrappers_pb2 import StringValue
 
     assert state.client is not None
     root = _root_uuid_from_str("any-root")
     state.last_command_resp = (
-        command(state.client.command_handler, state.domain, root)
+        CommandBuilder(state.client.command_handler, state.domain, root)
         .with_sequence(0)
         .with_command("type.googleapis.com/test.Cmd", StringValue(value="x"))
         .execute()
@@ -219,7 +218,7 @@ def _when_command_builder(state: _World) -> None:
 @when("I use the query builder to fetch events for that root")
 def _when_query_builder(state: _World) -> None:
     """Real query through the recording mock — no server required."""
-    from angzarr_client.builder import query as query_builder
+    from angzarr_client.builder import QueryBuilder
 
     assert state.client is not None
     # The matching aggregate root from the Given step.
@@ -231,7 +230,7 @@ def _when_query_builder(state: _World) -> None:
     root_hex = root_key[1]
     root_uuid = UUID(bytes=bytes.fromhex(root_hex))
 
-    book = query_builder(state.client.query, state.domain, root_uuid).get_event_book()
+    book = QueryBuilder(state.client.query, state.domain, root_uuid).get_event_book()
     state.fetched_pages = len(book.pages)
 
 
@@ -246,11 +245,11 @@ def _when_query_resulting(state: _World) -> None:
     path — verifying the composed DomainClient routes to a single
     set of wrapped clients (which would be a single channel in
     production)."""
-    from angzarr_client.builder import query_domain
+    from angzarr_client.builder import QueryBuilder
 
     assert state.client is not None
     _ = (
-        query_domain(state.client.query, state.domain)
+        QueryBuilder(state.client.query, state.domain)
         .by_correlation_id("trace-1")
         .build()
     )

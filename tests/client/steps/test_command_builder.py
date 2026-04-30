@@ -21,7 +21,7 @@ import pytest
 from google.protobuf.message import Message
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.builder import CommandBuilder, command, command_new
+from angzarr_client.builder import CommandBuilder
 from angzarr_client.errors import InvalidArgumentError
 from angzarr_client.proto.angzarr import (
     CommandBook,
@@ -110,9 +110,9 @@ def _try_build(world: _World) -> None:
     in those branches to keep the feature wording stable.
     """
     builder: CommandBuilder = (
-        command(world.client, world.domain, world.root)  # type: ignore[arg-type]
+        CommandBuilder(world.client, world.domain, world.root)  # type: ignore[arg-type]
         if world.has_root and world.root is not None
-        else command_new(world.client, world.domain)  # type: ignore[arg-type]
+        else CommandBuilder(world.client, world.domain, uuid4())  # type: ignore[arg-type]
     )
 
     if world.correlation_id is not None:
@@ -277,7 +277,7 @@ def _when_build_strict(state: _World) -> None:
     state.type_url_set = True
     state.payload_set = True
 
-    builder = command(state.client, state.domain, state.root)  # type: ignore[arg-type]
+    builder = CommandBuilder(state.client, state.domain, state.root)  # type: ignore[arg-type]
     builder = builder.with_sequence(0).with_merge_strategy(_MS.MERGE_STRICT)
     builder = builder.with_command(
         "type.googleapis.com/test.TestCommand", _make_test_message()
@@ -304,7 +304,7 @@ def _when_fluent_chaining(state: _World, docstring: str) -> None:
     state.root = uuid4()
     state.has_root = True
     builder = (
-        command(state.client, state.domain, state.root)  # type: ignore[arg-type]
+        CommandBuilder(state.client, state.domain, state.root)  # type: ignore[arg-type]
         .with_correlation_id("trace-456")
         .with_sequence(3)
         .with_command("type.googleapis.com/orders.CreateOrder", _make_test_message())
@@ -337,14 +337,14 @@ def _when_create_two_commands(state: _World) -> None:
 
     root1 = uuid4()
     book1 = (
-        command(state.client, state.domain, root1)  # type: ignore[arg-type]
+        CommandBuilder(state.client, state.domain, root1)  # type: ignore[arg-type]
         .with_sequence(0)
         .with_command("type.googleapis.com/test.TestCommand", msg)
         .build()
     )
     root2 = uuid4()
     book2 = (
-        command(state.client, state.domain, root2)  # type: ignore[arg-type]
+        CommandBuilder(state.client, state.domain, root2)  # type: ignore[arg-type]
         .with_sequence(0)
         .with_command("type.googleapis.com/test.TestCommand", msg)
         .build()
@@ -362,7 +362,7 @@ def _when_create_two_commands(state: _World) -> None:
 def _when_build_and_execute(state: _World, domain: str) -> None:
     msg = _make_test_message()
     builder = (
-        command(state.client, domain, uuid4())  # type: ignore[arg-type]
+        CommandBuilder(state.client, domain, uuid4())  # type: ignore[arg-type]
         .with_sequence(0)
         .with_command("type.googleapis.com/test.TestCommand", msg)
     )
@@ -376,7 +376,7 @@ def _when_build_and_execute(state: _World, domain: str) -> None:
 def _when_execute_directly(state: _World, docstring: str) -> None:
     msg = _make_test_message()
     builder = (
-        command(state.client, "orders", uuid4())  # type: ignore[arg-type]
+        CommandBuilder(state.client, "orders", uuid4())  # type: ignore[arg-type]
         .with_sequence(0)
         .with_command("type.googleapis.com/orders.CreateOrder", msg)
     )

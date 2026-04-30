@@ -16,6 +16,7 @@ from .client import (
 from .compensation import (
     CompensationContext,
     DelegationOptions,
+    PMRevocationResponse,
     RejectionHandlerResponse,
     delegate_to_framework,
     emit_compensation_events,
@@ -33,7 +34,6 @@ from .errors import (
     InvalidTimestampError,
     TransportError,
 )
-from .event_packing import new_event_book, new_event_book_multi
 from .helpers import (
     CORRELATION_ID_HEADER,
     DEFAULT_EDITION,
@@ -44,22 +44,14 @@ from .helpers import (
     UNKNOWN_DOMAIN,
     WILDCARD_DOMAIN,
     correlated_metadata,
-    correlation_id,
     destination_map,
-    domain,
-    edition,
     full_type_url,
     full_type_url_for,
-    has_correlation_id,
-    idempotency_key,
     implicit_edition,
-    next_sequence,
     now,
     parse_timestamp,
     proto_to_uuid,
     proto_uuid_to_hex,
-    root_id_hex,
-    root_uuid,
     type_name_from_url,
     type_url,
     type_url_matches,
@@ -78,6 +70,11 @@ from .identity import (
     order_root,
     product_root,
     to_proto_bytes,
+)
+from .retry import (
+    ExponentialBackoffRetry,
+    RetryPolicy,
+    default_retry_policy,
 )
 from .router import (
     BuildError,
@@ -150,13 +147,15 @@ from .validation import (
     require_status_not,
 )
 from .wrappers import (
-    CommandBookW,
-    CommandPageW,
-    CommandResponseW,
-    CoverW,
-    EventBookW,
-    EventPageW,
-    QueryW,
+    CommandBook,
+    CommandPage,
+    CommandResponse,
+    Cover,
+    CoverBearer,
+    EventBook,
+    EventPage,
+    Query,
+    Wrapped,
 )
 
 __all__ = [
@@ -212,18 +211,10 @@ __all__ = [
     "PROJECTION_TYPE_URL",
     "TYPE_URL_PREFIX",
     "CORRELATION_ID_HEADER",
-    # Helpers
+    # Pure utilities (non-accessor — accessors live on wrapper classes)
     "correlated_metadata",
     "destination_map",
-    "domain",
-    "correlation_id",
-    "has_correlation_id",
-    "root_uuid",
-    "root_id_hex",
-    "edition",
     "implicit_edition",
-    "idempotency_key",
-    "next_sequence",
     "uuid_to_proto",
     "proto_to_uuid",
     "proto_uuid_to_hex",
@@ -239,14 +230,16 @@ __all__ = [
     # Builders
     "CommandBuilder",
     "QueryBuilder",
-    # Wrappers
-    "CoverW",
-    "EventBookW",
-    "CommandBookW",
-    "QueryW",
-    "EventPageW",
-    "CommandPageW",
-    "CommandResponseW",
+    # Wrappers (user-facing object surface for framework protos)
+    "Wrapped",
+    "CoverBearer",
+    "Cover",
+    "EventBook",
+    "CommandBook",
+    "Query",
+    "EventPage",
+    "CommandPage",
+    "CommandResponse",
     # Server
     "configure_logging",
     "get_transport_config",
@@ -295,12 +288,10 @@ __all__ = [
     "cart_root",
     "fulfillment_root",
     "to_proto_bytes",
-    # Event packing
-    "new_event_book",
-    "new_event_book_multi",
     # Compensation
     "CompensationContext",
     "DelegationOptions",
+    "PMRevocationResponse",
     "RejectionHandlerResponse",
     "delegate_to_framework",
     "emit_compensation_events",
@@ -309,4 +300,8 @@ __all__ = [
     "pm_emit_compensation_events",
     # Destinations
     "Destinations",
+    # Retry
+    "RetryPolicy",
+    "ExponentialBackoffRetry",
+    "default_retry_policy",
 ]

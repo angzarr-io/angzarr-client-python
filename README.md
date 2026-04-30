@@ -184,9 +184,7 @@ Everything maps. The shape differs; the names and semantics don't.
 | Router | `Router::new("x").with_handler::<H, _>(factory)` (type inferred) | `Router("x").with_handler(cls, factory)` (cls passed explicitly) |
 | Factory | `\|\| Player::new(db.clone())` | `lambda: Player(db)` |
 | Handler state | Struct instance from factory closure | Class instance |
-| Cover accessors | Extension trait methods: `cover.domain()`, `cover.correlation_id()`, … (via `CoverExt`) | Free functions: `domain(cover)`, `correlation_id(cover)`, … |
-| Event book helpers | Extension trait methods: `book.next_sequence()` (via `EventBookExt`) | Free functions: `next_sequence(book)` |
-| Wrapper objects | Extension trait method directly: `cover.domain()` | `CoverW(cover).domain()` wrapper |
+| Cover/book/page accessors | Extension trait methods: `cover.domain()`, `book.next_sequence()` (via `CoverExt` / `EventBookExt`) | Wrapper methods: handlers receive `Cover` / `EventBook` wrappers from the framework — `cover.domain()`, `book.next_sequence()` directly. The raw proto is reachable via `wrapper.proto()` (the `Wrapped` interface). |
 | Error surface | `thiserror` enum `ClientError { Connection, Transport, Grpc, InvalidArgument, InvalidTimestamp }` with `is_*` predicate methods | Exception hierarchy: `ClientError → GRPCError / ConnectionError / …` |
 | Rejection factories | `CommandRejectedError::precondition_failed(msg)` | `CommandRejectedError.precondition_failed(msg)` |
 | Retry | `ExponentialBackoffRetry::default().with_max_attempts(5)` | `ExponentialBackoffRetry(max_attempts=5)` |

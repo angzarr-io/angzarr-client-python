@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.builder import QueryBuilder, query, query_domain
+from angzarr_client.builder import QueryBuilder
 from angzarr_client.errors import InvalidTimestampError
 from angzarr_client.proto.angzarr import EventBook, Query
 
@@ -69,9 +69,9 @@ def state() -> _World:
 def _ensure_builder(state: _World) -> QueryBuilder:
     if state.builder is None:
         state.builder = (
-            query(state.client, state.domain, state.root)  # type: ignore[arg-type]
+            QueryBuilder(state.client, state.domain, state.root)  # type: ignore[arg-type]
             if state.has_root and state.root is not None
-            else query_domain(state.client, state.domain)  # type: ignore[arg-type]
+            else QueryBuilder(state.client, state.domain)  # type: ignore[arg-type]
         )
     return state.builder
 
@@ -187,7 +187,7 @@ def _when_fluent_chaining(state: _World, docstring: str) -> None:
     state.root = uuid4()
     state.has_root = True
     builder = (
-        query(state.client, state.domain, state.root)  # type: ignore[arg-type]
+        QueryBuilder(state.client, state.domain, state.root)  # type: ignore[arg-type]
         .edition("test-branch")
         .range(10)
     )
@@ -204,7 +204,7 @@ def _when_build_query_with(state: _World, docstring: str) -> None:
     state.root = uuid4()
     state.has_root = True
     builder = (
-        query(state.client, state.domain, state.root)  # type: ignore[arg-type]
+        QueryBuilder(state.client, state.domain, state.root)  # type: ignore[arg-type]
         .range(5)
         .as_of_sequence(10)
     )
@@ -225,7 +225,7 @@ def _when_get_events(state: _World, domain: str, root: str) -> None:
         state.root = UUID(root)
     except ValueError:
         state.root = uuid4()
-    state.fetched_book = query(state.client, domain, state.root).get_event_book()  # type: ignore[arg-type]
+    state.fetched_book = QueryBuilder(state.client, domain, state.root).get_event_book()  # type: ignore[arg-type]
 
 
 @when(parsers.parse('I build and get_pages for domain "{domain}" root "{root}"'))
@@ -234,7 +234,7 @@ def _when_get_pages(state: _World, domain: str, root: str) -> None:
         state.root = UUID(root)
     except ValueError:
         state.root = uuid4()
-    state.fetched_pages = query(state.client, domain, state.root).get_pages()  # type: ignore[arg-type]
+    state.fetched_pages = QueryBuilder(state.client, domain, state.root).get_pages()  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +247,7 @@ def _when_call_query(state: _World, domain: str) -> None:
     state.domain = domain
     state.root = uuid4()
     state.has_root = True
-    state.builder = query(state.client, state.domain, state.root)  # type: ignore[arg-type]
+    state.builder = QueryBuilder(state.client, state.domain, state.root)  # type: ignore[arg-type]
     _try_build(state)
 
 
@@ -255,7 +255,7 @@ def _when_call_query(state: _World, domain: str) -> None:
 def _when_call_query_domain(state: _World, domain: str) -> None:
     state.domain = domain
     state.has_root = False
-    state.builder = query_domain(state.client, state.domain)  # type: ignore[arg-type]
+    state.builder = QueryBuilder(state.client, state.domain)  # type: ignore[arg-type]
     _try_build(state)
 
 

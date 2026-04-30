@@ -26,6 +26,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.helpers import (
     decode_event,
+    events_from_response,
     full_type_url_for,
     type_name_from_url,
     try_unpack,
@@ -251,13 +252,6 @@ def _given_mixed_events(state: _State) -> None:
 def _when_decode_as_order_created(state: _State) -> None:
     """Decode using full type-name matching against our test message."""
     assert state.current_event is not None
-    # The cucumber says "as OrderCreated" — we match against the actual
-    # full type name of our stand-in message, since that's what
-    # decode_event compares against. The "type_url for orders.OrderCreated"
-    # scenarios use that synthetic URL, so matching only succeeds when
-    # the URL was set to type.googleapis.com/orders.OrderCreated. That
-    # mirrors real production code; suffix-only matching is a separate
-    # API surface (see _when_decode_with_suffix below).
     result = decode_event(state.current_event, "orders.OrderCreated", _MSG_CLASS)
     if result is None:
         state.decode_is_none = True
@@ -369,15 +363,9 @@ def _when_call_decode_event(state: _State, full_type_name: str) -> None:
 
 @when("I call events_from_response(response)")
 def _when_events_from_response(state: _State) -> None:
-    """No `events_from_response` helper exists in Python (Rust has one
-    in src/builder.rs:268). Surface this as a finding; for now,
-    extract the events from the response's `events` field manually
-    so the assertions can run."""
+    """Pull pages out of a CommandResponse via the helpers utility."""
     assert state.command_response is not None
-    if state.command_response.HasField("events"):
-        state.events_list = list(state.command_response.events.pages)
-    else:
-        state.events_list = []
+    state.events_list = events_from_response(state.command_response)
 
 
 @when(parsers.parse("I decode each as {event_type}"))

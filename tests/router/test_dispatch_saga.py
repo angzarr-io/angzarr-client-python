@@ -149,8 +149,10 @@ def test_saga_handler_receives_source_cover_when_declared():
 
     cover = captured["source_cover"]
     assert cover is not None
-    assert cover.domain == "order"
-    assert cover.root.value == b"\x01" * 16
+    # B2: handlers receive a Cover wrapper; accessors are method calls,
+    # raw proto fields go through ``.proto()``.
+    assert cover.domain() == "order"
+    assert cover.proto().root.value == b"\x01" * 16
 
 
 def test_saga_handler_without_source_cover_param_unaffected():

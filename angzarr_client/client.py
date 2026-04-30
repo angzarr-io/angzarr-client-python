@@ -624,9 +624,23 @@ class DomainClient:
         )
         return self.command_handler.handle_command(request, timeout=timeout)
 
-    def get_events(self, query: Query, timeout: float | None = None) -> EventBook:
-        """Retrieve events for the query (delegates to query client)."""
+    def get_event_book(self, query: Query, timeout: float | None = None) -> EventBook:
+        """Retrieve a single EventBook for the query — unary RPC.
+
+        Delegates to the underlying :class:`QueryClient`. Mirrors Rust's
+        ``DomainClient::get_event_book``.
+        """
         return self.query.get_event_book(query, timeout=timeout)
+
+    def get_events(
+        self, query: Query, timeout: float | None = None
+    ) -> list[EventBook]:
+        """Retrieve all matching EventBooks for the query — streaming RPC.
+
+        Delegates to the underlying :class:`QueryClient`. Mirrors Rust's
+        ``DomainClient::get_events``.
+        """
+        return self.query.get_events(query, timeout=timeout)
 
     def close(self) -> None:
         """Close the underlying channel if this client owns it."""

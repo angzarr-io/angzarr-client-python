@@ -13,50 +13,25 @@ from angzarr_client.helpers import (
     META_ANGZARR_DOMAIN,
     PROJECTION_DOMAIN_PREFIX,
     TYPE_URL_PREFIX,
-    # Constants
     UNKNOWN_DOMAIN,
     WILDCARD_DOMAIN,
-    cache_key,
-    # CommandBook helpers
-    command_pages,
-    correlation_id,
-    # Cover functions
-    cover_of,
-    # Event decoding
     decode_event,
-    # Saga helpers
     destination_map,
     divergence_for,
-    domain,
-    edition,
-    event_pages,
-    # CommandResponse helpers
     events_from_response,
-    has_correlation_id,
-    # Edition helpers
     implicit_edition,
     new_command_book,
     new_command_page,
-    # Construction helpers
     new_cover,
-    # EventBook helpers
-    next_sequence,
-    # Audit #86: edition propagation helper
-    # Timestamp helpers
     now,
     parse_timestamp,
     proto_to_uuid,
     range_selection,
-    root_id_hex,
-    root_uuid,
-    routing_key,
     temporal_by_sequence,
     temporal_by_time,
     type_name_from_url,
-    # Type URL helpers
     type_url,
     type_url_matches,
-    # UUID conversion
     uuid_to_proto,
 )
 from angzarr_client.proto.angzarr import (
@@ -98,185 +73,10 @@ class TestConstants:
         assert TYPE_URL_PREFIX == "type.googleapis.com/"
 
 
-class TestCoverOf:
-    """Tests for cover_of function."""
-
-    def test_cover_returns_self(self) -> None:
-        """Cover object returns itself."""
-        cover = Cover(domain="test")
-        assert cover_of(cover) is cover
-
-    def test_event_book_returns_cover(self) -> None:
-        """EventBook returns its cover."""
-        cover = Cover(domain="orders")
-        book = EventBook()
-        book.cover.CopyFrom(cover)
-        result = cover_of(book)
-        assert result.domain == "orders"
-
-    def test_command_book_returns_cover(self) -> None:
-        """CommandBook returns its cover."""
-        cover = Cover(domain="inventory")
-        book = CommandBook()
-        book.cover.CopyFrom(cover)
-        result = cover_of(book)
-        assert result.domain == "inventory"
-
-    def test_query_returns_cover(self) -> None:
-        """Query returns its cover."""
-        cover = Cover(domain="shipping")
-        query = Query()
-        query.cover.CopyFrom(cover)
-        result = cover_of(query)
-        assert result.domain == "shipping"
-
-    def test_object_without_cover_returns_none(self) -> None:
-        """Object without cover attribute returns None."""
-        result = cover_of("not a cover bearer")  # type: ignore
-        assert result is None
-
-
-class TestDomain:
-    """Tests for domain function."""
-
-    def test_returns_domain_from_cover(self) -> None:
-        """Returns domain from Cover."""
-        cover = Cover(domain="payments")
-        assert domain(cover) == "payments"
-
-    def test_returns_unknown_for_empty_domain(self) -> None:
-        """Returns UNKNOWN_DOMAIN for empty domain."""
-        cover = Cover()
-        assert domain(cover) == UNKNOWN_DOMAIN
-
-    def test_returns_unknown_for_none(self) -> None:
-        """Returns UNKNOWN_DOMAIN for invalid input."""
-        assert domain("invalid") == UNKNOWN_DOMAIN  # type: ignore
-
-
-class TestCorrelationId:
-    """Tests for correlation_id function."""
-
-    def test_returns_correlation_id(self) -> None:
-        """Returns correlation_id from Cover."""
-        cover = Cover(correlation_id="abc-123")
-        assert correlation_id(cover) == "abc-123"
-
-    def test_returns_empty_for_no_correlation(self) -> None:
-        """Returns empty string if not set."""
-        cover = Cover(domain="test")
-        assert correlation_id(cover) == ""
-
-    def test_returns_empty_for_invalid_input(self) -> None:
-        """Returns empty string for invalid input."""
-        assert correlation_id("invalid") == ""  # type: ignore
-
-
-class TestHasCorrelationId:
-    """Tests for has_correlation_id function."""
-
-    def test_true_when_set(self) -> None:
-        """Returns True when correlation_id is set."""
-        cover = Cover(correlation_id="xyz")
-        assert has_correlation_id(cover) is True
-
-    def test_false_when_empty(self) -> None:
-        """Returns False when correlation_id is empty."""
-        cover = Cover()
-        assert has_correlation_id(cover) is False
-
-    def test_false_for_invalid(self) -> None:
-        """Returns False for invalid input."""
-        assert has_correlation_id("invalid") is False  # type: ignore
-
-
-class TestRootUuid:
-    """Tests for root_uuid function."""
-
-    def test_returns_uuid(self) -> None:
-        """Returns Python UUID from Cover."""
-        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
-        cover = Cover(domain="test")
-        cover.root.CopyFrom(uuid_to_proto(test_uuid))
-        result = root_uuid(cover)
-        assert result == test_uuid
-
-    def test_returns_none_when_no_root(self) -> None:
-        """Returns None when root not set."""
-        cover = Cover(domain="test")
-        assert root_uuid(cover) is None
-
-    def test_returns_none_for_invalid_bytes(self) -> None:
-        """Returns None for invalid UUID bytes."""
-        cover = Cover(domain="test")
-        cover.root.value = b"invalid"  # Not 16 bytes
-        assert root_uuid(cover) is None
-
-
-class TestRootIdHex:
-    """Tests for root_id_hex function."""
-
-    def test_returns_hex_string(self) -> None:
-        """Returns hex representation of root UUID."""
-        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
-        cover = Cover(domain="test")
-        cover.root.CopyFrom(uuid_to_proto(test_uuid))
-        result = root_id_hex(cover)
-        assert result == test_uuid.bytes.hex()
-
-    def test_returns_empty_when_no_root(self) -> None:
-        """Returns empty string when root not set."""
-        cover = Cover(domain="test")
-        assert root_id_hex(cover) == ""
-
-
-class TestEdition:
-    """Tests for edition function."""
-
-    def test_returns_edition_name(self) -> None:
-        """Returns edition name from Cover."""
-        cover = Cover(domain="test")
-        cover.edition.name = "v2"
-        assert edition(cover) == "v2"
-
-    def test_returns_none_when_not_set(self) -> None:
-        """Returns None when not set."""
-        cover = Cover(domain="test")
-        assert edition(cover) is None
-
-    def test_returns_none_for_empty_name(self) -> None:
-        """Returns None for empty name."""
-        cover = Cover(domain="test")
-        cover.edition.name = ""
-        assert edition(cover) is None
-
-
-class TestRoutingKey:
-    """Tests for routing_key function."""
-
-    def test_returns_domain(self) -> None:
-        """Routing key is the domain."""
-        cover = Cover(domain="orders")
-        assert routing_key(cover) == "orders"
-
-
-class TestCacheKey:
-    """Tests for cache_key function."""
-
-    def test_returns_domain_and_root(self) -> None:
-        """Cache key combines edition, domain and root hex."""
-        test_uuid = PyUUID("12345678-1234-5678-1234-567812345678")
-        cover = Cover(domain="orders")
-        cover.root.CopyFrom(uuid_to_proto(test_uuid))
-        result = cache_key(cover)
-        # No edition set → empty prefix
-        assert result == f":orders:{test_uuid.bytes.hex()}"
-
-    def test_returns_domain_with_empty_root(self) -> None:
-        """Cache key with no root has empty suffix."""
-        cover = Cover(domain="orders")
-        # No edition set → empty prefix
-        assert cache_key(cover) == ":orders:"
+# Cover/EventBook/CommandBook/Query field accessors live on the wrapper
+# classes (``Cover.domain()``, ``EventBook.next_sequence()``, etc.); see
+# ``test_wrappers.py``. The free-function accessors that used to live
+# here were deleted along with the W-suffix wrapper aliases.
 
 
 class TestUuidConversion:
@@ -337,33 +137,8 @@ class TestEditionHelpers:
         assert divergence_for(None, "orders") is None
 
 
-class TestEventBookHelpers:
-    """Tests for EventBook helper functions."""
-
-    def test_next_sequence_returns_value(self) -> None:
-        """next_sequence returns the next_sequence field."""
-        book = EventBook()
-        book.next_sequence = 5
-        assert next_sequence(book) == 5
-
-    def test_next_sequence_none_returns_zero(self) -> None:
-        """next_sequence returns 0 for None."""
-        assert next_sequence(None) == 0  # type: ignore
-
-    def test_event_pages_returns_list(self) -> None:
-        """event_pages returns pages as list."""
-        book = EventBook()
-        page1 = EventPage(header=PageHeader(sequence=1))
-        page2 = EventPage(header=PageHeader(sequence=2))
-        book.pages.extend([page1, page2])
-        result = event_pages(book)
-        assert len(result) == 2
-        assert result[0].header.sequence == 1
-        assert result[1].header.sequence == 2
-
-    def test_event_pages_none_returns_empty(self) -> None:
-        """event_pages returns empty list for None."""
-        assert event_pages(None) == []
+# EventBook accessor free functions (next_sequence, event_pages) were
+# deleted; see ``EventBook`` wrapper in ``test_wrappers.py``.
 
 
 class TestDestinationMap:
@@ -410,7 +185,9 @@ class TestDestinationMap:
         assert uuid1.bytes.hex() in result
 
     def test_works_with_next_sequence_lookup(self) -> None:
-        """destination_map integrates with next_sequence for lookups."""
+        """destination_map integrates with EventBook.next_sequence() for lookups."""
+        from angzarr_client import EventBook as EventBookW
+
         uuid1 = PyUUID("11111111-1111-1111-1111-111111111111")
 
         book = EventBook(next_sequence=42)
@@ -420,29 +197,13 @@ class TestDestinationMap:
         dest_map = destination_map([book])
         key = uuid1.bytes.hex()
 
-        # Pattern used in sagas: next_sequence(dest_map.get(key))
-        assert next_sequence(dest_map.get(key)) == 42
-        assert next_sequence(dest_map.get("nonexistent")) == 0
+        # Pattern used in sagas: wrap the proto and read next_sequence().
+        assert EventBookW(dest_map[key]).next_sequence() == 42
+        assert dest_map.get("nonexistent") is None
 
 
-class TestCommandBookHelpers:
-    """Tests for CommandBook helper functions."""
-
-    def test_command_pages_returns_list(self) -> None:
-        """command_pages returns pages as list."""
-        book = CommandBook()
-        page1 = CommandPage()
-        page1.header.sequence = 1
-        page2 = CommandPage()
-        page2.header.sequence = 2
-        book.pages.extend([page1, page2])
-        result = command_pages(book)
-        assert len(result) == 2
-        assert result[0].header.sequence == 1
-
-    def test_command_pages_none_returns_empty(self) -> None:
-        """command_pages returns empty list for None."""
-        assert command_pages(None) == []
+# CommandBook accessor free function (command_pages) was deleted; see
+# ``CommandBook.pages()`` in ``test_wrappers.py``.
 
 
 class TestEventsFromResponse:
@@ -752,22 +513,9 @@ class TestAdditionalHelpers:
         u = PyUUID("12345678-1234-5678-1234-567812345678")
         assert proto_uuid_to_hex(uuid_to_proto(u)) == u.bytes.hex()
 
-    def test_root_id_text_with_root(self) -> None:
-        from uuid import UUID as PyUUID
-
-        from angzarr_client.helpers import root_id_text, uuid_to_proto
-        from angzarr_client.proto.angzarr import Cover
-
-        u = PyUUID("12345678-1234-5678-1234-567812345678")
-        c = Cover()
-        c.root.CopyFrom(uuid_to_proto(u))
-        assert root_id_text(c) == str(u)
-
-    def test_root_id_text_empty_without_root(self) -> None:
-        from angzarr_client.helpers import root_id_text
-        from angzarr_client.proto.angzarr import Cover
-
-        assert root_id_text(Cover()) == ""
+    # ``root_id_text(cover)`` accessor moved to ``Cover.root_id_hex()``;
+    # for the standard 8-4-4-4-12 text form callers can use
+    # ``bytes_to_uuid_text(cover.proto().root.value)``.
 
     # Audit #86: edition_is_empty + edition_name_or_default deleted as
     # dead-on-arrival helpers; their tests removed in lockstep.

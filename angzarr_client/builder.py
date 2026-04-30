@@ -241,32 +241,3 @@ class QueryBuilder:
         """Execute the query and return just the event pages."""
         book = self.get_event_book()
         return list(book.pages)
-
-
-# Convenience functions for creating builders
-
-
-def command(client: CommandHandlerClient, domain: str, root: PyUUID) -> CommandBuilder:
-    """Start building a command for an existing aggregate."""
-    return CommandBuilder(client, domain, root)
-
-
-def command_new(client: CommandHandlerClient, domain: str) -> CommandBuilder:
-    """Start building a command for a new aggregate.
-
-    Materializes a fresh UUID v4 client-side and passes it explicitly
-    to the CommandBuilder. The framework convention (audit #20 / #67)
-    is "aggregate roots are always client-assigned" — there is no
-    other path to skip ``root``; the constructor requires it.
-    """
-    return CommandBuilder(client, domain, uuid4())
-
-
-def query(client: QueryClient, domain: str, root: PyUUID) -> QueryBuilder:
-    """Start building a query for a specific aggregate."""
-    return QueryBuilder(client, domain, root)
-
-
-def query_domain(client: QueryClient, domain: str) -> QueryBuilder:
-    """Start building a query by domain only (use with by_correlation_id)."""
-    return QueryBuilder(client, domain)

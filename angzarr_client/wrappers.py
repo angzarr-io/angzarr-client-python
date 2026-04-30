@@ -1,479 +1,375 @@
-"""Wrapper classes for Angzarr proto types.
+"""User-facing wrappers around Angzarr framework proto types.
 
-Each wrapper takes a protobuf message in its constructor and provides
-extension methods as instance methods.
+Each wrapper takes the underlying proto in its constructor and exposes
+domain accessors as methods. The raw proto is reachable via the
+:meth:`Wrapped.proto` interface method (``wrapper.proto()``) when
+callers need direct field access.
+
+Cover-bearing wrappers (:class:`Cover`, :class:`EventBook`,
+:class:`CommandBook`, :class:`Query`) inherit shared accessors from
+:class:`CoverBearer`. Page wrappers (:class:`EventPage`,
+:class:`CommandPage`) and :class:`CommandResponse` are not Cover-bearers
+and define their own surface.
+
+Naming: wrapper class names shadow the proto type names. Internal code
+that wants the raw proto imports it from
+``angzarr_client.proto.angzarr`` directly; user code reaches for the
+wrapper from ``angzarr_client``.
 """
 
-from typing import Optional, TypeVar
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import TypeVar
 from uuid import UUID as PyUUID
 
-from .helpers import (
-    UNKNOWN_DOMAIN,
-    type_url_matches,
-)
 from .proto.angzarr import (
-    CommandBook,
-    CommandPage,
-    CommandResponse,
-    Cover,
-    EventBook,
-    EventPage,
+    CommandBook as _CommandBookProto,
+    CommandPage as _CommandPageProto,
+    CommandResponse as _CommandResponseProto,
+    Cover as _CoverProto,
+    EventBook as _EventBookProto,
+    EventPage as _EventPageProto,
     MergeStrategy,
     PageHeader,
-    Query,
+    Query as _QueryProto,
 )
 
 T = TypeVar("T")
 
+# Canonical domain identifiers — user code reaches for these via
+# ``from angzarr_client import UNKNOWN_DOMAIN`` etc.
+UNKNOWN_DOMAIN = "unknown"
+TYPE_URL_PREFIX = "type.googleapis.com/"
 
-class CoverW:
-    """Wrapper for Cover proto with extension methods."""
 
-    def __init__(self, proto: Cover) -> None:
-        self.proto = proto
+class Wrapped(ABC):
+    """Interface every angzarr wrapper implements.
+
+    Wrappers expose two surfaces:
+
+    1. Method-style accessors for common needs (e.g. :meth:`Cover.domain`).
+    2. The raw proto for everything else, via :meth:`proto`.
+
+    Cross-language note: ``proto()`` is the documented escape hatch for
+    callers that want direct proto field access (e.g. for serialization,
+    for fields that don't have a wrapper accessor, for proto-specific
+    methods like ``HasField``). Other languages will provide an
+    equivalent method (e.g. Java ``Cover.proto()``).
+    """
+
+    @abstractmethod
+    def proto(self):
+        """Return the wrapped proto message."""
+
+
+class CoverBearer(Wrapped):
+    """Shared accessors for proto types that carry a ``Cover`` field.
+
+    Subclasses set ``self._proto`` and override :meth:`_cover_proto` to
+    return the embedded Cover (or ``None`` if missing). The default
+    implementation assumes ``self._proto`` is itself a Cover — only
+    :class:`Cover` relies on the default; the others override.
+    """
+
+    def _cover_proto(self) -> _CoverProto | None:
+        # Default: the wrapped proto IS a Cover (used by Cover wrapper).
+        return self.proto()  # type: ignore[return-value]
 
     def domain(self) -> str:
-        """Get the domain, or UNKNOWN_DOMAIN if missing."""
-        if not self.proto.domain:
+        """Get the domain, falling back to :data:`UNKNOWN_DOMAIN`."""
+        c = self._cover_proto()
+        if c is None or not c.domain:
             return UNKNOWN_DOMAIN
-        return self.proto.domain
+        return c.domain
 
     def correlation_id(self) -> str:
         """Get the correlation_id, or empty string if missing."""
-        return self.proto.correlation_id
+        c = self._cover_proto()
+        if c is None:
+            return ""
+        return c.correlation_id
 
     def has_correlation_id(self) -> bool:
-        """Return True if the correlation_id is present and non-empty."""
-        return bool(self.proto.correlation_id)
-
-    def root_uuid(self) -> PyUUID | None:
-        """Extract the root UUID."""
-        if not self.proto.HasField("root"):
-            return None
-        try:
-            return PyUUID(bytes=self.proto.root.value)
-        except ValueError:
-            return None
-
-    def root_id_hex(self) -> str:
-        """Return the root UUID as a hex string, or empty string if missing."""
-        if not self.proto.HasField("root"):
-            return ""
-        return self.proto.root.value.hex()
-
-    def edition(self) -> str | None:
-        """Return the edition name, or None if not set."""
-        if not self.proto.HasField("edition") or not self.proto.edition.name:
-            return None
-        return self.proto.edition.name
-
-    def routing_key(self) -> str:
-        """Compute the bus routing key."""
-        return self.domain()
-
-    def cache_key(self) -> str:
-        """Generate a cache key based on edition + domain + root."""
-        return f"{self.edition() or ''}:{self.domain()}:{self.root_id_hex()}"
-
-
-class EventBookW:
-    """Wrapper for EventBook proto with extension methods."""
-
-    def __init__(self, proto: EventBook) -> None:
-        self.proto = proto
-
-    def next_sequence(self) -> int:
-        """Return the next sequence number."""
-        return self.proto.next_sequence
-
-    def is_empty(self) -> bool:
-        """Check if the event book has no pages."""
-        return len(self.proto.pages) == 0
-
-    def pages(self) -> list["EventPageW"]:
-        """Return the event pages as wrapped EventPageW instances."""
-        return [EventPageW(p) for p in self.proto.pages]
-
-    def last_page(self) -> "EventPageW | None":
-        """Get the last event page, if any."""
-        if not self.proto.pages:
-            return None
-        return EventPageW(self.proto.pages[-1])
-
-    def first_page(self) -> "EventPageW | None":
-        """Get the first event page, if any."""
-        if not self.proto.pages:
-            return None
-        return EventPageW(self.proto.pages[0])
-
-    def _cover(self) -> Cover | None:
-        """Get the cover, or None if not set."""
-        if not self.proto.HasField("cover"):
-            return None
-        return self.proto.cover
-
-    def domain(self) -> str:
-        """Get the domain from the cover, or UNKNOWN_DOMAIN if missing."""
-        cover = self._cover()
-        if cover is None or not cover.domain:
-            return UNKNOWN_DOMAIN
-        return cover.domain
-
-    def correlation_id(self) -> str:
-        """Get the correlation_id from the cover, or empty string if missing."""
-        cover = self._cover()
-        if cover is None:
-            return ""
-        return cover.correlation_id
-
-    def has_correlation_id(self) -> bool:
-        """Return True if the correlation_id is present and non-empty."""
+        """True if a non-empty correlation_id is present."""
         return bool(self.correlation_id())
 
     def root_uuid(self) -> PyUUID | None:
-        """Extract the root UUID from the cover."""
-        cover = self._cover()
-        if cover is None or not cover.HasField("root"):
+        """Extract the root UUID, or None if missing/malformed."""
+        c = self._cover_proto()
+        if c is None or not c.HasField("root"):
             return None
         try:
-            return PyUUID(bytes=cover.root.value)
+            return PyUUID(bytes=c.root.value)
         except ValueError:
             return None
 
     def root_id_hex(self) -> str:
-        """Return the root UUID as a hex string, or empty string if missing."""
-        cover = self._cover()
-        if cover is None or not cover.HasField("root"):
+        """Root UUID as hex, or empty string if missing."""
+        c = self._cover_proto()
+        if c is None or not c.HasField("root"):
             return ""
-        return cover.root.value.hex()
+        return c.root.value.hex()
 
     def edition(self) -> str | None:
-        """Return the edition name, or None if not set."""
-        cover = self._cover()
-        if cover is None or not cover.HasField("edition") or not cover.edition.name:
+        """Edition name, or None when missing/empty."""
+        c = self._cover_proto()
+        if c is None or not c.HasField("edition") or not c.edition.name:
             return None
-        return cover.edition.name
+        return c.edition.name
 
     def routing_key(self) -> str:
-        """Compute the bus routing key."""
+        """Bus routing key (currently the domain)."""
         return self.domain()
 
     def cache_key(self) -> str:
-        """Generate a cache key based on edition + domain + root."""
+        """Cache key derived from edition + domain + root."""
         return f"{self.edition() or ''}:{self.domain()}:{self.root_id_hex()}"
 
-    def cover_wrapper(self) -> "CoverW":
-        """Return a CoverW wrapping the cover."""
-        cover = self._cover()
-        if cover is None:
-            return CoverW(Cover())
-        return CoverW(cover)
+
+class Cover(CoverBearer):
+    """Wrapper for the ``Cover`` proto."""
+
+    def __init__(self, proto: _CoverProto) -> None:
+        self._proto = proto
+
+    def proto(self) -> _CoverProto:
+        return self._proto
 
 
-class CommandBookW:
-    """Wrapper for CommandBook proto with extension methods."""
+class EventBook(CoverBearer):
+    """Wrapper for the ``EventBook`` proto."""
 
-    def __init__(self, proto: CommandBook) -> None:
-        self.proto = proto
+    def __init__(self, proto: _EventBookProto) -> None:
+        self._proto = proto
 
-    def pages(self) -> list["CommandPageW"]:
-        """Return the command pages as wrapped CommandPageW instances."""
-        return [CommandPageW(p) for p in self.proto.pages]
+    def proto(self) -> _EventBookProto:
+        return self._proto
+
+    def _cover_proto(self) -> _CoverProto | None:
+        return self._proto.cover if self._proto.HasField("cover") else None
+
+    def cover(self) -> Cover:
+        """The wrapped cover.
+
+        Always returns a :class:`Cover` — when the underlying proto
+        has no cover field set, the wrapper is built around the
+        proto's default-instance cover, so accessors like
+        ``.domain()`` still work (returning the canonical empty
+        responses, e.g. :data:`UNKNOWN_DOMAIN`).
+        """
+        return Cover(self._proto.cover)
+
+    def next_sequence(self) -> int:
+        """Framework-precomputed next sequence number."""
+        return self._proto.next_sequence
+
+    def is_empty(self) -> bool:
+        """True if there are no event pages."""
+        return len(self._proto.pages) == 0
+
+    def pages(self) -> list[EventPage]:
+        """All event pages, wrapped."""
+        return [EventPage(p) for p in self._proto.pages]
+
+    def first_page(self) -> EventPage | None:
+        """First event page, or None when empty."""
+        if not self._proto.pages:
+            return None
+        return EventPage(self._proto.pages[0])
+
+    def last_page(self) -> EventPage | None:
+        """Last event page, or None when empty."""
+        if not self._proto.pages:
+            return None
+        return EventPage(self._proto.pages[-1])
+
+
+class CommandBook(CoverBearer):
+    """Wrapper for the ``CommandBook`` proto."""
+
+    def __init__(self, proto: _CommandBookProto) -> None:
+        self._proto = proto
+
+    def proto(self) -> _CommandBookProto:
+        return self._proto
+
+    def _cover_proto(self) -> _CoverProto | None:
+        return self._proto.cover if self._proto.HasField("cover") else None
+
+    def cover(self) -> Cover:
+        """The wrapped cover (always present; default-instance if not set).
+
+        See :meth:`EventBook.cover` for the rationale.
+        """
+        return Cover(self._proto.cover)
+
+    def pages(self) -> list[CommandPage]:
+        """All command pages, wrapped."""
+        return [CommandPage(p) for p in self._proto.pages]
+
+    def first_command(self) -> CommandPage | None:
+        """First command page, or None when empty."""
+        if not self._proto.pages:
+            return None
+        return CommandPage(self._proto.pages[0])
 
     def command_sequence(self) -> int:
-        """Get the sequence number of the first command page."""
-        if not self.proto.pages:
+        """Sequence number of the first command page (0 when empty)."""
+        if not self._proto.pages:
             return 0
-        page = self.proto.pages[0]
+        page = self._proto.pages[0]
         if not page.HasField("header"):
             return 0
         return page.header.sequence
 
-    def first_command(self) -> "CommandPageW | None":
-        """Get the first command page, if any."""
-        if not self.proto.pages:
-            return None
-        return CommandPageW(self.proto.pages[0])
-
     def merge_strategy(self) -> MergeStrategy:
-        """Get the merge strategy of the first command page."""
-        if not self.proto.pages:
+        """Merge strategy of the first page; defaults to commutative."""
+        if not self._proto.pages:
             return MergeStrategy.MERGE_COMMUTATIVE
-        return self.proto.pages[0].merge_strategy
-
-    def _cover(self) -> Cover | None:
-        """Get the cover, or None if not set."""
-        if not self.proto.HasField("cover"):
-            return None
-        return self.proto.cover
-
-    def domain(self) -> str:
-        """Get the domain from the cover, or UNKNOWN_DOMAIN if missing."""
-        cover = self._cover()
-        if cover is None or not cover.domain:
-            return UNKNOWN_DOMAIN
-        return cover.domain
-
-    def correlation_id(self) -> str:
-        """Get the correlation_id from the cover, or empty string if missing."""
-        cover = self._cover()
-        if cover is None:
-            return ""
-        return cover.correlation_id
-
-    def has_correlation_id(self) -> bool:
-        """Return True if the correlation_id is present and non-empty."""
-        return bool(self.correlation_id())
-
-    def root_uuid(self) -> PyUUID | None:
-        """Extract the root UUID from the cover."""
-        cover = self._cover()
-        if cover is None or not cover.HasField("root"):
-            return None
-        try:
-            return PyUUID(bytes=cover.root.value)
-        except ValueError:
-            return None
-
-    def edition(self) -> str | None:
-        """Return the edition name, or None if not set."""
-        cover = self._cover()
-        if cover is None or not cover.HasField("edition") or not cover.edition.name:
-            return None
-        return cover.edition.name
-
-    def routing_key(self) -> str:
-        """Compute the bus routing key."""
-        return self.domain()
-
-    def cache_key(self) -> str:
-        """Generate a cache key based on edition + domain + root."""
-        cover = self._cover()
-        root_hex = (
-            cover.root.value.hex()
-            if cover is not None and cover.HasField("root")
-            else ""
-        )
-        return f"{self.edition() or ''}:{self.domain()}:{root_hex}"
-
-    def cover_wrapper(self) -> "CoverW":
-        """Return a CoverW wrapping the cover."""
-        cover = self._cover()
-        if cover is None:
-            return CoverW(Cover())
-        return CoverW(cover)
+        return self._proto.pages[0].merge_strategy
 
 
-class QueryW:
-    """Wrapper for Query proto with extension methods."""
+class Query(CoverBearer):
+    """Wrapper for the ``Query`` proto."""
 
-    def __init__(self, proto: Query) -> None:
-        self.proto = proto
+    def __init__(self, proto: _QueryProto) -> None:
+        self._proto = proto
 
-    def _cover(self) -> Cover | None:
-        """Get the cover, or None if not set."""
-        if not self.proto.HasField("cover"):
-            return None
-        return self.proto.cover
+    def proto(self) -> _QueryProto:
+        return self._proto
 
-    def domain(self) -> str:
-        """Get the domain from the cover, or UNKNOWN_DOMAIN if missing."""
-        cover = self._cover()
-        if cover is None or not cover.domain:
-            return UNKNOWN_DOMAIN
-        return cover.domain
+    def _cover_proto(self) -> _CoverProto | None:
+        return self._proto.cover if self._proto.HasField("cover") else None
 
-    def correlation_id(self) -> str:
-        """Get the correlation_id from the cover, or empty string if missing."""
-        cover = self._cover()
-        if cover is None:
-            return ""
-        return cover.correlation_id
+    def cover(self) -> Cover:
+        """The wrapped cover (always present; default-instance if not set).
 
-    def has_correlation_id(self) -> bool:
-        """Return True if the correlation_id is present and non-empty."""
-        return bool(self.correlation_id())
-
-    def root_uuid(self) -> PyUUID | None:
-        """Extract the root UUID from the cover."""
-        cover = self._cover()
-        if cover is None or not cover.HasField("root"):
-            return None
-        try:
-            return PyUUID(bytes=cover.root.value)
-        except ValueError:
-            return None
-
-    def root_id_hex(self) -> str:
-        """Return the root UUID as a hex string, or empty string if missing."""
-        cover = self._cover()
-        if cover is None or not cover.HasField("root"):
-            return ""
-        return cover.root.value.hex()
-
-    def edition(self) -> str | None:
-        """Return the edition name, or None if not set."""
-        cover = self._cover()
-        if cover is None or not cover.HasField("edition") or not cover.edition.name:
-            return None
-        return cover.edition.name
-
-    def routing_key(self) -> str:
-        """Compute the bus routing key."""
-        return self.domain()
-
-    def cache_key(self) -> str:
-        """Generate a cache key based on edition + domain + root."""
-        return f"{self.edition() or ''}:{self.domain()}:{self.root_id_hex()}"
-
-    def cover_wrapper(self) -> "CoverW":
-        """Return a CoverW wrapping the cover."""
-        cover = self._cover()
-        if cover is None:
-            return CoverW(Cover())
-        return CoverW(cover)
+        See :meth:`EventBook.cover` for the rationale.
+        """
+        return Cover(self._proto.cover)
 
 
-class EventPageW:
-    """Wrapper for EventPage proto with extension methods."""
+class EventPage(Wrapped):
+    """Wrapper for the ``EventPage`` proto."""
 
-    def __init__(self, proto: EventPage) -> None:
-        self.proto = proto
+    def __init__(self, proto: _EventPageProto) -> None:
+        self._proto = proto
+
+    def proto(self) -> _EventPageProto:
+        return self._proto
 
     def sequence_num(self) -> int:
-        """Return the sequence number of this event page."""
-        if not self.proto.HasField("header"):
+        """Explicit sequence number, or 0 if not set."""
+        if not self._proto.HasField("header"):
             return 0
-        return self.proto.header.sequence
+        return self._proto.header.sequence
 
     def header(self) -> PageHeader | None:
-        """Return the page header, if present."""
-        if not self.proto.HasField("header"):
+        """The page header proto, or None if missing."""
+        if not self._proto.HasField("header"):
             return None
-        return self.proto.header
+        return self._proto.header
 
     def is_deferred(self) -> bool:
-        """Check if this event is deferred (external or angzarr deferred)."""
-        if not self.proto.HasField("header"):
+        """True if this page carries a deferred-sequence header."""
+        if not self._proto.HasField("header"):
             return False
-        header = self.proto.header
-        return header.HasField("external_deferred") or header.HasField(
-            "angzarr_deferred"
-        )
+        h = self._proto.header
+        return h.HasField("external_deferred") or h.HasField("angzarr_deferred")
 
     def type_url(self) -> str | None:
-        """Return the type URL of the event payload."""
-        if not self.proto.HasField("event"):
+        """Event payload's type URL, or None if missing."""
+        if not self._proto.HasField("event"):
             return None
-        return self.proto.event.type_url
+        return self._proto.event.type_url
 
     def payload(self) -> bytes | None:
-        """Return the raw payload bytes of the event."""
-        if not self.proto.HasField("event"):
+        """Raw event payload bytes, or None if missing."""
+        if not self._proto.HasField("event"):
             return None
-        return self.proto.event.value
+        return self._proto.event.value
 
     def decode_typed(self, msg_class: type[T]) -> T | None:
-        """Decode the event payload to the given message type.
+        """Decode the event payload into ``msg_class``, exact-match on type URL.
 
-        Type-safe decoding that checks the type URL matches the expected type.
-
-        Args:
-            msg_class: The protobuf message class to decode into
-
-        Returns:
-            The decoded message if decoding succeeds, None otherwise
+        Returns None on missing event, type mismatch, or decode failure.
         """
-        if not self.proto.HasField("event"):
+        if not self._proto.HasField("event"):
+            return None
+        expected = TYPE_URL_PREFIX + msg_class.DESCRIPTOR.full_name
+        if self._proto.event.type_url != expected:
             return None
         try:
             msg = msg_class()
-            self.proto.event.Unpack(msg)
-            return msg
-        except Exception:
-            return None
-
-    def decode_event(self, type_suffix: str, msg_class: type[T]) -> T | None:
-        """Attempt to decode an event payload if the type URL matches.
-
-        Args:
-            type_suffix: The expected type URL suffix
-            msg_class: The protobuf message class to decode into
-
-        Returns:
-            The decoded message if type matches and decoding succeeds, None otherwise
-        """
-        if not self.proto.HasField("event"):
-            return None
-        if not type_url_matches(self.proto.event.type_url, type_suffix):
-            return None
-        try:
-            msg = msg_class()
-            self.proto.event.Unpack(msg)
+            self._proto.event.Unpack(msg)
             return msg
         except Exception:
             return None
 
 
-class CommandPageW:
-    """Wrapper for CommandPage proto with extension methods."""
+class CommandPage(Wrapped):
+    """Wrapper for the ``CommandPage`` proto."""
 
-    def __init__(self, proto: CommandPage) -> None:
-        self.proto = proto
+    def __init__(self, proto: _CommandPageProto) -> None:
+        self._proto = proto
 
-    def sequence(self) -> int:
-        """Return the sequence number."""
-        return self.proto.header.sequence if self.proto.HasField("header") else 0
+    def proto(self) -> _CommandPageProto:
+        return self._proto
 
-    # Alias for Rust API consistency
-    sequence_num = sequence
+    def sequence_num(self) -> int:
+        """Explicit sequence number, or 0 if not set."""
+        if not self._proto.HasField("header"):
+            return 0
+        return self._proto.header.sequence
 
     def header(self) -> PageHeader | None:
-        """Return the page header, if present."""
-        if not self.proto.HasField("header"):
+        """The page header proto, or None if missing."""
+        if not self._proto.HasField("header"):
             return None
-        return self.proto.header
+        return self._proto.header
 
     def is_deferred(self) -> bool:
-        """Check if this command is deferred."""
-        if not self.proto.HasField("header"):
+        """True if this page carries a deferred-sequence header."""
+        if not self._proto.HasField("header"):
             return False
-        header = self.proto.header
-        return header.HasField("external_deferred") or header.HasField(
-            "angzarr_deferred"
-        )
+        h = self._proto.header
+        return h.HasField("external_deferred") or h.HasField("angzarr_deferred")
 
     def type_url(self) -> str | None:
-        """Return the type URL of the command payload."""
-        if not self.proto.HasField("command"):
+        """Command payload's type URL, or None if missing."""
+        if not self._proto.HasField("command"):
             return None
-        return self.proto.command.type_url
+        return self._proto.command.type_url
 
     def payload(self) -> bytes | None:
-        """Return the raw payload bytes of the command."""
-        if not self.proto.HasField("command"):
+        """Raw command payload bytes, or None if missing."""
+        if not self._proto.HasField("command"):
             return None
-        return self.proto.command.value
+        return self._proto.command.value
 
     def merge_strategy(self) -> MergeStrategy:
-        """Return the merge strategy for this command."""
-        return self.proto.merge_strategy
+        """Per-page merge strategy."""
+        return self._proto.merge_strategy
 
 
-class CommandResponseW:
-    """Wrapper for CommandResponse proto with extension methods."""
+class CommandResponse(Wrapped):
+    """Wrapper for the ``CommandResponse`` proto."""
 
-    def __init__(self, proto: CommandResponse) -> None:
-        self.proto = proto
+    def __init__(self, proto: _CommandResponseProto) -> None:
+        self._proto = proto
 
-    def events_book(self) -> Optional["EventBookW"]:
-        """Return the events as a wrapped EventBookW, or None if not set."""
-        if not self.proto.HasField("events"):
+    def proto(self) -> _CommandResponseProto:
+        return self._proto
+
+    def events_book(self) -> EventBook | None:
+        """The wrapped events EventBook, or None if not set."""
+        if not self._proto.HasField("events"):
             return None
-        return EventBookW(self.proto.events)
+        return EventBook(self._proto.events)
 
-    def events(self) -> list["EventPageW"]:
-        """Extract the event pages as wrapped EventPageW instances."""
-        if not self.proto.HasField("events"):
+    def events(self) -> list[EventPage]:
+        """All event pages from the response, wrapped."""
+        if not self._proto.HasField("events"):
             return []
-        return [EventPageW(p) for p in self.proto.events.pages]
+        return [EventPage(p) for p in self._proto.events.pages]

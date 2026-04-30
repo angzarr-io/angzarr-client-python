@@ -18,6 +18,7 @@ from google.protobuf.message import DecodeError
 
 from angzarr_client.destinations import Destinations
 from angzarr_client.helpers import TYPE_URL_PREFIX
+from angzarr_client.wrappers import Cover as CoverW
 from angzarr_client.proto.angzarr import (
     BusinessResponse,
     ContextualCommand,
@@ -615,7 +616,12 @@ def dispatch_saga(factories: list[Factory], request: SagaHandleRequest) -> SagaR
             method = getattr(inst, method_name)
             kwargs = {}
             if _accepts_source_cover(method):
-                kwargs["source_cover"] = source_cover
+                # B2: hand the user a wrapper. None when source has no cover —
+                # opting out of wrapping a missing field keeps the existing
+                # ``if source_cover is not None`` guard pattern working.
+                kwargs["source_cover"] = (
+                    CoverW(source_cover) if source_cover is not None else None
+                )
             if _accepts_source_seq(method):
                 kwargs["source_seq"] = source_seq
             emitted = method(evt, destinations, **kwargs)
@@ -709,7 +715,9 @@ def dispatch_process_manager(
             _parse_any(evt, last.event.value, last.event.type_url)
             method = getattr(inst, method_name)
             if _accepts_source_cover(method):
-                result = method(evt, state, destinations, source_cover=trigger_cover)
+                # B2: wrap the trigger cover before handing it to user code.
+                wrapped_cover = CoverW(trigger_cover) if trigger_cover is not None else None
+                result = method(evt, state, destinations, source_cover=wrapped_cover)
             else:
                 result = method(evt, state, destinations)
             matched += 1
