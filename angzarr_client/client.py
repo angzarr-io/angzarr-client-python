@@ -632,9 +632,7 @@ class DomainClient:
         """
         return self.query.get_event_book(query, timeout=timeout)
 
-    def get_events(
-        self, query: Query, timeout: float | None = None
-    ) -> list[EventBook]:
+    def get_events(self, query: Query, timeout: float | None = None) -> list[EventBook]:
         """Retrieve all matching EventBooks for the query — streaming RPC.
 
         Delegates to the underlying :class:`QueryClient`. Mirrors Rust's

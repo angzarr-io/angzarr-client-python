@@ -142,7 +142,9 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = (
-            CommandBuilder(client, "orders", uuid4()).with_sequence(5).with_command("type/Cmd", msg)
+            CommandBuilder(client, "orders", uuid4())
+            .with_sequence(5)
+            .with_command("type/Cmd", msg)
         )
         book = builder.build()
 
@@ -177,7 +179,9 @@ class TestCommandBuilder:
 
         msg = StringValue(value="test")
         builder = (
-            CommandBuilder(client, "orders", uuid4()).with_sequence(0).with_command("type/Cmd", msg)
+            CommandBuilder(client, "orders", uuid4())
+            .with_sequence(0)
+            .with_command("type/Cmd", msg)
         )
         response = builder.execute()
 
@@ -379,5 +383,3 @@ class TestQueryBuilder:
         result = QueryBuilder(client, "orders", root).with_edition("v2").range_to(0, 10)
 
         assert isinstance(result, QueryBuilder)
-
-

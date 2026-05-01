@@ -139,7 +139,9 @@ class Destinations:
         # surface, so it speaks both shapes.
         from .wrappers import Cover as CoverW
 
-        cover_proto = source_cover.proto() if isinstance(source_cover, CoverW) else source_cover
+        cover_proto = (
+            source_cover.proto() if isinstance(source_cover, CoverW) else source_cover
+        )
         return types.PageHeader(
             angzarr_deferred=types.AngzarrDeferredSequence(
                 source=cover_proto,

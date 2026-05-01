@@ -695,7 +695,8 @@ class TestEventPageWAdditional:
 
     def test_is_deferred_false_when_no_deferred_subfield(self) -> None:
         assert (
-            EventPage(EventPageProto(header=PageHeader(sequence=1))).is_deferred() is False
+            EventPage(EventPageProto(header=PageHeader(sequence=1))).is_deferred()
+            is False
         )
 
     def test_is_deferred_true_for_external_deferred(self) -> None:
@@ -715,7 +716,9 @@ class TestEventPageWAdditional:
         assert url is not None and url.endswith("angzarr_client.proto.angzarr.Cover")
 
     def test_type_url_none_when_no_event(self) -> None:
-        assert EventPage(EventPageProto(header=PageHeader(sequence=1))).type_url() is None
+        assert (
+            EventPage(EventPageProto(header=PageHeader(sequence=1))).type_url() is None
+        )
 
     def test_payload_returns_bytes(self) -> None:
         proto = EventPageProto(header=PageHeader(sequence=1))
@@ -724,7 +727,9 @@ class TestEventPageWAdditional:
         assert isinstance(payload, (bytes, bytearray))
 
     def test_payload_none_when_no_event(self) -> None:
-        assert EventPage(EventPageProto(header=PageHeader(sequence=1))).payload() is None
+        assert (
+            EventPage(EventPageProto(header=PageHeader(sequence=1))).payload() is None
+        )
 
     def test_decode_typed_returns_message(self) -> None:
         proto = EventPageProto(header=PageHeader(sequence=1))
@@ -734,7 +739,9 @@ class TestEventPageWAdditional:
 
     def test_decode_typed_none_when_no_event(self) -> None:
         assert (
-            EventPage(EventPageProto(header=PageHeader(sequence=1))).decode_typed(CoverProto)
+            EventPage(EventPageProto(header=PageHeader(sequence=1))).decode_typed(
+                CoverProto
+            )
             is None
         )
 

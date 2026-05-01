@@ -716,7 +716,9 @@ def dispatch_process_manager(
             method = getattr(inst, method_name)
             if _accepts_source_cover(method):
                 # B2: wrap the trigger cover before handing it to user code.
-                wrapped_cover = CoverW(trigger_cover) if trigger_cover is not None else None
+                wrapped_cover = (
+                    CoverW(trigger_cover) if trigger_cover is not None else None
+                )
                 result = method(evt, state, destinations, source_cover=wrapped_cover)
             else:
                 result = method(evt, state, destinations)
