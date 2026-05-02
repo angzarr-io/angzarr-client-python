@@ -55,7 +55,7 @@ Usage in ProcessManager:
             )
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .helpers import TYPE_URL_PREFIX
 from .proto.angzarr import command_handler_pb2 as command_handler
