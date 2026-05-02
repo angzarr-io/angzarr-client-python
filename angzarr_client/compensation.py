@@ -257,24 +257,6 @@ def emit_compensation_events(
 
 
 @dataclass
-class RejectionHandlerResponse:
-    """Response from rejection handlers.
-
-    Can contain events (compensation), notification (upstream propagation), or both.
-
-    Audit finding #56 (Option B — list[EventBook]): aligns with Rust's
-    ``Vec<EventBook>``. Multiple books concatenate downstream; first
-    non-empty book's cover wins.
-    """
-
-    events: list[types.EventBook] = field(default_factory=list)
-    """Events to persist to own state (compensation)."""
-
-    notification: types.Notification | None = None
-    """Notification to forward upstream (rejection propagation)."""
-
-
-@dataclass
 class PMRevocationResponse:
     """Result from PM compensation helpers.
 

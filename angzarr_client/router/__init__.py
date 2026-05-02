@@ -15,7 +15,11 @@ from .decorators import (
     upcasts,
 )
 from .dispatch import DispatchError
-from .responses import ProcessManagerResponse, SagaHandlerResponse
+from .responses import (
+    ProcessManagerResponse,
+    RejectionHandlerResponse,
+    SagaHandlerResponse,
+)
 from .runtime import (
     CommandHandlerRouter,
     ProcessManagerRouter,
@@ -45,6 +49,7 @@ __all__ = [
     # Response types
     "SagaHandlerResponse",
     "ProcessManagerResponse",
+    "RejectionHandlerResponse",
     # Runtime router types (typed return from Router.build())
     "CommandHandlerRouter",
     "SagaRouter",
