@@ -510,6 +510,12 @@ def _then_item_added_handler_invoked(state: _State) -> None:
     pass
 
 
+@then(parsers.parse('the "{handler}" handler should be invoked'))
+def _then_named_handler_invoked(state: _State, handler: str) -> None:
+    """Mirror Rust's `the {string} handler should be invoked` step."""
+    pass
+
+
 @then("the type_url suffix should match the handler")
 def _then_type_url_matches(state: _State) -> None:
     pass

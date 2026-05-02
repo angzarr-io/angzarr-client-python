@@ -6,13 +6,13 @@ from angzarr_client.compensation import (
     CompensationContext,
     DelegationOptions,
     PMRevocationResponse,
-    RejectionHandlerResponse,
     delegate_to_framework,
     emit_compensation_events,
     is_notification,
     pm_delegate_to_framework,
     pm_emit_compensation_events,
 )
+from angzarr_client.router.responses import RejectionHandlerResponse
 from angzarr_client.helpers import uuid_to_proto
 from angzarr_client.proto.angzarr import command_handler_pb2 as command_handler
 from angzarr_client.proto.angzarr import types_pb2 as types

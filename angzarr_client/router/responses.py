@@ -1,12 +1,18 @@
-"""Response types returned by saga / process-manager handlers.
+"""Response types returned by saga / process-manager / rejection handlers.
 
 Simple containers used by user code as the return value of ``@handles`` methods
-on sagas (``SagaHandlerResponse``) and process managers (``ProcessManagerResponse``).
-Kept separate from the dispatch / runtime modules so application code can import
-them without pulling in the dispatch machinery.
+on sagas (``SagaHandlerResponse``), process managers (``ProcessManagerResponse``),
+and ``@rejected`` handlers (``RejectionHandlerResponse``). Kept separate from the
+dispatch / runtime modules so application code can import them without pulling
+in the dispatch machinery.
+
+Mirrors the Rust ``router::responses`` module so cross-language users can
+reach the same types at the same logical path.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass, field
 
 from angzarr_client.proto.angzarr import types_pb2 as types
 
@@ -51,3 +57,23 @@ class ProcessManagerResponse:
         self.commands = commands or []
         self.process_events = process_events or []
         self.facts = facts or []
+
+
+@dataclass
+class RejectionHandlerResponse:
+    """Return shape of a saga ``@rejected`` handler method.
+
+    Carries compensation events to persist locally and an optional
+    ``Notification`` to forward upstream. Mirrors Rust's
+    ``router::responses::RejectionHandlerResponse`` field-for-field.
+
+    Audit finding #56 (Option B — list[EventBook]): aligns with Rust's
+    ``Vec<EventBook>``. Multiple books concatenate downstream; first
+    non-empty book's cover wins.
+    """
+
+    events: list[types.EventBook] = field(default_factory=list)
+    """Events to persist to own state (compensation)."""
+
+    notification: types.Notification | None = None
+    """Notification to forward upstream (rejection propagation)."""

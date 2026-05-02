@@ -121,3 +121,17 @@ def _given_pm_prior(world):
 @then(parsers.parse("the PM observed state.orders_seen = {n:d}"))
 def _then_pm_orders_seen(world, n):
     assert world.observed["orders_seen"] == n
+
+
+@then("the response contains exactly one command")
+def _then_response_one_command(world):
+    """Mirror Rust's `the response contains exactly one command` assertion."""
+    assert world.response is not None, "expected a dispatched response"
+    assert len(world.response.commands) == 1
+
+
+@then("the response contains no commands")
+def _then_response_no_commands(world):
+    """Mirror Rust's `the response contains no commands` assertion."""
+    assert world.response is not None, "expected a dispatched response"
+    assert len(world.response.commands) == 0
