@@ -192,6 +192,13 @@ class CommandRejectedError(ClientError):
     ``code``, and structured ``details`` kwargs. The factory methods
     (``precondition_failed`` / ``invalid_argument`` / ``not_found``) bind
     the appropriate ``status_code``.
+
+    The ``cover`` attribute is the addressing envelope (``domain``, ``root``,
+    ``correlation_id``, ``edition``) of the command that produced this
+    rejection. Handlers do not populate it; the router stamps it from the
+    incoming ``CommandRequest`` at the dispatch boundary so every rejection
+    is traceable to its originating workflow without each call site having
+    to thread the context.
     """
 
     def __init__(
@@ -201,9 +208,14 @@ class CommandRejectedError(ClientError):
         *,
         code: str = "",
         details: Mapping[str, Any] | None = None,
+        cover: Any | None = None,
     ):
         super().__init__(message, code=code, details=details)
         self.status_code = status_code
+        # ``cover`` is an ``angzarr_client.proto.angzarr.types_pb2.Cover``
+        # when populated. Typed as ``Any`` here to avoid a circular import
+        # of the generated proto module from this base errors module.
+        self.cover = cover
 
     @staticmethod
     def precondition_failed(

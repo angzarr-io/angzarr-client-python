@@ -35,6 +35,7 @@ from angzarr_client.proto.angzarr import (
 from angzarr_client.proto.angzarr import types_pb2 as _types
 
 from ..error_codes import codes, keys, messages
+from ..errors import CommandRejectedError
 from .responses import ProcessManagerResponse
 
 _LOG = logging.getLogger(__name__)
@@ -329,7 +330,17 @@ def dispatch_command(
 
             inst = factory()
             state = _rebuild_state(inst, prior)
-            emitted = getattr(inst, method_name)(cmd, state, base_seq)
+            try:
+                emitted = getattr(inst, method_name)(cmd, state, base_seq)
+            except CommandRejectedError as rej:
+                # Stamp the addressing envelope so callers can trace the
+                # rejection back to (domain, root, correlation_id) without
+                # threading context through every handler signature.
+                if getattr(rej, "cover", None) is None and cmd_book.HasField(
+                    "cover"
+                ):
+                    rej.cover = cmd_book.cover
+                raise
 
             response = BusinessResponse()
             response.events.CopyFrom(_pack_events(emitted, base_seq=base_seq))
