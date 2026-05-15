@@ -16,6 +16,7 @@ from angzarr_client.helpers import proto_to_uuid
 from angzarr_client.proto.angzarr import (
     CommandResponse,
     EventBook,
+    SyncMode,
 )
 
 
@@ -202,6 +203,118 @@ class TestCommandBuilder:
         )
 
         assert isinstance(result, CommandBuilder)
+
+    def test_with_sync_mode_stamps_page_header(self) -> None:
+        """with_sync_mode rides into the built CommandPage header so the
+        serialized CommandBook round-trips the caller's choice. Mirrors
+        Rust's ``builder.rs:80-83,137``.
+        """
+        client = self._mock_aggregate_client()
+        msg = StringValue(value="test")
+        book = (
+            CommandBuilder(client, "orders", uuid4())
+            .with_sequence(0)
+            .with_sync_mode(SyncMode.SYNC_MODE_DECISION)
+            .with_command("type/Cmd", msg)
+            .build()
+        )
+        header = book.pages[0].header
+        assert header.HasField("sync_mode")
+        assert header.sync_mode == SyncMode.SYNC_MODE_DECISION
+
+    def test_build_without_sync_mode_leaves_header_unset(self) -> None:
+        """If with_sync_mode isn't called, the page header carries no
+        sync_mode and coordinators inherit CommandRequest.sync_mode
+        unchanged (the common case)."""
+        client = self._mock_aggregate_client()
+        msg = StringValue(value="test")
+        book = (
+            CommandBuilder(client, "orders", uuid4())
+            .with_sequence(0)
+            .with_command("type/Cmd", msg)
+            .build()
+        )
+        assert not book.pages[0].header.HasField("sync_mode")
+
+    def test_execute_falls_back_to_with_sync_mode(self) -> None:
+        """When execute() gets no explicit sync_mode, it uses the value
+        stored by with_sync_mode (matches Rust's ``execute()``
+        behavior — see ``builder.rs:155-160``)."""
+        client = self._mock_aggregate_client()
+        client.handle_command.return_value = CommandResponse()
+        msg = StringValue(value="test")
+        (
+            CommandBuilder(client, "orders", uuid4())
+            .with_sequence(0)
+            .with_sync_mode(SyncMode.SYNC_MODE_CASCADE)
+            .with_command("type/Cmd", msg)
+            .execute()
+        )
+        sent_request = client.handle_command.call_args.args[0]
+        assert sent_request.sync_mode == SyncMode.SYNC_MODE_CASCADE
+        # And the embedded CommandBook header round-trips it too.
+        assert sent_request.command.pages[0].header.sync_mode == (
+            SyncMode.SYNC_MODE_CASCADE
+        )
+
+    def test_execute_explicit_arg_overrides_with_sync_mode(self) -> None:
+        """An explicit execute(sync_mode=...) overrides the stored value."""
+        client = self._mock_aggregate_client()
+        client.handle_command.return_value = CommandResponse()
+        msg = StringValue(value="test")
+        (
+            CommandBuilder(client, "orders", uuid4())
+            .with_sequence(0)
+            .with_sync_mode(SyncMode.SYNC_MODE_CASCADE)
+            .with_command("type/Cmd", msg)
+            .execute(sync_mode=SyncMode.SYNC_MODE_SIMPLE)
+        )
+        assert (
+            client.handle_command.call_args.args[0].sync_mode
+            == SyncMode.SYNC_MODE_SIMPLE
+        )
+
+    def test_execute_does_not_mutate_stored_sync_mode(self) -> None:
+        """``execute(sync_mode=X)`` must not permanently overwrite the
+        builder's stored ``_sync_mode`` — a builder reused after an
+        override should still emit its originally-stamped mode. Pins the
+        save/restore semantics in ``builder.py``'s ``execute()``.
+
+        Kills mutmut survivors ``execute__mutmut_4`` (drops the save)
+        and ``execute__mutmut_7`` (drops the restore).
+        """
+        client = self._mock_aggregate_client()
+        client.handle_command.return_value = CommandResponse()
+        msg = StringValue(value="test")
+        builder = (
+            CommandBuilder(client, "orders", uuid4())
+            .with_sequence(0)
+            .with_sync_mode(SyncMode.SYNC_MODE_CASCADE)
+            .with_command("type/Cmd", msg)
+        )
+        # Override on this call ...
+        builder.execute(sync_mode=SyncMode.SYNC_MODE_SIMPLE)
+        # ... but the next build() must still produce a CASCADE header,
+        # because with_sync_mode() set it.
+        book = builder.build()
+        assert book.pages[0].header.sync_mode == SyncMode.SYNC_MODE_CASCADE
+
+    def test_execute_defaults_to_async_when_neither_set(self) -> None:
+        """No with_sync_mode + no execute() arg → ASYNC (the
+        cross-language default)."""
+        client = self._mock_aggregate_client()
+        client.handle_command.return_value = CommandResponse()
+        msg = StringValue(value="test")
+        (
+            CommandBuilder(client, "orders", uuid4())
+            .with_sequence(0)
+            .with_command("type/Cmd", msg)
+            .execute()
+        )
+        assert (
+            client.handle_command.call_args.args[0].sync_mode
+            == SyncMode.SYNC_MODE_ASYNC
+        )
 
 
 class TestQueryBuilder:

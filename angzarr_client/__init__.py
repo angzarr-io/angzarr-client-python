@@ -6,6 +6,8 @@ __version__ = _version("angzarr-client")
 
 from .builder import CommandBuilder, QueryBuilder
 from .client import (
+    DEFAULT_MAX_EVENT_BOOKS,
+    DEFAULT_RPC_TIMEOUT,
     CommandHandlerClient,
     DomainClient,
     QueryClient,
@@ -165,6 +167,8 @@ __all__ = [
     "DomainClient",
     "TransportMode",
     "resolve_ch_endpoint",
+    "DEFAULT_RPC_TIMEOUT",
+    "DEFAULT_MAX_EVENT_BOOKS",
     # Router (unified)
     "Router",
     "BuildError",

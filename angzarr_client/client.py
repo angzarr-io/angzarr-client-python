@@ -9,9 +9,48 @@ from uuid import UUID as PyUUID
 
 import grpc
 
+from .error_codes import codes, keys, messages
+from .errors import ConnectionError as ClientConnectionError
 from .errors import GRPCError
 from .helpers import correlated_metadata
 from .retry import RetryPolicy, default_retry_policy
+
+# Per-RPC deadline applied to every request issued via this client.
+#
+# Without this, a stalled server keeps the client awaiting forever
+# (the TCP RST never fires under packet loss). Matches Rust's
+# `client.rs::DEFAULT_RPC_TIMEOUT` (30 s) so the polyglot defaults line up.
+# Callers may override per-call by passing an explicit ``timeout`` kwarg;
+# passing ``timeout=None`` opts out of the deadline.
+DEFAULT_RPC_TIMEOUT: float = 30.0
+
+# Cap on the number of EventBooks returned from a streaming
+# ``get_events`` call. Without this, a hostile or buggy server can
+# stream forever and OOM the client. Matches Rust's
+# ``client.rs::DEFAULT_MAX_EVENT_BOOKS``.
+DEFAULT_MAX_EVENT_BOOKS: int = 100_000
+
+# gRPC channel options for HTTP/2 keepalive and TCP-level liveness.
+# Without keepalive, a half-open TCP connection won't surface as a
+# failure until the OS-level keepalive eventually fires (often >2h).
+# Values mirror Rust's `apply_endpoint_defaults` in `client.rs:52-58`.
+_CHANNEL_KEEPALIVE_OPTIONS: tuple[tuple[str, int], ...] = (
+    ("grpc.keepalive_time_ms", 30_000),
+    ("grpc.keepalive_timeout_ms", 10_000),
+    ("grpc.keepalive_permit_without_calls", 1),
+    ("grpc.http2.max_pings_without_data", 0),
+)
+
+
+def _effective_timeout(timeout: float | None) -> float | None:
+    """Resolve a caller-supplied ``timeout`` against the default.
+
+    A ``None`` from the caller means "use the cross-language default"
+    (mirrors Rust, where the deadline is wired onto the channel).
+    A negative value is passed through unchanged — gRPC raises if it's
+    not a valid duration, so the operator sees the bad value directly.
+    """
+    return DEFAULT_RPC_TIMEOUT if timeout is None else timeout
 
 if TYPE_CHECKING:
     from .builder import CommandBuilder, QueryBuilder
@@ -108,13 +147,14 @@ def _create_channel(endpoint: str) -> grpc.Channel:
     grpc-python <-> tonic.
     """
     if endpoint.startswith("./"):
-        return grpc.insecure_channel(f"unix:{endpoint}")
+        target = f"unix:{endpoint}"
     elif endpoint.startswith("/"):
-        return grpc.insecure_channel(f"unix://{endpoint}")
+        target = f"unix://{endpoint}"
     elif endpoint.startswith("unix:"):
-        return grpc.insecure_channel(endpoint)
+        target = endpoint
     else:
-        return grpc.insecure_channel(endpoint)
+        target = endpoint
+    return grpc.insecure_channel(target, options=list(_CHANNEL_KEEPALIVE_OPTIONS))
 
 
 class QueryClient:
@@ -172,7 +212,9 @@ class QueryClient:
 
         Args:
             query: The query specification.
-            timeout: Optional per-call deadline in seconds.
+            timeout: Per-call deadline in seconds. When ``None`` (the
+                default), :data:`DEFAULT_RPC_TIMEOUT` applies — matches
+                the channel-level deadline Rust wires on every endpoint.
 
         Audit #69 stage (b): attaches ``x-correlation-id`` metadata from
         ``query.cover.correlation_id`` so OTel exporters / mesh sidecars
@@ -180,20 +222,61 @@ class QueryClient:
         """
         md = correlated_metadata(query.cover.correlation_id)
         try:
-            return self._stub.GetEventBook(query, timeout=timeout, metadata=md)
+            return self._stub.GetEventBook(
+                query, timeout=_effective_timeout(timeout), metadata=md
+            )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
-    def get_events(self, query: Query, timeout: float | None = None) -> list[EventBook]:
+    def get_events(
+        self,
+        query: Query,
+        timeout: float | None = None,
+    ) -> list[EventBook]:
         """Retrieve all EventBooks matching the query.
+
+        Capped at :data:`DEFAULT_MAX_EVENT_BOOKS` results — a hostile or
+        buggy server can otherwise stream forever and OOM the client.
+        Use :meth:`get_events_with_limit` for a custom cap.
 
         Args:
             query: The query specification.
-            timeout: Optional per-call deadline in seconds.
+            timeout: Per-call deadline in seconds. ``None`` applies
+                :data:`DEFAULT_RPC_TIMEOUT`.
+        """
+        return self.get_events_with_limit(query, DEFAULT_MAX_EVENT_BOOKS, timeout=timeout)
+
+    def get_events_with_limit(
+        self,
+        query: Query,
+        max_books: int,
+        timeout: float | None = None,
+    ) -> list[EventBook]:
+        """Same as :meth:`get_events` with a caller-supplied cap.
+
+        Raises :class:`ConnectionError` with code
+        ``STREAM_LIMIT_EXCEEDED`` if the server emits more than
+        ``max_books`` EventBooks. Mirrors Rust's
+        ``QueryClient::get_events_with_limit``.
         """
         md = correlated_metadata(query.cover.correlation_id)
         try:
-            return list(self._stub.GetEvents(query, timeout=timeout, metadata=md))
+            stream = self._stub.GetEvents(
+                query, timeout=_effective_timeout(timeout), metadata=md
+            )
+            results: list[EventBook] = []
+            for book in stream:
+                if len(results) >= max_books:
+                    raise ClientConnectionError(
+                        messages.STREAM_LIMIT_EXCEEDED,
+                        code=codes.STREAM_LIMIT_EXCEEDED,
+                        details={
+                            keys.EXPECTED: str(max_books),
+                            keys.ACTUAL: f"{max_books}+",
+                        },
+                    )
+                results.append(book)
+            return results
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
@@ -304,7 +387,9 @@ class CommandHandlerClient:
         """
         md = correlated_metadata(request.command.cover.correlation_id)
         try:
-            return self._stub.HandleCommand(request, timeout=timeout, metadata=md)
+            return self._stub.HandleCommand(
+                request, timeout=_effective_timeout(timeout), metadata=md
+            )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
 
@@ -317,12 +402,13 @@ class CommandHandlerClient:
 
         Args:
             request: The speculative command request.
-            timeout: Optional per-call deadline in seconds.
+            timeout: Per-call deadline in seconds. ``None`` applies
+                :data:`DEFAULT_RPC_TIMEOUT`.
         """
         md = correlated_metadata(request.command.cover.correlation_id)
         try:
             return self._stub.HandleSyncSpeculative(
-                request, timeout=timeout, metadata=md
+                request, timeout=_effective_timeout(timeout), metadata=md
             )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
@@ -439,7 +525,7 @@ class SpeculativeClient:
         md = correlated_metadata(request.command.cover.correlation_id)
         try:
             return self._command_handler_stub.HandleSyncSpeculative(
-                request, timeout=timeout, metadata=md
+                request, timeout=_effective_timeout(timeout), metadata=md
             )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
@@ -455,7 +541,7 @@ class SpeculativeClient:
         md = correlated_metadata(request.events.cover.correlation_id)
         try:
             return self._projector_stub.HandleSpeculative(
-                request, timeout=timeout, metadata=md
+                request, timeout=_effective_timeout(timeout), metadata=md
             )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
@@ -471,7 +557,7 @@ class SpeculativeClient:
         md = correlated_metadata(request.request.source.cover.correlation_id)
         try:
             return self._saga_stub.ExecuteSpeculative(
-                request, timeout=timeout, metadata=md
+                request, timeout=_effective_timeout(timeout), metadata=md
             )
         except grpc.RpcError as e:
             raise GRPCError(e) from e
@@ -487,7 +573,7 @@ class SpeculativeClient:
         md = correlated_metadata(request.request.trigger.cover.correlation_id)
         try:
             return self._pm_stub.HandleSpeculative(
-                request, timeout=timeout, metadata=md
+                request, timeout=_effective_timeout(timeout), metadata=md
             )
         except grpc.RpcError as e:
             raise GRPCError(e) from e

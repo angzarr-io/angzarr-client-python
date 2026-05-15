@@ -36,6 +36,7 @@ TRANSPORT_ERROR = "transport error"
 GRPC_ERROR = "grpc error"
 INVALID_TRANSPORT_MODE = "invalid transport mode env value"
 INVALID_PORT = "invalid port env value"
+STREAM_LIMIT_EXCEEDED = "server stream exceeded the configured maximum"
 
 # Dispatch — common
 HANDLER_WRONG_RESPONSE_KIND = "handler returned wrong response kind"

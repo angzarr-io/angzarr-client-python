@@ -7,11 +7,15 @@ import grpc
 import pytest
 
 from angzarr_client.client import (
+    DEFAULT_MAX_EVENT_BOOKS,
+    DEFAULT_RPC_TIMEOUT,
     CommandHandlerClient,
     DomainClient,
     QueryClient,
     SpeculativeClient,
 )
+from angzarr_client.error_codes import codes
+from angzarr_client.errors import ConnectionError as ClientConnectionError
 from angzarr_client.errors import GRPCError
 from angzarr_client.proto.angzarr import (
     CommandBook,
@@ -67,7 +71,7 @@ class TestQueryClient:
         """connect creates client from endpoint."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
         client = QueryClient.connect("localhost:9000")
-        mock_channel.assert_called_once_with("localhost:9000")
+        assert mock_channel.call_args.args[0] == "localhost:9000"
         assert client is not None
 
     @patch.dict(os.environ, {"TEST_ENDPOINT": "env-host:9000"})
@@ -76,7 +80,7 @@ class TestQueryClient:
         """from_env uses environment variable."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
         QueryClient.from_env("TEST_ENDPOINT", "default:8000")
-        mock_channel.assert_called_once_with("env-host:9000")
+        assert mock_channel.call_args.args[0] == "env-host:9000"
 
     @patch("angzarr_client.client.grpc.insecure_channel")
     def test_from_env_uses_default(self, mock_channel: Mock) -> None:
@@ -85,7 +89,7 @@ class TestQueryClient:
         # (clearing all breaks mutmut which needs MUTANT_UNDER_TEST)
         mock_channel.return_value = Mock(spec=grpc.Channel)
         QueryClient.from_env("QUERY_CLIENT_NONEXISTENT_VAR_12345", "default:8000")
-        mock_channel.assert_called_once_with("default:8000")
+        assert mock_channel.call_args.args[0] == "default:8000"
 
     def test_get_event_book_success(self) -> None:
         """get_event_book returns EventBook on success."""
@@ -99,7 +103,7 @@ class TestQueryClient:
         result = client.get_event_book(query)
 
         client._stub.GetEventBook.assert_called_once_with(
-            query, timeout=None, metadata=[]
+            query, timeout=DEFAULT_RPC_TIMEOUT, metadata=[]
         )
         assert result.next_sequence == 42
 
@@ -170,7 +174,7 @@ class TestCommandHandlerClient:
         """connect creates client from endpoint."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
         CommandHandlerClient.connect("localhost:9000")
-        mock_channel.assert_called_once_with("localhost:9000")
+        assert mock_channel.call_args.args[0] == "localhost:9000"
 
     @patch.dict(os.environ, {"AGG_ENDPOINT": "agg-host:9000"})
     @patch("angzarr_client.client.grpc.insecure_channel")
@@ -178,7 +182,7 @@ class TestCommandHandlerClient:
         """from_env uses environment variable."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
         CommandHandlerClient.from_env("AGG_ENDPOINT", "default:8000")
-        mock_channel.assert_called_once_with("agg-host:9000")
+        assert mock_channel.call_args.args[0] == "agg-host:9000"
 
     def test_handle_command_success(self) -> None:
         """handle_command returns CommandResponse on success."""
@@ -191,7 +195,7 @@ class TestCommandHandlerClient:
         result = client.handle_command(cmd)
 
         client._stub.HandleCommand.assert_called_once_with(
-            cmd, timeout=None, metadata=[]
+            cmd, timeout=DEFAULT_RPC_TIMEOUT, metadata=[]
         )
         assert result is not None
 
@@ -217,7 +221,7 @@ class TestCommandHandlerClient:
         result = client.handle_sync_speculative(request)
 
         client._stub.HandleSyncSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
+            request, timeout=DEFAULT_RPC_TIMEOUT, metadata=[]
         )
         assert result is not None
 
@@ -263,7 +267,7 @@ class TestSpeculativeClient:
         """connect creates client from endpoint."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
         SpeculativeClient.connect("localhost:9000")
-        mock_channel.assert_called_once_with("localhost:9000")
+        assert mock_channel.call_args.args[0] == "localhost:9000"
 
     @patch.dict(os.environ, {"SPEC_ENDPOINT": "spec-host:9000"})
     @patch("angzarr_client.client.grpc.insecure_channel")
@@ -271,7 +275,7 @@ class TestSpeculativeClient:
         """from_env uses environment variable."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
         SpeculativeClient.from_env("SPEC_ENDPOINT", "default:8000")
-        mock_channel.assert_called_once_with("spec-host:9000")
+        assert mock_channel.call_args.args[0] == "spec-host:9000"
 
     def test_aggregate_success(self) -> None:
         """aggregate returns CommandResponse on success."""
@@ -286,7 +290,7 @@ class TestSpeculativeClient:
         result = client.command_handler(request)
 
         client._command_handler_stub.HandleSyncSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
+            request, timeout=DEFAULT_RPC_TIMEOUT, metadata=[]
         )
         assert result is not None
 
@@ -312,7 +316,7 @@ class TestSpeculativeClient:
         result = client.projector(request)
 
         client._projector_stub.HandleSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
+            request, timeout=DEFAULT_RPC_TIMEOUT, metadata=[]
         )
         assert result is not None
 
@@ -338,7 +342,7 @@ class TestSpeculativeClient:
         result = client.saga(request)
 
         client._saga_stub.ExecuteSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
+            request, timeout=DEFAULT_RPC_TIMEOUT, metadata=[]
         )
         assert result is not None
 
@@ -364,7 +368,7 @@ class TestSpeculativeClient:
         result = client.process_manager(request)
 
         client._pm_stub.HandleSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
+            request, timeout=DEFAULT_RPC_TIMEOUT, metadata=[]
         )
         assert result is not None
 
@@ -409,7 +413,7 @@ class TestDomainClient:
         """connect creates client from endpoint."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
         DomainClient.connect("localhost:9000")
-        mock_channel.assert_called_once_with("localhost:9000")
+        assert mock_channel.call_args.args[0] == "localhost:9000"
 
     @patch.dict(os.environ, {"DOMAIN_ENDPOINT": "domain-host:9000"})
     @patch("angzarr_client.client.grpc.insecure_channel")
@@ -417,7 +421,7 @@ class TestDomainClient:
         """from_env uses environment variable."""
         mock_channel.return_value = Mock(spec=grpc.Channel)
         DomainClient.from_env("DOMAIN_ENDPOINT", "default:8000")
-        mock_channel.assert_called_once_with("domain-host:9000")
+        assert mock_channel.call_args.args[0] == "domain-host:9000"
 
     def test_execute_delegates_to_command_handler(self) -> None:
         """execute builds CommandRequest and delegates to command_handler.handle_command."""
@@ -656,3 +660,242 @@ class TestTopLevelBindAddressExports:
         assert "resolve_bind_address" in angzarr_client.__all__
         assert "ENV_BIND_ADDRESS" in angzarr_client.__all__
         assert "DEFAULT_BIND_HOST" in angzarr_client.__all__
+
+
+class TestChannelDefaults:
+    """Parity with Rust ``client.rs::apply_endpoint_defaults`` — every
+    channel this client builds carries HTTP/2 keepalive options so
+    half-open TCP connections surface as failures within seconds rather
+    than OS-keepalive minutes.
+    """
+
+    @patch("angzarr_client.client.grpc.insecure_channel")
+    def test_connect_passes_keepalive_options(self, mock_channel: Mock) -> None:
+        mock_channel.return_value = Mock(spec=grpc.Channel)
+        QueryClient.connect("localhost:9000")
+        options = dict(mock_channel.call_args.kwargs["options"])
+        assert options["grpc.keepalive_time_ms"] == 30_000
+        assert options["grpc.keepalive_timeout_ms"] == 10_000
+        assert options["grpc.keepalive_permit_without_calls"] == 1
+
+    @patch("angzarr_client.client.grpc.insecure_channel")
+    def test_uds_endpoint_gets_keepalive_options(self, mock_channel: Mock) -> None:
+        mock_channel.return_value = Mock(spec=grpc.Channel)
+        QueryClient.connect("/tmp/angzarr/ch-player.sock")
+        # UDS prefix preserved + options applied uniformly.
+        assert mock_channel.call_args.args[0] == "unix:///tmp/angzarr/ch-player.sock"
+        assert "options" in mock_channel.call_args.kwargs
+
+
+class TestDefaultRpcTimeout:
+    """The Python channel can't carry a server-deadline directly, so we
+    apply :data:`DEFAULT_RPC_TIMEOUT` at every call site when the
+    caller omits a timeout. Matches Rust's channel-level deadline.
+    """
+
+    def test_get_event_book_applies_default_timeout(self) -> None:
+        channel = Mock(spec=grpc.Channel)
+        client = QueryClient(channel)
+        client._stub.GetEventBook = Mock(return_value=EventBook())
+        client.get_event_book(Query())
+        assert (
+            client._stub.GetEventBook.call_args.kwargs["timeout"]
+            == DEFAULT_RPC_TIMEOUT
+        )
+
+    def test_explicit_timeout_overrides_default(self) -> None:
+        channel = Mock(spec=grpc.Channel)
+        client = QueryClient(channel)
+        client._stub.GetEventBook = Mock(return_value=EventBook())
+        client.get_event_book(Query(), timeout=2.5)
+        assert client._stub.GetEventBook.call_args.kwargs["timeout"] == 2.5
+
+    def test_handle_command_applies_default_timeout(self) -> None:
+        channel = Mock(spec=grpc.Channel)
+        client = CommandHandlerClient(channel)
+        client._stub.HandleCommand = Mock(return_value=CommandResponse())
+        client.handle_command(CommandRequest())
+        assert (
+            client._stub.HandleCommand.call_args.kwargs["timeout"]
+            == DEFAULT_RPC_TIMEOUT
+        )
+
+
+class TestGetEventsStreamCap:
+    """Parity with Rust ``QueryClient::get_events_with_limit`` — a buggy
+    or hostile server cannot stream forever and OOM the client. The cap
+    raises a ``ConnectionError`` with code ``STREAM_LIMIT_EXCEEDED``
+    when crossed.
+    """
+
+    def test_under_cap_returns_all(self) -> None:
+        channel = Mock(spec=grpc.Channel)
+        client = QueryClient(channel)
+        books = [EventBook(), EventBook(), EventBook()]
+        client._stub.GetEvents = Mock(return_value=iter(books))
+
+        result = client.get_events_with_limit(Query(), max_books=10)
+        assert len(result) == 3
+
+    def test_at_cap_returns_all(self) -> None:
+        channel = Mock(spec=grpc.Channel)
+        client = QueryClient(channel)
+        books = [EventBook(), EventBook(), EventBook()]
+        client._stub.GetEvents = Mock(return_value=iter(books))
+
+        result = client.get_events_with_limit(Query(), max_books=3)
+        assert len(result) == 3
+
+    def test_over_cap_raises_stream_limit_exceeded(self) -> None:
+        channel = Mock(spec=grpc.Channel)
+        client = QueryClient(channel)
+        books = [EventBook(), EventBook(), EventBook(), EventBook()]
+        client._stub.GetEvents = Mock(return_value=iter(books))
+
+        with pytest.raises(ClientConnectionError) as exc_info:
+            client.get_events_with_limit(Query(), max_books=2)
+        assert exc_info.value.code == codes.STREAM_LIMIT_EXCEEDED
+        assert exc_info.value.details["expected"] == "2"
+        assert exc_info.value.details["actual"] == "2+"
+
+    def test_get_events_uses_default_cap_constant(self) -> None:
+        # Sanity: the default cap matches the Rust constant.
+        assert DEFAULT_MAX_EVENT_BOOKS == 100_000
+
+    def test_stream_cap_boundary_is_inclusive(self) -> None:
+        """Pin the predicate as ``>= max_books`` (not ``> max_books``).
+        With ``max_books=2`` and 3 books on the stream, the inclusive
+        form raises on the third iteration; the off-by-one ``>`` form
+        would let all three through.
+
+        Kills mutmut survivor ``get_events_with_limit__mutmut_12``.
+        """
+        channel = Mock(spec=grpc.Channel)
+        client = QueryClient(channel)
+        books = [EventBook(), EventBook(), EventBook()]
+        client._stub.GetEvents = Mock(return_value=iter(books))
+
+        with pytest.raises(ClientConnectionError):
+            client.get_events_with_limit(Query(), max_books=2)
+
+
+class TestExplicitTimeoutPropagation:
+    """Pin that an explicit ``timeout=X`` kwarg propagates through every
+    RPC method to the underlying gRPC stub. Kills mutmut survivors that
+    replace ``timeout=_effective_timeout(timeout)`` with
+    ``timeout=_effective_timeout(None)`` (force-default-timeout).
+    """
+
+    def test_get_events_propagates_explicit_timeout(self) -> None:
+        # Kills get_events__mutmut_3, __mutmut_6.
+        channel = Mock(spec=grpc.Channel)
+        client = QueryClient(channel)
+        client._stub.GetEvents = Mock(return_value=iter([]))
+        client.get_events(Query(), timeout=2.5)
+        assert client._stub.GetEvents.call_args.kwargs["timeout"] == 2.5
+
+    def test_get_events_with_limit_propagates_explicit_timeout(self) -> None:
+        # Kills get_events_with_limit__mutmut_4/5/7/8/10 timeout-arg path.
+        channel = Mock(spec=grpc.Channel)
+        client = QueryClient(channel)
+        client._stub.GetEvents = Mock(return_value=iter([]))
+        client.get_events_with_limit(Query(), max_books=10, timeout=1.25)
+        assert client._stub.GetEvents.call_args.kwargs["timeout"] == 1.25
+
+    def test_handle_command_propagates_explicit_timeout(self) -> None:
+        # Kills handle_command__mutmut_9.
+        channel = Mock(spec=grpc.Channel)
+        client = CommandHandlerClient(channel)
+        client._stub.HandleCommand = Mock(return_value=CommandResponse())
+        client.handle_command(CommandRequest(), timeout=4.0)
+        assert client._stub.HandleCommand.call_args.kwargs["timeout"] == 4.0
+
+    def test_handle_sync_speculative_propagates_explicit_timeout(self) -> None:
+        # Kills handle_sync_speculative__mutmut_9.
+        channel = Mock(spec=grpc.Channel)
+        client = CommandHandlerClient(channel)
+        client._stub.HandleSyncSpeculative = Mock(return_value=CommandResponse())
+        client.handle_sync_speculative(
+            SpeculateCommandHandlerRequest(), timeout=4.0
+        )
+        assert (
+            client._stub.HandleSyncSpeculative.call_args.kwargs["timeout"] == 4.0
+        )
+
+    def test_speculative_command_handler_propagates_timeout(self) -> None:
+        # Kills SpeculativeClient.command_handler__mutmut_9.
+        channel = Mock(spec=grpc.Channel)
+        client = SpeculativeClient(channel)
+        client._command_handler_stub.HandleSyncSpeculative = Mock(
+            return_value=CommandResponse()
+        )
+        client.command_handler(SpeculateCommandHandlerRequest(), timeout=4.0)
+        assert (
+            client._command_handler_stub.HandleSyncSpeculative
+            .call_args.kwargs["timeout"]
+            == 4.0
+        )
+
+    def test_speculative_projector_propagates_timeout(self) -> None:
+        # Kills SpeculativeClient.projector__mutmut_9.
+        channel = Mock(spec=grpc.Channel)
+        client = SpeculativeClient(channel)
+        client._projector_stub.HandleSpeculative = Mock(return_value=Projection())
+        client.projector(SpeculateProjectorRequest(), timeout=4.0)
+        assert (
+            client._projector_stub.HandleSpeculative.call_args.kwargs["timeout"]
+            == 4.0
+        )
+
+    def test_speculative_saga_propagates_timeout(self) -> None:
+        # Kills SpeculativeClient.saga__mutmut_9.
+        channel = Mock(spec=grpc.Channel)
+        client = SpeculativeClient(channel)
+        client._saga_stub.ExecuteSpeculative = Mock(return_value=SagaResponse())
+        client.saga(SpeculateSagaRequest(), timeout=4.0)
+        assert (
+            client._saga_stub.ExecuteSpeculative.call_args.kwargs["timeout"]
+            == 4.0
+        )
+
+    def test_speculative_process_manager_propagates_timeout(self) -> None:
+        # Kills SpeculativeClient.process_manager__mutmut_9.
+        channel = Mock(spec=grpc.Channel)
+        client = SpeculativeClient(channel)
+        client._pm_stub.HandleSpeculative = Mock(
+            return_value=ProcessManagerHandleResponse()
+        )
+        client.process_manager(SpeculatePmRequest(), timeout=4.0)
+        assert (
+            client._pm_stub.HandleSpeculative.call_args.kwargs["timeout"] == 4.0
+        )
+
+
+class TestTopLevelTimeoutAndCapExports:
+    """The two channel-level resilience knobs added for Rust parity are
+    callers' override knobs — they must be reachable from the crate root
+    just like ``TransportMode`` etc. Mirrors Rust's ``lib.rs`` re-exports
+    of ``DEFAULT_MAX_EVENT_BOOKS`` / channel-default constants.
+    """
+
+    def test_default_rpc_timeout_reachable_at_top_level(self) -> None:
+        import angzarr_client
+
+        from angzarr_client.client import DEFAULT_RPC_TIMEOUT as client_default
+
+        assert angzarr_client.DEFAULT_RPC_TIMEOUT is client_default
+
+    def test_default_max_event_books_reachable_at_top_level(self) -> None:
+        import angzarr_client
+
+        from angzarr_client.client import (
+            DEFAULT_MAX_EVENT_BOOKS as client_cap,
+        )
+
+        assert angzarr_client.DEFAULT_MAX_EVENT_BOOKS is client_cap
+
+    def test_listed_in_dunder_all(self) -> None:
+        import angzarr_client
+
+        assert "DEFAULT_RPC_TIMEOUT" in angzarr_client.__all__
+        assert "DEFAULT_MAX_EVENT_BOOKS" in angzarr_client.__all__

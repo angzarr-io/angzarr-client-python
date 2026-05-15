@@ -49,6 +49,7 @@ class CommandBuilder:
         self._sequence: int = 0
         self._sequence_set: bool = False
         self._merge_strategy: MergeStrategy = MergeStrategy.MERGE_COMMUTATIVE
+        self._sync_mode: SyncMode | None = None
         self._type_url: str | None = None
         self._payload: bytes | None = None
 
@@ -70,6 +71,22 @@ class CommandBuilder:
             strategy: MERGE_COMMUTATIVE (default) or MERGE_STRICT.
         """
         self._merge_strategy = strategy
+        return self
+
+    def with_sync_mode(self, mode: SyncMode) -> "CommandBuilder":
+        """Stamp the sync mode onto the built ``CommandPage``'s header.
+
+        When unset, :meth:`build` emits a header with ``sync_mode``
+        cleared, and :meth:`execute` supplies ``SYNC_MODE_ASYNC`` (the
+        cross-language default). Calling this makes the ``build()``
+        output round-trip the choice — important for callers who hand
+        the produced :class:`CommandBook` to a transport helper that
+        doesn't accept a separate ``sync_mode`` argument.
+
+        Mirrors Rust's ``CommandBuilder::with_sync_mode``
+        (``builder.rs:80-83``).
+        """
+        self._sync_mode = mode
         return self
 
     def with_command(self, type_url: str, message: Message) -> "CommandBuilder":
@@ -97,6 +114,8 @@ class CommandBuilder:
 
         command_any = ProtoAny(type_url=self._type_url, value=self._payload)
         header = PageHeader(sequence=self._sequence)
+        if self._sync_mode is not None:
+            header.sync_mode = self._sync_mode
         page = CommandPage(header=header, merge_strategy=self._merge_strategy)
         page.command.CopyFrom(command_any)
 
@@ -106,15 +125,33 @@ class CommandBuilder:
         return book
 
     def execute(
-        self, sync_mode: SyncMode = SyncMode.SYNC_MODE_ASYNC
+        self, sync_mode: SyncMode | None = None
     ) -> CommandResponse:
         """Build and execute the command.
 
         Args:
-            sync_mode: Execution mode (ASYNC, SIMPLE, or CASCADE).
-                      Defaults to ASYNC for fire-and-forget behavior.
+            sync_mode: Execution mode (ASYNC, SIMPLE, CASCADE, …).
+                When ``None`` (the default), falls back to the mode
+                stored by :meth:`with_sync_mode`; if neither was set,
+                ``SYNC_MODE_ASYNC`` is used. Mirrors Rust's
+                ``CommandBuilder::execute`` (``builder.rs:155-160``).
         """
-        cmd = self.build()
+        if sync_mode is None:
+            sync_mode = (
+                self._sync_mode
+                if self._sync_mode is not None
+                else SyncMode.SYNC_MODE_ASYNC
+            )
+        # Round-trip the chosen mode through the built header too, so the
+        # serialized CommandBook reflects the same decision the request
+        # envelope carries — keeps build() and execute() coherent for
+        # callers who inspect the produced book.
+        prev_mode = self._sync_mode
+        self._sync_mode = sync_mode
+        try:
+            cmd = self.build()
+        finally:
+            self._sync_mode = prev_mode
         request = CommandRequest(command=cmd, sync_mode=sync_mode)
         return self._client.handle_command(request)
 
