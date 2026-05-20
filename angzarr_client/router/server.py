@@ -46,6 +46,56 @@ from angzarr_client.proto.angzarr import types_pb2 as types
 from .dispatch import DispatchError
 
 
+_TRAILER_CODE_KEY = "angzarr-code"
+_TRAILER_DETAIL_PREFIX = "angzarr-detail-"
+
+
+def _stamp_rejection_trailers(
+    context: grpc.aio.ServicerContext, exc: CommandRejectedError
+) -> None:
+    """Attach the angzarr business code + structured details as trailing
+    metadata so callers can read them without parsing the gRPC details
+    string. gRPC metadata keys are lower-case ASCII; values are ASCII or
+    bytes.
+
+    Per-detail keys: ``angzarr-detail-<field>`` carrying ``str(value)``.
+    The test client decodes ``angzarr-code`` to match
+    ``Then the command is rejected with code "X"`` and decodes the
+    ``angzarr-detail-<field>`` set to match
+    ``Then the rejection field "X" equals "Y"``.
+    """
+    trailers: list[tuple[str, str]] = []
+    code = getattr(exc, "code", "") or ""
+    if code:
+        trailers.append((_TRAILER_CODE_KEY, code))
+    details = getattr(exc, "details", None) or {}
+    if isinstance(details, dict):
+        for field, value in details.items():
+            # gRPC keys must be lower-case; field names already are.
+            trailers.append((f"{_TRAILER_DETAIL_PREFIX}{field}", str(value)))
+    if trailers:
+        context.set_trailing_metadata(trailers)
+
+
+def _rejection_message(exc: CommandRejectedError) -> str:
+    """The user-visible message for a rejection.
+
+    Calls ``render()`` if the exception is a ``StructuredCommandError``
+    leaf — that substitutes the template's ``{field}`` placeholders
+    with the dataclass field values. Otherwise falls back to
+    ``str(exc)`` (raw message). Without this, gRPC clients would see
+    the literal template ``"Amount must be positive, got {value}"``
+    instead of the rendered ``"Amount must be positive, got 0"``.
+    """
+    render = getattr(exc, "render", None)
+    if callable(render):
+        try:
+            return render()
+        except Exception:  # noqa: BLE001
+            pass
+    return str(exc)
+
+
 async def _translate_and_abort(
     context: grpc.aio.ServicerContext, exc: Exception
 ) -> None:
@@ -55,6 +105,11 @@ async def _translate_and_abort(
     ``await`` it. Mirrors the Rust client's ``client_error_to_status``
     so the same logical failure surfaces the same gRPC code on either
     side of the wire.
+
+    For ``CommandRejectedError`` (including ``StructuredCommandError``
+    leaves with templated messages), the angzarr SCREAMING_SNAKE code
+    and structured-details map ride out as trailing metadata so callers
+    can assert against them without parsing the message string.
     """
     if isinstance(exc, CommandRejectedError):
         code_map = {
@@ -62,7 +117,8 @@ async def _translate_and_abort(
             "NOT_FOUND": grpc.StatusCode.NOT_FOUND,
         }
         code = code_map.get(exc.status_code, grpc.StatusCode.FAILED_PRECONDITION)
-        await context.abort(code, str(exc))
+        _stamp_rejection_trailers(context, exc)
+        await context.abort(code, _rejection_message(exc))
     elif isinstance(exc, DispatchError):
         await context.abort(exc.code(), exc.details())
     elif isinstance(exc, GRPCError):
