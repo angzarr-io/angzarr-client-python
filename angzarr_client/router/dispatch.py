@@ -228,6 +228,33 @@ def _appliers_for(instance: Any) -> dict[str, Callable]:
     return out
 
 
+def _root_of(*books) -> bytes:
+    """Extract the aggregate root from the first book whose cover has one.
+
+    The framework's dispatch paths each have a primary "book" describing
+    the addressing envelope — an EventBook (cmd_book / prior_events /
+    process_state / facts) or a similarly-shaped message with a Cover.
+    The root sits on ``book.cover.root.value``; appliers and handlers
+    that need the aggregate root (e.g. to derive a stable id from it
+    instead of from a user-supplied name) read it off
+    ``self._aggregate_root`` after the dispatcher stamps it on the
+    instance via this helper.
+
+    Returns ``b""`` when no book carries a cover root — first-event
+    construction with no prior history is a normal case (the instance
+    can fall back to a sentinel) and shouldn't crash dispatch.
+    """
+    for book in books:
+        if book is None:
+            continue
+        if not hasattr(book, "HasField") or not book.HasField("cover"):
+            continue
+        if not book.cover.HasField("root"):
+            continue
+        return book.cover.root.value
+    return b""
+
+
 def _rebuild_state(instance: Any, prior_events) -> Any:
     """Replay prior events through the instance's @applies methods.
 
@@ -329,6 +356,7 @@ def dispatch_command(
             _parse_any(cmd, command_any.value, command_any.type_url)
 
             inst = factory()
+            inst._aggregate_root = _root_of(prior, cmd_book)
             state = _rebuild_state(inst, prior)
             try:
                 emitted = getattr(inst, method_name)(cmd, state, base_seq)
@@ -389,6 +417,7 @@ def _dispatch_notification(
         for (d, c), method_name in _collect_method_names(cls, "__angzarr_rejected__"):
             if d == source_domain and c == cmd_suffix:
                 inst = factory()
+                inst._aggregate_root = _root_of(prior)
                 state = _rebuild_state(inst, prior)
                 emitted = getattr(inst, method_name)(notification, state)
                 pages = _pack_events(emitted, base_seq=current_seq).pages
@@ -461,6 +490,7 @@ def dispatch_fact(factories: list[Factory], request: Any) -> EventBook:
         if not method_table:
             continue
         inst = factory()
+        inst._aggregate_root = _root_of(prior)
         state = _rebuild_state(inst, prior)
         handler_table.append((inst, state, method_table))
 
@@ -525,6 +555,7 @@ def dispatch_replay(factories: list[Factory], request: Any) -> Any:
         return ReplayResponse()
 
     inst = factory()
+    inst._aggregate_root = _root_of(request)
 
     # Decode base snapshot state — empty Any means "start from default".
     state = _build_fresh_state(inst)
@@ -721,6 +752,7 @@ def dispatch_process_manager(
             if evt_type.DESCRIPTOR.full_name != suffix:
                 continue
             inst = factory()
+            inst._aggregate_root = _root_of(process_state)
             state = _rebuild_state(inst, process_state)
             evt = evt_type()
             _parse_any(evt, last.event.value, last.event.type_url)
