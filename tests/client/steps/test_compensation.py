@@ -21,7 +21,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from google.protobuf.any_pb2 import Any as ProtoAny
 
-from angzarr_client.proto.angzarr import types_pb2 as types
+from angzarr_client.proto.angzarr.v1 import types_pb2 as types
 
 scenarios("compensation.feature")
 
@@ -94,7 +94,7 @@ class _CompensationContext:
             cover_domain=self.source_domain,
             sent_at=int(time.time()),
             payload_type_url=(
-                "type.googleapis.com/angzarr_client.proto.angzarr.RejectionNotification"
+                "type.googleapis.com/angzarr_client.proto.angzarr.v1.RejectionNotification"
             ),
         )
 
@@ -112,7 +112,7 @@ class _CompensationContext:
                     merge_strategy=types.MergeStrategy.MERGE_COMMUTATIVE,
                     command=ProtoAny(
                         # Audit finding #58: spec-compliant fully qualified name.
-                        type_url="type.googleapis.com/angzarr_client.proto.angzarr.Notification"
+                        type_url="type.googleapis.com/angzarr_client.proto.angzarr.v1.Notification"
                     ),
                 )
             ],

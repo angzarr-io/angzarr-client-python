@@ -27,7 +27,9 @@ from angzarr_client.router import Router, command_handler, handles
 from tests.fixtures import CreateOrder
 
 
-def _request_with_cover(cmd_msg, *, domain: str, root_bytes: bytes, correlation_id: str):
+def _request_with_cover(
+    cmd_msg, *, domain: str, root_bytes: bytes, correlation_id: str
+):
     cmd_any = ProtoAny()
     cmd_any.type_url = TYPE_URL_PREFIX + cmd_msg.DESCRIPTOR.full_name
     cmd_any.value = cmd_msg.SerializeToString()

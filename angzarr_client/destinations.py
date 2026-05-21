@@ -19,7 +19,7 @@ Example usage:
 
 from __future__ import annotations
 
-from .proto.angzarr import types_pb2 as types
+from .proto.angzarr.v1 import types_pb2 as types
 
 __all__ = ["Destinations"]
 

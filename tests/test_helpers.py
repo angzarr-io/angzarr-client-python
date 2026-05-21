@@ -36,15 +36,12 @@ from angzarr_client.helpers import (
 )
 from angzarr_client.proto.angzarr import (
     UUID,
-    CommandBook,
-    CommandPage,
     Cover,
     DomainDivergence,
     Edition,
     EventBook,
     EventPage,
     PageHeader,
-    Query,
 )
 
 
@@ -248,9 +245,10 @@ class TestTypeUrlHelpers:
         so Python wire URLs include that prefix verbatim. ``wire_name``
         is a no-op in Python; ``type_url`` echoes the input unchanged
         through the prefix."""
-        result = type_url("angzarr_client.proto.examples.OrderCreated")
+        result = type_url("angzarr_client.proto.examples.v1.OrderCreated")
         assert (
-            result == "type.googleapis.com/angzarr_client.proto.examples.OrderCreated"
+            result
+            == "type.googleapis.com/angzarr_client.proto.examples.v1.OrderCreated"
         )
 
     def test_wire_name_is_identity_in_python(self) -> None:
@@ -262,8 +260,8 @@ class TestTypeUrlHelpers:
 
         assert wire_name("examples.OrderCreated") == "examples.OrderCreated"
         assert (
-            wire_name("angzarr_client.proto.examples.OrderCreated")
-            == "angzarr_client.proto.examples.OrderCreated"
+            wire_name("angzarr_client.proto.examples.v1.OrderCreated")
+            == "angzarr_client.proto.examples.v1.OrderCreated"
         )
 
     def test_type_name_from_url_fully_qualified(self) -> None:
@@ -307,8 +305,8 @@ class TestTypeUrlHelpers:
         ``type_url_matches`` accepts the corresponding ``type_name`` form."""
         assert (
             type_url_matches(
-                "type.googleapis.com/angzarr_client.proto.examples.OrderCreated",
-                "angzarr_client.proto.examples.OrderCreated",
+                "type.googleapis.com/angzarr_client.proto.examples.v1.OrderCreated",
+                "angzarr_client.proto.examples.v1.OrderCreated",
             )
             is True
         )
@@ -387,7 +385,7 @@ class TestDecodeEvent:
         page.event.Pack(cover)
 
         # Use full type name for exact matching
-        result = decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover)
+        result = decode_event(page, "angzarr_client.proto.angzarr.v1.Cover", Cover)
         assert result is not None
         assert result.domain == "test"
         assert result.correlation_id == "abc"
@@ -584,7 +582,7 @@ class TestAdditionalHelpers:
         from angzarr_client.helpers import full_type_name
         from angzarr_client.proto.angzarr import Cover
 
-        assert full_type_name(Cover) == "angzarr_client.proto.angzarr.Cover"
+        assert full_type_name(Cover) == "angzarr_client.proto.angzarr.v1.Cover"
 
     def test_full_type_url_for_and_alias(self) -> None:
         from angzarr_client.helpers import (
@@ -596,7 +594,7 @@ class TestAdditionalHelpers:
 
         assert (
             full_type_url_for(Cover)
-            == f"{TYPE_URL_PREFIX}angzarr_client.proto.angzarr.Cover"
+            == f"{TYPE_URL_PREFIX}angzarr_client.proto.angzarr.v1.Cover"
         )
         assert full_type_url is full_type_url_for
 
@@ -612,7 +610,9 @@ class TestAdditionalHelpers:
 
         # Patch Unpack on the Any to force the except branch
         monkeypatch.setattr(type(page.event), "Unpack", boom)
-        assert decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover) is None
+        assert (
+            decode_event(page, "angzarr_client.proto.angzarr.v1.Cover", Cover) is None
+        )
 
 
 # Audit #86 reverted 2026-04-29: edition propagation moved to
@@ -629,7 +629,7 @@ class TestIdempotencyKey:
 
     def test_returns_composite_key_with_all_fields(self) -> None:
         from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.angzarr.types_pb2 import (
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
             AngzarrDeferredSequence,
         )
 
@@ -645,7 +645,7 @@ class TestIdempotencyKey:
 
     def test_returns_none_when_source_missing(self) -> None:
         from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.angzarr.types_pb2 import (
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
             AngzarrDeferredSequence,
         )
 
@@ -660,7 +660,7 @@ class TestIdempotencyKey:
 
     def test_empty_edition_name_yields_empty_first_part(self) -> None:
         from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.angzarr.types_pb2 import (
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
             AngzarrDeferredSequence,
         )
 
@@ -671,7 +671,7 @@ class TestIdempotencyKey:
 
     def test_empty_root_yields_empty_root_segment(self) -> None:
         from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.angzarr.types_pb2 import (
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
             AngzarrDeferredSequence,
         )
 

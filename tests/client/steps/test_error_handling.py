@@ -338,12 +338,12 @@ def _then_indicates_optimistic_lock(state: _State) -> None:
     # client can recover. Verify both sequences threaded through.
     if state.server_seq is not None and state.client_seq is not None:
         details = err.grpc_details if isinstance(err, GRPCError) else str(err)
-        assert f"expected {state.server_seq}" in details, (
-            f"missing server seq in details: {details}"
-        )
-        assert f"got {state.client_seq}" in details, (
-            f"missing client seq in details: {details}"
-        )
+        assert (
+            f"expected {state.server_seq}" in details
+        ), f"missing server seq in details: {details}"
+        assert (
+            f"got {state.client_seq}" in details
+        ), f"missing client seq in details: {details}"
 
 
 @then("code should return INVALID_ARGUMENT")

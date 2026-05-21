@@ -188,7 +188,7 @@ class TestCreateServer:
         handle = srv.create_server(
             add_servicer_func=add_servicer,
             servicer=servicer,
-            service_name="angzarr_client.proto.angzarr.Test",
+            service_name="angzarr_client.proto.angzarr.v1.Test",
         )
         assert add_servicer.call_count == 1
         assert handle.address.startswith("[::]:")
@@ -201,7 +201,9 @@ class TestCreateServer:
             == health_pb2.HealthCheckResponse.NOT_SERVING
         )
         assert (
-            handle.health_servicer._server_status["angzarr_client.proto.angzarr.Test"]
+            handle.health_servicer._server_status[
+                "angzarr_client.proto.angzarr.v1.Test"
+            ]
             == health_pb2.HealthCheckResponse.NOT_SERVING
         )
 
@@ -235,7 +237,7 @@ class TestRunServerLogging:
             srv.run_server(
                 add_servicer_func=lambda *a, **kw: None,
                 servicer=object(),
-                service_name="angzarr_client.proto.angzarr.Test",
+                service_name="angzarr_client.proto.angzarr.v1.Test",
                 domain="orders",
                 default_port="9999",
                 logger=logger,
@@ -266,11 +268,11 @@ class TestRunServerLogging:
             srv.run_server(
                 add_servicer_func=lambda *a, **kw: None,
                 servicer=object(),
-                service_name="angzarr_client.proto.angzarr.Test",
+                service_name="angzarr_client.proto.angzarr.v1.Test",
                 domain="orders",
             )
         out = capsys.readouterr().out
-        assert "angzarr_client.proto.angzarr.Test" in out
+        assert "angzarr_client.proto.angzarr.v1.Test" in out
         assert "orders" in out
 
     def test_marks_transport_bound_after_start(self, monkeypatch) -> None:
@@ -299,7 +301,7 @@ class TestRunServerLogging:
             srv.run_server(
                 add_servicer_func=lambda *a, **kw: None,
                 servicer=object(),
-                service_name="angzarr_client.proto.angzarr.Test",
+                service_name="angzarr_client.proto.angzarr.v1.Test",
                 domain="orders",
                 default_port="9999",
             )
@@ -314,7 +316,7 @@ class TestRunServerLogging:
         ]
         published_names = {name for name, _ in publishes}
         assert "" in published_names
-        assert "angzarr_client.proto.angzarr.Test" in published_names
+        assert "angzarr_client.proto.angzarr.v1.Test" in published_names
 
 
 class TestPublishShutdownStatus:

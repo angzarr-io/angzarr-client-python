@@ -124,9 +124,7 @@ class CommandBuilder:
         book.pages.append(page)
         return book
 
-    def execute(
-        self, sync_mode: SyncMode | None = None
-    ) -> CommandResponse:
+    def execute(self, sync_mode: SyncMode | None = None) -> CommandResponse:
         """Build and execute the command.
 
         Args:

@@ -269,7 +269,7 @@ def _when_build_strict(state: _World) -> None:
     pass without calling with_merge_strategy at all (the simulation
     only tracked the string label).
     """
-    from angzarr_client.proto.angzarr.types_pb2 import MergeStrategy as _MS
+    from angzarr_client.proto.angzarr.v1.types_pb2 import MergeStrategy as _MS
 
     state.domain = "test"
     state.root = uuid4()
@@ -543,7 +543,7 @@ def _then_built_and_executed(state: _World) -> None:
 
 @then("the command page should have MERGE_COMMUTATIVE strategy")
 def _then_merge_commutative(state: _World) -> None:
-    from angzarr_client.proto.angzarr.types_pb2 import MergeStrategy as _MS
+    from angzarr_client.proto.angzarr.v1.types_pb2 import MergeStrategy as _MS
 
     assert state.built is not None
     assert state.built.pages[0].merge_strategy == _MS.MERGE_COMMUTATIVE
@@ -551,7 +551,7 @@ def _then_merge_commutative(state: _World) -> None:
 
 @then("the command page should have MERGE_STRICT strategy")
 def _then_merge_strict(state: _World) -> None:
-    from angzarr_client.proto.angzarr.types_pb2 import MergeStrategy as _MS
+    from angzarr_client.proto.angzarr.v1.types_pb2 import MergeStrategy as _MS
 
     assert state.built is not None
     assert state.built.pages[0].merge_strategy == _MS.MERGE_STRICT

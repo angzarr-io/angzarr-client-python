@@ -39,7 +39,7 @@ WILDCARD_DOMAIN = "*"
 DEFAULT_EDITION = ""
 META_ANGZARR_DOMAIN = "_angzarr"
 PROJECTION_DOMAIN_PREFIX = "_projection"
-PROJECTION_TYPE_URL = "angzarr_client.proto.angzarr.Projection"
+PROJECTION_TYPE_URL = "angzarr_client.proto.angzarr.v1.Projection"
 CORRELATION_ID_HEADER = "x-correlation-id"
 TYPE_URL_PREFIX = "type.googleapis.com/"
 

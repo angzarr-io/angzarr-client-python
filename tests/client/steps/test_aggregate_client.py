@@ -643,24 +643,26 @@ def _then_aggregate_exists(state: _World, count: int) -> None:
 def _then_targeted_domain(state: _World, expected: str) -> None:
     """Verify the spec-named domain was the one used for the operation. Lets
     sour-mutants detect mutations to the captured domain in Given/When steps."""
-    assert state.domain == expected, f"state.domain={state.domain!r} expected={expected!r}"
+    assert (
+        state.domain == expected
+    ), f"state.domain={state.domain!r} expected={expected!r}"
 
 
 @then(parsers.parse('the targeted aggregate has root "{expected}"'))
 def _then_targeted_root(state: _World, expected: str) -> None:
     """Verify the spec-named root was the one used. Compares the original
     literal label captured in Given (e.g. "order-001"), not the UUID coercion."""
-    assert state.root_label == expected, (
-        f"state.root_label={state.root_label!r} expected={expected!r}"
-    )
+    assert (
+        state.root_label == expected
+    ), f"state.root_label={state.root_label!r} expected={expected!r}"
 
 
 @then(parsers.parse("the executed command was at sequence {expected:d}"))
 def _then_executed_sequence(state: _World, expected: int) -> None:
     """Verify the spec-named sequence was the one used."""
-    assert state.last_executed_sequence == expected, (
-        f"last_executed_sequence={state.last_executed_sequence} expected={expected}"
-    )
+    assert (
+        state.last_executed_sequence == expected
+    ), f"last_executed_sequence={state.last_executed_sequence} expected={expected}"
 
 
 # ---------------------------------------------------------------------------

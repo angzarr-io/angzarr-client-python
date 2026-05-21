@@ -12,7 +12,7 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 
 from angzarr_client.helpers import TYPE_URL_PREFIX
 from angzarr_client.proto.angzarr import Cover, EventPage, Snapshot
-from angzarr_client.proto.angzarr.command_handler_pb2 import ReplayRequest
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import ReplayRequest
 from angzarr_client.router import (
     Router,
     applies,

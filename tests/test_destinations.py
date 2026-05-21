@@ -4,7 +4,7 @@ import pytest
 
 from angzarr_client.destinations import Destinations
 from angzarr_client.errors import InvalidArgumentError
-from angzarr_client.proto.angzarr import types_pb2 as types
+from angzarr_client.proto.angzarr.v1 import types_pb2 as types
 
 
 class TestDestinations:

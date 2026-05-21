@@ -378,7 +378,7 @@ def run_command_handler_server(
     router, domain: str = "", default_port: int = 50052
 ) -> None:
     """Run a command handler gRPC server."""
-    from .proto.angzarr import command_handler_pb2_grpc
+    from .proto.angzarr.v1 import command_handler_pb2_grpc
     from .router.server import CommandHandlerGrpc
 
     _run_kind_server(
@@ -393,7 +393,7 @@ def run_command_handler_server(
 
 def run_saga_server(router, domain: str = "", default_port: int = 50052) -> None:
     """Run a saga gRPC server."""
-    from .proto.angzarr import saga_pb2_grpc
+    from .proto.angzarr.v1 import saga_pb2_grpc
     from .router.server import SagaGrpc
 
     _run_kind_server(
@@ -410,7 +410,7 @@ def run_process_manager_server(
     router, domain: str = "", default_port: int = 50052
 ) -> None:
     """Run a process manager gRPC server."""
-    from .proto.angzarr import process_manager_pb2_grpc
+    from .proto.angzarr.v1 import process_manager_pb2_grpc
     from .router.server import ProcessManagerGrpc
 
     _run_kind_server(
@@ -425,7 +425,7 @@ def run_process_manager_server(
 
 def run_projector_server(router, domain: str = "", default_port: int = 50052) -> None:
     """Run a projector gRPC server."""
-    from .proto.angzarr import projector_pb2_grpc
+    from .proto.angzarr.v1 import projector_pb2_grpc
     from .router.server import ProjectorGrpc
 
     _run_kind_server(
@@ -440,7 +440,7 @@ def run_projector_server(router, domain: str = "", default_port: int = 50052) ->
 
 def run_upcaster_server(router, domain: str = "", default_port: int = 50052) -> None:
     """Run an upcaster gRPC server."""
-    from .proto.angzarr import upcaster_pb2_grpc
+    from .proto.angzarr.v1 import upcaster_pb2_grpc
     from .router.server import UpcasterGrpc
 
     _run_kind_server(

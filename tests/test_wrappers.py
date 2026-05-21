@@ -713,7 +713,7 @@ class TestEventPageWAdditional:
         proto = EventPageProto(header=PageHeader(sequence=1))
         proto.event.Pack(CoverProto(domain="x"))
         url = EventPage(proto).type_url()
-        assert url is not None and url.endswith("angzarr_client.proto.angzarr.Cover")
+        assert url is not None and url.endswith("angzarr_client.proto.angzarr.v1.Cover")
 
     def test_type_url_none_when_no_event(self) -> None:
         assert (
@@ -781,7 +781,7 @@ class TestCommandPageWAdditional:
         proto.header.sequence = 1
         proto.command.Pack(CoverProto(domain="x"))
         url = CommandPage(proto).type_url()
-        assert url is not None and url.endswith("angzarr_client.proto.angzarr.Cover")
+        assert url is not None and url.endswith("angzarr_client.proto.angzarr.v1.Cover")
 
     def test_type_url_none_when_no_command(self) -> None:
         proto = CommandPageProto()

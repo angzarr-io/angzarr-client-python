@@ -14,8 +14,8 @@ from angzarr_client.compensation import (
 )
 from angzarr_client.router.responses import RejectionHandlerResponse
 from angzarr_client.helpers import uuid_to_proto
-from angzarr_client.proto.angzarr import command_handler_pb2 as command_handler
-from angzarr_client.proto.angzarr import types_pb2 as types
+from angzarr_client.proto.angzarr.v1 import command_handler_pb2 as command_handler
+from angzarr_client.proto.angzarr.v1 import types_pb2 as types
 
 
 def _make_rejection_notification(
@@ -98,7 +98,9 @@ class TestCompensationContextProperties:
             _make_rejection_notification(rejected_command=cmd)
         )
         assert ctx.rejected_command_type is not None
-        assert ctx.rejected_command_type.endswith("angzarr_client.proto.angzarr.Cover")
+        assert ctx.rejected_command_type.endswith(
+            "angzarr_client.proto.angzarr.v1.Cover"
+        )
 
     def test_rejected_command_type_none_when_no_command_in_page(self) -> None:
         cmd = types.CommandBook()
@@ -164,7 +166,7 @@ class TestCompensationContextProperties:
         ctx = CompensationContext.from_notification(
             _make_rejection_notification(rejected_command=cmd)
         )
-        assert ctx.dispatch_key == "inventory/angzarr_client.proto.angzarr.Cover"
+        assert ctx.dispatch_key == "inventory/angzarr_client.proto.angzarr.v1.Cover"
 
 
 class TestAggregateHelpers:
@@ -264,7 +266,7 @@ class TestIsNotification:
         # Audit finding #58: spec-compliant fully qualified name.
         assert (
             is_notification(
-                "type.googleapis.com/angzarr_client.proto.angzarr.Notification"
+                "type.googleapis.com/angzarr_client.proto.angzarr.v1.Notification"
             )
             is True
         )

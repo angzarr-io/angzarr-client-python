@@ -52,8 +52,6 @@ from tests.fixtures import (
     CreateOrder,
     OrderCompleted,
     OrderCreated,
-    ReserveStock,
-    StockReserved,
 )
 
 

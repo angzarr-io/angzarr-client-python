@@ -590,7 +590,7 @@ class TestCorrelationIdMetadataPropagation:
             EventBook,
             SpeculatePmRequest,
         )
-        from angzarr_client.proto.angzarr.process_manager_pb2 import (
+        from angzarr_client.proto.angzarr.v1.process_manager_pb2 import (
             ProcessManagerHandleRequest,
         )
 
@@ -699,8 +699,7 @@ class TestDefaultRpcTimeout:
         client._stub.GetEventBook = Mock(return_value=EventBook())
         client.get_event_book(Query())
         assert (
-            client._stub.GetEventBook.call_args.kwargs["timeout"]
-            == DEFAULT_RPC_TIMEOUT
+            client._stub.GetEventBook.call_args.kwargs["timeout"] == DEFAULT_RPC_TIMEOUT
         )
 
     def test_explicit_timeout_overrides_default(self) -> None:
@@ -815,12 +814,8 @@ class TestExplicitTimeoutPropagation:
         channel = Mock(spec=grpc.Channel)
         client = CommandHandlerClient(channel)
         client._stub.HandleSyncSpeculative = Mock(return_value=CommandResponse())
-        client.handle_sync_speculative(
-            SpeculateCommandHandlerRequest(), timeout=4.0
-        )
-        assert (
-            client._stub.HandleSyncSpeculative.call_args.kwargs["timeout"] == 4.0
-        )
+        client.handle_sync_speculative(SpeculateCommandHandlerRequest(), timeout=4.0)
+        assert client._stub.HandleSyncSpeculative.call_args.kwargs["timeout"] == 4.0
 
     def test_speculative_command_handler_propagates_timeout(self) -> None:
         # Kills SpeculativeClient.command_handler__mutmut_9.
@@ -831,8 +826,9 @@ class TestExplicitTimeoutPropagation:
         )
         client.command_handler(SpeculateCommandHandlerRequest(), timeout=4.0)
         assert (
-            client._command_handler_stub.HandleSyncSpeculative
-            .call_args.kwargs["timeout"]
+            client._command_handler_stub.HandleSyncSpeculative.call_args.kwargs[
+                "timeout"
+            ]
             == 4.0
         )
 
@@ -843,8 +839,7 @@ class TestExplicitTimeoutPropagation:
         client._projector_stub.HandleSpeculative = Mock(return_value=Projection())
         client.projector(SpeculateProjectorRequest(), timeout=4.0)
         assert (
-            client._projector_stub.HandleSpeculative.call_args.kwargs["timeout"]
-            == 4.0
+            client._projector_stub.HandleSpeculative.call_args.kwargs["timeout"] == 4.0
         )
 
     def test_speculative_saga_propagates_timeout(self) -> None:
@@ -853,10 +848,7 @@ class TestExplicitTimeoutPropagation:
         client = SpeculativeClient(channel)
         client._saga_stub.ExecuteSpeculative = Mock(return_value=SagaResponse())
         client.saga(SpeculateSagaRequest(), timeout=4.0)
-        assert (
-            client._saga_stub.ExecuteSpeculative.call_args.kwargs["timeout"]
-            == 4.0
-        )
+        assert client._saga_stub.ExecuteSpeculative.call_args.kwargs["timeout"] == 4.0
 
     def test_speculative_process_manager_propagates_timeout(self) -> None:
         # Kills SpeculativeClient.process_manager__mutmut_9.
@@ -866,9 +858,7 @@ class TestExplicitTimeoutPropagation:
             return_value=ProcessManagerHandleResponse()
         )
         client.process_manager(SpeculatePmRequest(), timeout=4.0)
-        assert (
-            client._pm_stub.HandleSpeculative.call_args.kwargs["timeout"] == 4.0
-        )
+        assert client._pm_stub.HandleSpeculative.call_args.kwargs["timeout"] == 4.0
 
 
 class TestTopLevelTimeoutAndCapExports:

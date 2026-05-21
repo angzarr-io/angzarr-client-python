@@ -19,7 +19,7 @@ import hashlib
 from google.protobuf.any_pb2 import Any as ProtoAny
 
 from angzarr_client.destinations import Destinations
-from angzarr_client.proto.angzarr import types_pb2 as types
+from angzarr_client.proto.angzarr.v1 import types_pb2 as types
 
 # Fixed input. Changing ANY of these constants invalidates the golden hash.
 ROOT_BYTES = bytes(range(16))  # UUID 00010203-...-0e0f

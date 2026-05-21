@@ -347,23 +347,23 @@ def _then_connected(state: _World) -> None:
 def _then_active_domain(state: _World, expected: str) -> None:
     """Verify the spec-named domain is the one used. Catches mutations to
     the domain captured in coordinator/handler/create-DomainClient steps."""
-    assert state.domain == expected, (
-        f"state.domain={state.domain!r} expected={expected!r}"
-    )
+    assert (
+        state.domain == expected
+    ), f"state.domain={state.domain!r} expected={expected!r}"
 
 
 @then(parsers.parse('the registered handler is for domain "{expected}"'))
 def _then_handler_domain(state: _World, expected: str) -> None:
     """Verify the spec-named handler-registration domain matches.
     Independent capture lets sour-mutants detect handler-line mutations."""
-    assert state.handler_domain == expected, (
-        f"state.handler_domain={state.handler_domain!r} expected={expected!r}"
-    )
+    assert (
+        state.handler_domain == expected
+    ), f"state.handler_domain={state.handler_domain!r} expected={expected!r}"
 
 
 @then(parsers.parse('the env var name was "{expected}"'))
 def _then_env_var_name(state: _World, expected: str) -> None:
     """Verify the spec-named env var was the one read."""
-    assert state.env_var_name == expected, (
-        f"state.env_var_name={state.env_var_name!r} expected={expected!r}"
-    )
+    assert (
+        state.env_var_name == expected
+    ), f"state.env_var_name={state.env_var_name!r} expected={expected!r}"

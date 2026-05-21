@@ -19,7 +19,7 @@ from unittest.mock import Mock
 import grpc
 import pytest
 
-from angzarr_client.proto.angzarr.command_handler_pb2 import (
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import (
     FactRequest,
     ReplayRequest,
 )

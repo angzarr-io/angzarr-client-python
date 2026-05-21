@@ -41,7 +41,7 @@ from angzarr_client.proto.angzarr import (
     upcaster_pb2,
     upcaster_pb2_grpc,
 )
-from angzarr_client.proto.angzarr import types_pb2 as types
+from angzarr_client.proto.angzarr.v1 import types_pb2 as types
 
 from .dispatch import DispatchError
 

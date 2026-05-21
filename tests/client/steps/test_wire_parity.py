@@ -18,7 +18,7 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.destinations import Destinations
-from angzarr_client.proto.angzarr import types_pb2 as types
+from angzarr_client.proto.angzarr.v1 import types_pb2 as types
 
 scenarios("wire_parity.feature")
 

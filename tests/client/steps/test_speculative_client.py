@@ -429,9 +429,9 @@ def _then_execute_against_historical(state: _World) -> None:
 @then(parsers.parse("the response should reflect state at sequence {seq:d}"))
 def _then_response_reflects_state(state: _World, seq: int) -> None:
     assert state.last_command_resp is not None
-    assert state.requested_sequence == seq, (
-        f"requested sequence {state.requested_sequence}, asserted {seq}"
-    )
+    assert (
+        state.requested_sequence == seq
+    ), f"requested sequence {state.requested_sequence}, asserted {seq}"
     page_seq = state.last_command_resp.events.pages[0].header.sequence
     assert page_seq == seq, f"response page sequence {page_seq}, asserted {seq}"
 
@@ -487,9 +487,9 @@ def _then_no_external_updates(state: _World) -> None:
 
 @then(parsers.parse("the projector should process all {count:d} events in order"))
 def _then_projector_processes_all(state: _World, count: int) -> None:
-    assert state.real_event_count == count, (
-        f"loaded {state.real_event_count} events, asserted {count}"
-    )
+    assert (
+        state.real_event_count == count
+    ), f"loaded {state.real_event_count} events, asserted {count}"
 
 
 @then("the final projection state should be returned")

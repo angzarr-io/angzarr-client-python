@@ -58,14 +58,14 @@ Usage in ProcessManager:
 from dataclasses import dataclass
 
 from .helpers import TYPE_URL_PREFIX
-from .proto.angzarr import command_handler_pb2 as command_handler
-from .proto.angzarr import types_pb2 as types
+from .proto.angzarr.v1 import command_handler_pb2 as command_handler
+from .proto.angzarr.v1 import types_pb2 as types
 
 # Audit finding #58: per `google.protobuf.Any` spec the URL carries the
 # fully qualified proto type name verbatim (package prefix included).
 # The pre-#58 short form was a Rust-side bug that this also matched —
 # fixed in both languages.
-_NOTIFICATION_WIRE_NAME = "angzarr_client.proto.angzarr.Notification"
+_NOTIFICATION_WIRE_NAME = "angzarr_client.proto.angzarr.v1.Notification"
 
 
 @dataclass

@@ -15,8 +15,8 @@ from angzarr_client.proto.angzarr import (
     PageHeader,
     SagaHandleRequest,
 )
-from angzarr_client.proto.angzarr import process_manager_pb2 as pm_pb
-from angzarr_client.proto.angzarr import types_pb2 as types_pb
+from angzarr_client.proto.angzarr.v1 import process_manager_pb2 as pm_pb
+from angzarr_client.proto.angzarr.v1 import types_pb2 as types_pb
 
 
 def pack_event_page(msg, seq: int) -> EventPage:

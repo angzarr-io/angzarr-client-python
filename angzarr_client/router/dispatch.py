@@ -32,7 +32,7 @@ from angzarr_client.proto.angzarr import (
     UpcastRequest,
     UpcastResponse,
 )
-from angzarr_client.proto.angzarr import types_pb2 as _types
+from angzarr_client.proto.angzarr.v1 import types_pb2 as _types
 
 from ..error_codes import codes, keys, messages
 from ..errors import CommandRejectedError
@@ -40,7 +40,9 @@ from .responses import ProcessManagerResponse
 
 _LOG = logging.getLogger(__name__)
 
-_NOTIFICATION_TYPE_URL = TYPE_URL_PREFIX + "angzarr_client.proto.angzarr.Notification"
+_NOTIFICATION_TYPE_URL = (
+    TYPE_URL_PREFIX + "angzarr_client.proto.angzarr.v1.Notification"
+)
 
 # (handler_class, zero-arg factory returning a fresh/pooled handler instance).
 Factory = tuple[type, Callable[[], Any]]
@@ -336,9 +338,7 @@ def dispatch_command(
                 # Stamp the addressing envelope so callers can trace the
                 # rejection back to (domain, root, correlation_id) without
                 # threading context through every handler signature.
-                if getattr(rej, "cover", None) is None and cmd_book.HasField(
-                    "cover"
-                ):
+                if getattr(rej, "cover", None) is None and cmd_book.HasField("cover"):
                     rej.cover = cmd_book.cover
                 raise
 
@@ -510,7 +510,7 @@ def dispatch_replay(factories: list[Factory], request: Any) -> Any:
     most one. If somehow none is registered, returns an empty
     ``ReplayResponse``.
     """
-    from angzarr_client.proto.angzarr.command_handler_pb2 import ReplayResponse
+    from angzarr_client.proto.angzarr.v1.command_handler_pb2 import ReplayResponse
 
     if not factories:
         return ReplayResponse()
