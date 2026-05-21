@@ -72,6 +72,8 @@ __all__ = [
     "TemporalQuery",
     "Projection",
     "SyncMode",
+    "CascadeErrorMode",
+    "ContextualCommand",
     # Speculative
     "SpeculateCommandHandlerRequest",
     "SpeculateProjectorRequest",
@@ -84,6 +86,8 @@ __all__ = [
     "ProcessManagerCoordinatorServiceStub",
     "EventQueryServiceStub",
     "UpcasterServiceStub",
+    # Requests
+    "SagaHandleRequest",
     # Responses
     "BusinessResponse",
     "RevocationResponse",

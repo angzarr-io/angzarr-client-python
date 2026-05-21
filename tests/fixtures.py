@@ -32,7 +32,7 @@ class TestProto:
         for i, f in enumerate(fields(self)):
             if i < len(parts):
                 value = parts[i]
-                if f.type == int:
+                if f.type is int:
                     setattr(self, f.name, int(value) if value else 0)
                 else:
                     setattr(self, f.name, value)

@@ -13,7 +13,31 @@ from .error_codes import codes, keys, messages
 from .errors import ConnectionError as ClientConnectionError
 from .errors import GRPCError
 from .helpers import correlated_metadata
+from .proto.angzarr import (
+    CascadeErrorMode,
+    CommandBook,
+    CommandHandlerCoordinatorServiceStub,
+    CommandRequest,
+    CommandResponse,
+    EventBook,
+    EventQueryServiceStub,
+    ProcessManagerCoordinatorServiceStub,
+    ProcessManagerHandleResponse,
+    Projection,
+    ProjectorCoordinatorServiceStub,
+    Query,
+    SagaCoordinatorServiceStub,
+    SagaResponse,
+    SpeculateCommandHandlerRequest,
+    SpeculatePmRequest,
+    SpeculateProjectorRequest,
+    SpeculateSagaRequest,
+    SyncMode,
+)
 from .retry import RetryPolicy, default_retry_policy
+
+if TYPE_CHECKING:
+    from .builder import CommandBuilder, QueryBuilder
 
 # Per-RPC deadline applied to every request issued via this client.
 #
@@ -51,30 +75,6 @@ def _effective_timeout(timeout: float | None) -> float | None:
     not a valid duration, so the operator sees the bad value directly.
     """
     return DEFAULT_RPC_TIMEOUT if timeout is None else timeout
-
-if TYPE_CHECKING:
-    from .builder import CommandBuilder, QueryBuilder
-from .proto.angzarr import (
-    CascadeErrorMode,
-    CommandBook,
-    CommandHandlerCoordinatorServiceStub,
-    CommandRequest,
-    CommandResponse,
-    EventBook,
-    EventQueryServiceStub,
-    ProcessManagerCoordinatorServiceStub,
-    ProcessManagerHandleResponse,
-    Projection,
-    ProjectorCoordinatorServiceStub,
-    Query,
-    SagaCoordinatorServiceStub,
-    SagaResponse,
-    SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
-    SyncMode,
-)
 
 
 class TransportMode(Enum):
@@ -244,7 +244,9 @@ class QueryClient:
             timeout: Per-call deadline in seconds. ``None`` applies
                 :data:`DEFAULT_RPC_TIMEOUT`.
         """
-        return self.get_events_with_limit(query, DEFAULT_MAX_EVENT_BOOKS, timeout=timeout)
+        return self.get_events_with_limit(
+            query, DEFAULT_MAX_EVENT_BOOKS, timeout=timeout
+        )
 
     def get_events_with_limit(
         self,

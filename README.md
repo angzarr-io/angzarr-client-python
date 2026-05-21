@@ -267,3 +267,4 @@ just fmt             # ruff + black check
 just fmt-fix         # auto-format
 just mutation-test   # mutmut (80% kill-rate threshold)
 ```
+# trivial

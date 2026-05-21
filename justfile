@@ -268,17 +268,18 @@ clean:
     rm -rf dist/ build/ *.egg-info/ htmlcov/ .mutmut-cache .pytest_cache __pycache__
 
 # Check formatting (alias `check` for cross-language parity).
+# Skip vendor/ — submodule sources are lint-clean upstream, not here.
 fmt: generate-proto
-    uv run ruff check . --exclude angzarr-project
-    uv run black --check .
+    uv run ruff check . --exclude vendor
+    uv run black --check . --exclude vendor
 
 # Cross-language alias — `just check` runs lint+fmt-check in every lang.
 check: fmt lint
 
 # Auto-format code
 fmt-fix: generate-proto
-    uv run ruff check --fix . --exclude angzarr-project
-    uv run black .
+    uv run ruff check --fix . --exclude vendor
+    uv run black . --exclude vendor
 
 # =============================================================================
 # Submodule management
