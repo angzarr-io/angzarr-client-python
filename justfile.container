@@ -9,21 +9,49 @@ ROOT := `git rev-parse --show-toplevel`
 default:
     @just --list
 
-# Generate proto code from submodule
-proto:
+# Generate proto code from submodule.
+#
+# Idempotent: skips when bindings are fresher than the newest .proto source.
+# Matches the host-side `just generate-proto` shape so behavior is identical
+# whether invoked from host wrapper or directly inside the devcontainer (CI).
+generate-proto:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    src_dir="{{ROOT}}/vendor/angzarr-project/proto"
+    out_dir="{{ROOT}}/angzarr_client/proto"
+    if [ ! -d "$src_dir" ]; then
+        echo "[generate-proto] $src_dir missing — submodule not initialized?" >&2
+        exit 1
+    fi
+    newest_proto=$(find "$src_dir" -name '*.proto' -printf '%T@\n' 2>/dev/null \
+                    | sort -n | tail -1)
+    if [ -d "$out_dir" ]; then
+        oldest_pb=$(find "$out_dir" \( -name '*_pb2.py' -o -name '*_pb2_grpc.py' \) \
+                        -printf '%T@\n' 2>/dev/null | sort -n | head -1)
+    else
+        oldest_pb=""
+    fi
+    if [ -n "$newest_proto" ] && [ -n "$oldest_pb" ] \
+        && awk -v p="$newest_proto" -v b="$oldest_pb" 'BEGIN{exit !(b>p)}'; then
+        echo "[generate-proto] bindings up-to-date, skipping"
+        exit 0
+    fi
     buf generate
-    uv run python scripts/generate_protos.py
+    uv run --extra dev python scripts/generate_protos.py
+
+# Back-compat alias.
+proto: generate-proto
 
 # Build package
-build: proto
+build: generate-proto
     uv build
 
-# Framework-harness cucumber (pytest-bdd; feature files from angzarr-project/features/client/)
-test-client-unit:
+# Framework-harness cucumber (pytest-bdd; feature files from vendor/angzarr-project/features/client/)
+test-client-unit: generate-proto
     uv run --extra dev pytest tests/client/ -v
 
 # Plain pytest, excluding the BDD subset
-test-pytest:
+test-pytest: generate-proto
     uv run --extra dev pytest tests/ -v --ignore=tests/client
 
 # Full suite

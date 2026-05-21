@@ -1,6 +1,11 @@
 version: v2
 inputs:
-  - directory: angzarr-project/proto
+  - directory: vendor/angzarr-project/proto
+  # sererr.proto lives in the sererr submodule; angzarr-project's
+  # types.proto imports it as `sererr/v1/sererr.proto`. Buf includes
+  # this directory in the import-resolution path so that import
+  # resolves and generates `sererr/v1/sererr_pb2.py` at the root.
+  - directory: vendor/sererr/proto
 plugins:
   # Pin to v28.3 which generates protobuf 5.x compatible code
   - remote: buf.build/protocolbuffers/python:v28.3

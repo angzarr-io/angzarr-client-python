@@ -150,11 +150,16 @@ class _World:
     cmd: _MockCommandHandlerClient = field(default_factory=_MockCommandHandlerClient)
     domain: str = ""
     root: Optional[UUID] = None
+    # The original literal root identifier from the spec (e.g. "order-001"),
+    # before UUID coercion. Stored so Then steps can compare back against the
+    # spec's verbatim text for spec-mutation detection.
+    root_label: str = ""
     correlation_id: Optional[str] = None
     last_response: Optional[CommandResponse] = None
     last_error: Optional[Exception] = None
     concurrent_results: list[bool] = field(default_factory=list)
     current_sequence: Optional[int] = None
+    last_executed_sequence: Optional[int] = None
     timeout_used: Optional[float] = None
     queried_events: int = 0
 
@@ -183,6 +188,7 @@ def _do_execute(
 ) -> None:
     """Build + execute via real CommandBuilder, capturing response or error."""
     assert state.root is not None
+    state.last_executed_sequence = sequence
     builder = CommandBuilder(state.cmd, state.domain, state.root)  # type: ignore[arg-type]
     if state.correlation_id:
         builder = builder.with_correlation_id(state.correlation_id)
@@ -236,6 +242,7 @@ def _given_aggregate_at_sequence(
     state: _World, domain: str, root: str, seq: int
 ) -> None:
     state.domain = domain
+    state.root_label = root
     state.root = _root_uuid(root)
     state.cmd.aggregates[(domain, state.root.bytes.hex())] = seq
 
@@ -248,6 +255,7 @@ def _given_aggregate(state: _World, domain: str, root: str) -> None:
 @given(parsers.parse('no aggregate exists for domain "{domain}" root "{root}"'))
 def _given_no_aggregate(state: _World, domain: str, root: str) -> None:
     state.domain = domain
+    state.root_label = root
     state.root = _root_uuid(root)
     # No entry in mock.aggregates; first command at seq 0 will create it.
 
@@ -629,6 +637,30 @@ def _then_aggregate_exists(state: _World, count: int) -> None:
     assert state.root is not None
     key = (state.domain, state.root.bytes.hex())
     assert state.cmd.aggregates.get(key) == count
+
+
+@then(parsers.parse('the targeted aggregate has domain "{expected}"'))
+def _then_targeted_domain(state: _World, expected: str) -> None:
+    """Verify the spec-named domain was the one used for the operation. Lets
+    sour-mutants detect mutations to the captured domain in Given/When steps."""
+    assert state.domain == expected, f"state.domain={state.domain!r} expected={expected!r}"
+
+
+@then(parsers.parse('the targeted aggregate has root "{expected}"'))
+def _then_targeted_root(state: _World, expected: str) -> None:
+    """Verify the spec-named root was the one used. Compares the original
+    literal label captured in Given (e.g. "order-001"), not the UUID coercion."""
+    assert state.root_label == expected, (
+        f"state.root_label={state.root_label!r} expected={expected!r}"
+    )
+
+
+@then(parsers.parse("the executed command was at sequence {expected:d}"))
+def _then_executed_sequence(state: _World, expected: int) -> None:
+    """Verify the spec-named sequence was the one used."""
+    assert state.last_executed_sequence == expected, (
+        f"last_executed_sequence={state.last_executed_sequence} expected={expected}"
+    )
 
 
 # ---------------------------------------------------------------------------

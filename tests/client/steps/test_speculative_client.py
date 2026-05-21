@@ -78,6 +78,7 @@ class _World:
     spec_a_resp: Optional[CommandResponse] = None
     spec_b_resp: Optional[CommandResponse] = None
     real_event_count: int = 0
+    requested_sequence: Optional[int] = None
     rejection_reason: Optional[str] = None
     aggregate_state_label: str = ""
 
@@ -150,6 +151,7 @@ def _given_n_events_for(state: _World, count: int, domain: str, root: str) -> No
     state.aggregates[f"{domain}:{root}"] = _StoredAggregate(
         events=[_event_page(i) for i in range(count)]
     )
+    state.real_event_count = count
 
 
 @given('events with saga origin from "inventory" aggregate')
@@ -226,9 +228,10 @@ def _when_speculative_execute_against(state: _World, domain: str, root: str) -> 
 
 @when(parsers.parse("I speculatively execute a command as of sequence {seq:d}"))
 def _when_speculative_as_of_sequence(state: _World, seq: int) -> None:
+    state.requested_sequence = seq
     _do_command_spec(
         state,
-        _make_command_response([_event_page(0, "SpeculativeEvent")]),
+        _make_command_response([_event_page(seq, "SpeculativeEvent")]),
     )
 
 
@@ -426,6 +429,11 @@ def _then_execute_against_historical(state: _World) -> None:
 @then(parsers.parse("the response should reflect state at sequence {seq:d}"))
 def _then_response_reflects_state(state: _World, seq: int) -> None:
     assert state.last_command_resp is not None
+    assert state.requested_sequence == seq, (
+        f"requested sequence {state.requested_sequence}, asserted {seq}"
+    )
+    page_seq = state.last_command_resp.events.pages[0].header.sequence
+    assert page_seq == seq, f"response page sequence {page_seq}, asserted {seq}"
 
 
 @then("the response should indicate rejection")
@@ -479,7 +487,9 @@ def _then_no_external_updates(state: _World) -> None:
 
 @then(parsers.parse("the projector should process all {count:d} events in order"))
 def _then_projector_processes_all(state: _World, count: int) -> None:
-    pass
+    assert state.real_event_count == count, (
+        f"loaded {state.real_event_count} events, asserted {count}"
+    )
 
 
 @then("the final projection state should be returned")

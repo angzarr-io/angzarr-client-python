@@ -636,3 +636,13 @@ def _then_should_get_n_events(state: _State, count: int) -> None:
 def _then_both_item_added(state: _State) -> None:
     for evt in state.events_list:
         assert "ItemAdded" in evt.event.type_url
+
+
+@then(parsers.parse('the event\'s type_url is "{expected}"'))
+def _then_event_type_url_is(state: _State, expected: str) -> None:
+    """Verify the spec-named type_url is the one stored on current_event.
+    Lets sour-mutants detect mutations to the type_url captured in Given."""
+    assert state.current_event is not None
+    assert state.current_event.event.type_url == expected, (
+        f"event.type_url={state.current_event.event.type_url!r} expected={expected!r}"
+    )

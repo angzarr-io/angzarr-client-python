@@ -103,6 +103,8 @@ class _MockSpeculativeClient:
 @dataclass
 class _World:
     domain: str = ""
+    handler_domain: str = ""
+    env_var_name: str = ""
     cmd: _MockCommandHandlerClient = field(default_factory=_MockCommandHandlerClient)
     query: _MockQueryClient = field(default_factory=_MockQueryClient)
     spec: _MockSpeculativeClient = field(default_factory=_MockSpeculativeClient)
@@ -150,7 +152,7 @@ def _given_coordinator(state: _World, domain: str) -> None:
 
 @given(parsers.parse('a registered aggregate handler for domain "{domain}"'))
 def _given_handler(state: _World, domain: str) -> None:
-    pass
+    state.handler_domain = domain
 
 
 # ---------------------------------------------------------------------------
@@ -178,9 +180,10 @@ def _given_connected(state: _World) -> None:
 )
 def _given_env_var(state: _World, var_name: str) -> None:
     # Real `from_env` would resolve the env var to an endpoint and dial.
-    # We bypass that path entirely with the injection seam — the env var
-    # name is irrelevant to the contract once construction succeeds.
-    pass
+    # We bypass that path entirely with the injection seam — but record the
+    # var name so a Then step can verify the spec contract that the named
+    # variable is the one being read.
+    state.env_var_name = var_name
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +272,7 @@ def _when_close(state: _World) -> None:
 
 @when(parsers.parse('I create a DomainClient from environment variable "{var_name}"'))
 def _when_create_from_env(state: _World, var_name: str) -> None:
+    state.env_var_name = var_name
     state.client = _make_client(state)
 
 
@@ -337,3 +341,29 @@ def _then_connected(state: _World) -> None:
     # marked closed.
     assert not state.cmd.closed
     assert not state.query.closed
+
+
+@then(parsers.parse('the active domain is "{expected}"'))
+def _then_active_domain(state: _World, expected: str) -> None:
+    """Verify the spec-named domain is the one used. Catches mutations to
+    the domain captured in coordinator/handler/create-DomainClient steps."""
+    assert state.domain == expected, (
+        f"state.domain={state.domain!r} expected={expected!r}"
+    )
+
+
+@then(parsers.parse('the registered handler is for domain "{expected}"'))
+def _then_handler_domain(state: _World, expected: str) -> None:
+    """Verify the spec-named handler-registration domain matches.
+    Independent capture lets sour-mutants detect handler-line mutations."""
+    assert state.handler_domain == expected, (
+        f"state.handler_domain={state.handler_domain!r} expected={expected!r}"
+    )
+
+
+@then(parsers.parse('the env var name was "{expected}"'))
+def _then_env_var_name(state: _World, expected: str) -> None:
+    """Verify the spec-named env var was the one read."""
+    assert state.env_var_name == expected, (
+        f"state.env_var_name={state.env_var_name!r} expected={expected!r}"
+    )

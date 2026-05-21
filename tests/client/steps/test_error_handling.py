@@ -47,6 +47,8 @@ def _grpc_error(code: grpc.StatusCode, details: str) -> GRPCError:
 class _State:
     current_error: ClientError | None = None
     error_variants: list[ClientError] = field(default_factory=list)
+    server_seq: int | None = None
+    client_seq: int | None = None
 
 
 @pytest.fixture
@@ -79,10 +81,7 @@ def _given_aggregate_not_exists(state: _State) -> None:
 
 @given(parsers.parse("the server aggregate is at sequence {seq:d}"))
 def _given_server_aggregate_at_sequence(state: _State, seq: int) -> None:
-    state.current_error = _grpc_error(
-        grpc.StatusCode.FAILED_PRECONDITION,
-        f"sequence mismatch: expected {seq}, got 3",
-    )
+    state.server_seq = seq
 
 
 @given("the client lacks required permissions")
@@ -179,7 +178,15 @@ def _when_query_events(state: _State) -> None:
 
 @when(parsers.parse("I execute a mock command at sequence {seq:d}"))
 def _when_execute_mock_at_sequence(state: _State, seq: int) -> None:
-    pass
+    state.client_seq = seq
+    # Build the FAILED_PRECONDITION error using BOTH the server's sequence
+    # (from the Given) and the client's attempted sequence (this When), so
+    # mutating either value is observable downstream.
+    server = state.server_seq if state.server_seq is not None else 0
+    state.current_error = _grpc_error(
+        grpc.StatusCode.FAILED_PRECONDITION,
+        f"sequence mismatch: expected {server}, got {seq}",
+    )
 
 
 @when("I build a command without required fields")
@@ -325,7 +332,18 @@ def _then_code_failed_precondition(state: _State) -> None:
 
 @then("the error indicates optimistic lock failure")
 def _then_indicates_optimistic_lock(state: _State) -> None:
-    assert _err(state).is_precondition_failed()
+    err = _err(state)
+    assert err.is_precondition_failed()
+    # Optimistic-lock errors must carry the sequence-mismatch detail so a
+    # client can recover. Verify both sequences threaded through.
+    if state.server_seq is not None and state.client_seq is not None:
+        details = err.grpc_details if isinstance(err, GRPCError) else str(err)
+        assert f"expected {state.server_seq}" in details, (
+            f"missing server seq in details: {details}"
+        )
+        assert f"got {state.client_seq}" in details, (
+            f"missing client seq in details: {details}"
+        )
 
 
 @then("code should return INVALID_ARGUMENT")

@@ -1,3 +1,6 @@
 [submodule "angzarr-project"]
-	path = angzarr-project
+	path = vendor/angzarr-project
 	url = https://github.com/angzarr-io/angzarr-project.git
+[submodule "vendor/sererr"]
+	path = vendor/sererr
+	url = git@github.com:benjaminabbitt/sererr.git

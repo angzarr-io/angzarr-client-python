@@ -1,7 +1,7 @@
 # tests/client — Python step defs for unit-client tier
 
 Implements the scenarios in
-[`angzarr-project/features/client/`](../../angzarr-project/features/client/)
+[`vendor/angzarr-project/features/client/`](../../vendor/angzarr-project/features/client/)
 using **pytest-bdd** (not behave — pytest-bdd integrates with the existing
 pytest suite).
 
@@ -32,11 +32,11 @@ pytest-bdd's feature lookup is configured in `pyproject.toml`:
 
 ```toml
 [tool.pytest.ini_options]
-bdd_features_base_dir = "angzarr-project/features/client"
+bdd_features_base_dir = "vendor/angzarr-project/features/client"
 ```
 
 Each `scenarios("command_handler.feature")` call resolves to
-`angzarr-project/features/client/command_handler.feature`. No symlinks, no
+`vendor/angzarr-project/features/client/command_handler.feature`. No symlinks, no
 copies — pytest-bdd reads directly from the git submodule mount.
 
 ## Running
@@ -57,13 +57,13 @@ just test
 ## Adding a scenario
 
 1. **First**: add the scenario in
-   [`angzarr-project/features/client/<file>.feature`](../../angzarr-project/features/client/),
-   allocate the next `@C-NNNN` ID (see [the tier README](../../angzarr-project/features/client/README.md))
+   [`vendor/angzarr-project/features/client/<file>.feature`](../../vendor/angzarr-project/features/client/),
+   allocate the next `@C-NNNN` ID (see [the tier README](../../vendor/angzarr-project/features/client/README.md))
 2. Land the angzarr-project PR
-3. Bump the submodule pointer here (`git -C angzarr-project checkout <sha>`)
+3. Bump the submodule pointer here (`git -C vendor/angzarr-project checkout <sha>`)
 4. Add step defs in the matching `steps/test_<file>.py`
 5. Verify: `just test-client-unit`
 
 Between steps 2 and 4, `just test-client-unit` reports the new scenario as
 missing step definitions — this is by design (see the three-tier model's
-[root README](../../angzarr-project/features/README.md)).
+[root README](../../vendor/angzarr-project/features/README.md)).

@@ -66,7 +66,7 @@ artifacts = ["angzarr_client/proto/**/*.py"]
 packages = ["angzarr_client"]
 
 [tool.pytest.ini_options]
-bdd_features_base_dir = "angzarr-project/features/client"
+bdd_features_base_dir = "vendor/angzarr-project/features/client"
 testpaths = ["tests"]
 norecursedirs = ["mutants"]
 asyncio_mode = "auto"
@@ -115,7 +115,7 @@ exclude = [
     # (features/example/acceptance/environment.py → tests/example/acceptance/...)
     # that resolve only inside the angzarr-project repo layout, not
     # when checked out as a submodule here. Lint there, not here.
-    "angzarr-project/",
+    "vendor/angzarr-project/",
 ]
 
 [tool.black]
