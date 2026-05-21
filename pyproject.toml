@@ -59,11 +59,16 @@ path = "VERSION"
 pattern = "(?P<version>.+)"
 
 [tool.hatch.build]
-# Include generated proto files even though they're not in git
-artifacts = ["angzarr_client/proto/**/*.py"]
+# Include generated proto files even though they're not in git.
+# `sererr/**` covers the buf-generated sererr.v1 bindings emitted at
+# repo root (vendor/sererr is the proto source; output lands at root
+# per buf's `out: .` + `paths=source_relative`).
+artifacts = ["angzarr_client/proto/**/*.py", "sererr/**/*.py"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["angzarr_client"]
+# Both `angzarr_client/` and the generated `sererr/` tree must ship in
+# the wheel so consumers can `from sererr.v1 import sererr_pb2`.
+packages = ["angzarr_client", "sererr"]
 
 [tool.pytest.ini_options]
 bdd_features_base_dir = "vendor/angzarr-project/features/client"
