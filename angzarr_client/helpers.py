@@ -7,6 +7,7 @@ either don't take a wrapped proto, take a primitive, or build a new
 proto from scratch.
 """
 
+from datetime import datetime, timezone
 from typing import TypeVar
 from uuid import UUID as PyUUID
 
@@ -270,7 +271,10 @@ full_type_url = full_type_url_for
 def now() -> Timestamp:
     """Return the current time as a protobuf Timestamp."""
     ts = Timestamp()
-    ts.GetCurrentTime()
+    # Timestamp.GetCurrentTime() internally calls datetime.datetime.utcnow()
+    # which is deprecated in Python 3.12+. Use FromDatetime with a tz-aware
+    # UTC value instead — same wire result, no deprecation warning.
+    ts.FromDatetime(datetime.now(timezone.utc))
     return ts
 
 

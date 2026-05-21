@@ -84,6 +84,10 @@ filterwarnings = [
     # Category tags on merge_strategy.feature.
     "ignore:Unknown pytest.mark.merge_:pytest.PytestUnknownMarkWarning",
     "ignore:Unknown pytest.mark.edge_case:pytest.PytestUnknownMarkWarning",
+    # gherkin-official 29.x's gherkin_line.py uses `re.split(pattern, s, 2)`
+    # which Python 3.13+ deprecates (maxsplit must be keyword). Upstream
+    # only — fixed in later releases; pinning is governed by pytest-bdd.
+    "ignore:'maxsplit' is passed as positional argument:DeprecationWarning:gherkin.gherkin_line",
 ]
 
 [tool.mutmut]

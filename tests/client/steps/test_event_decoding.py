@@ -16,6 +16,7 @@ suffix-vs-fully-qualified matching — that's where divergences surface.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 import pytest
@@ -66,7 +67,11 @@ def _make_event_page(
     page.header.sequence = sequence
     if has_timestamp:
         ts = Timestamp()
-        ts.GetCurrentTime()
+        # Skip Timestamp.GetCurrentTime() — it calls the deprecated
+        # datetime.datetime.utcnow() internally and emits a DeprecationWarning
+        # under Python 3.12+. FromDatetime + tz-aware UTC is the canonical
+        # replacement.
+        ts.FromDatetime(datetime.now(timezone.utc))
         page.created_at.CopyFrom(ts)
 
     if payload_variant == "event":
