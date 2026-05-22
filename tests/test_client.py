@@ -17,19 +17,22 @@ from angzarr_client.client import (
 from angzarr_client.error_codes import codes
 from angzarr_client.errors import ConnectionError as ClientConnectionError
 from angzarr_client.errors import GRPCError
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import (
+    CommandResponse,
+    SpeculateCommandHandlerRequest,
+)
+from angzarr_client.proto.angzarr.v1.process_manager_pb2 import (
+    ProcessManagerHandleResponse,
+    SpeculatePmRequest,
+)
+from angzarr_client.proto.angzarr.v1.projector_pb2 import SpeculateProjectorRequest
+from angzarr_client.proto.angzarr.v1.saga_pb2 import SagaResponse, SpeculateSagaRequest
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     CommandBook,
     CommandRequest,
-    CommandResponse,
     EventBook,
-    ProcessManagerHandleResponse,
     Projection,
     Query,
-    SagaResponse,
-    SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
 )
 
 
@@ -467,7 +470,7 @@ class TestCorrelationIdMetadataPropagation:
     def test_query_client_get_event_book_attaches_metadata(self) -> None:
         client = QueryClient(self._channel())
         client._stub.GetEventBook = Mock(return_value=EventBook())
-        from angzarr_client.proto.angzarr import Cover, Query
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, Query
 
         query = Query(cover=Cover(correlation_id="trace-q-01"))
         client.get_event_book(query)
@@ -478,7 +481,7 @@ class TestCorrelationIdMetadataPropagation:
     def test_query_client_get_events_attaches_metadata(self) -> None:
         client = QueryClient(self._channel())
         client._stub.GetEvents = Mock(return_value=iter([]))
-        from angzarr_client.proto.angzarr import Cover, Query
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, Query
 
         query = Query(cover=Cover(correlation_id="trace-q-02"))
         client.get_events(query)
@@ -489,7 +492,7 @@ class TestCorrelationIdMetadataPropagation:
     def test_command_handler_handle_command_attaches_metadata(self) -> None:
         client = CommandHandlerClient(self._channel())
         client._stub.HandleCommand = Mock(return_value=CommandResponse())
-        from angzarr_client.proto.angzarr import (
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
             CommandBook,
             CommandRequest,
             Cover,
@@ -508,11 +511,10 @@ class TestCorrelationIdMetadataPropagation:
     ) -> None:
         client = CommandHandlerClient(self._channel())
         client._stub.HandleSyncSpeculative = Mock(return_value=CommandResponse())
-        from angzarr_client.proto.angzarr import (
-            CommandBook,
-            Cover,
+        from angzarr_client.proto.angzarr.v1.command_handler_pb2 import (
             SpeculateCommandHandlerRequest,
         )
+        from angzarr_client.proto.angzarr.v1.types_pb2 import CommandBook, Cover
 
         req = SpeculateCommandHandlerRequest(
             command=CommandBook(cover=Cover(correlation_id="trace-spec-01"))
@@ -527,11 +529,10 @@ class TestCorrelationIdMetadataPropagation:
         client._command_handler_stub.HandleSyncSpeculative = Mock(
             return_value=CommandResponse()
         )
-        from angzarr_client.proto.angzarr import (
-            CommandBook,
-            Cover,
+        from angzarr_client.proto.angzarr.v1.command_handler_pb2 import (
             SpeculateCommandHandlerRequest,
         )
+        from angzarr_client.proto.angzarr.v1.types_pb2 import CommandBook, Cover
 
         req = SpeculateCommandHandlerRequest(
             command=CommandBook(cover=Cover(correlation_id="spec-ch-1"))
@@ -544,11 +545,10 @@ class TestCorrelationIdMetadataPropagation:
     def test_speculative_client_projector_attaches_metadata(self) -> None:
         client = SpeculativeClient(self._channel())
         client._projector_stub.HandleSpeculative = Mock(return_value=Projection())
-        from angzarr_client.proto.angzarr import (
-            Cover,
-            EventBook,
+        from angzarr_client.proto.angzarr.v1.projector_pb2 import (
             SpeculateProjectorRequest,
         )
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, EventBook
 
         req = SpeculateProjectorRequest(
             events=EventBook(cover=Cover(correlation_id="spec-prj-1"))
@@ -561,12 +561,11 @@ class TestCorrelationIdMetadataPropagation:
     def test_speculative_client_saga_attaches_metadata(self) -> None:
         client = SpeculativeClient(self._channel())
         client._saga_stub.ExecuteSpeculative = Mock(return_value=SagaResponse())
-        from angzarr_client.proto.angzarr import (
-            Cover,
-            EventBook,
+        from angzarr_client.proto.angzarr.v1.saga_pb2 import (
             SagaHandleRequest,
             SpeculateSagaRequest,
         )
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, EventBook
 
         req = SpeculateSagaRequest(
             request=SagaHandleRequest(
@@ -585,11 +584,10 @@ class TestCorrelationIdMetadataPropagation:
         )
         # ProcessManagerHandleRequest isn't re-exported from
         # angzarr_client.proto.angzarr; reach through the pb2 module.
-        from angzarr_client.proto.angzarr import (
-            Cover,
-            EventBook,
+        from angzarr_client.proto.angzarr.v1.process_manager_pb2 import (
             SpeculatePmRequest,
         )
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, EventBook
         from angzarr_client.proto.angzarr.v1.process_manager_pb2 import (
             ProcessManagerHandleRequest,
         )

@@ -18,18 +18,17 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.client import SpeculativeClient
 from angzarr_client.errors import GRPCError
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import (
     CommandResponse,
-    EventBook,
-    EventPage,
-    ProcessManagerHandleResponse,
-    Projection,
-    SagaResponse,
     SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
 )
+from angzarr_client.proto.angzarr.v1.process_manager_pb2 import (
+    ProcessManagerHandleResponse,
+    SpeculatePmRequest,
+)
+from angzarr_client.proto.angzarr.v1.projector_pb2 import SpeculateProjectorRequest
+from angzarr_client.proto.angzarr.v1.saga_pb2 import SagaResponse, SpeculateSagaRequest
+from angzarr_client.proto.angzarr.v1.types_pb2 import EventBook, EventPage, Projection
 
 from ._fakes import RecordingStub, StubRpcError
 
@@ -309,7 +308,7 @@ def _when_speculative_saga(state: _World, saga: str) -> None:
     resp = SagaResponse()
     # SagaResponse.commands is a repeated field; populate with placeholder
     # CommandBooks so the cucumber's "contains commands" assertion holds.
-    from angzarr_client.proto.angzarr import CommandBook
+    from angzarr_client.proto.angzarr.v1.types_pb2 import CommandBook
 
     resp.commands.append(CommandBook())
     resp.commands.append(CommandBook())
@@ -332,7 +331,7 @@ def _when_speculative_pm(state: _World, pm: str) -> None:
         )
     else:
         resp = ProcessManagerHandleResponse()
-        from angzarr_client.proto.angzarr import CommandBook
+        from angzarr_client.proto.angzarr.v1.types_pb2 import CommandBook
 
         resp.commands.append(CommandBook())
         state.pm_stub.responses["HandleSpeculative"] = resp

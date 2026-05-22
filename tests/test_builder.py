@@ -13,11 +13,8 @@ from angzarr_client.builder import (
 )
 from angzarr_client.errors import InvalidArgumentError, InvalidTimestampError
 from angzarr_client.helpers import proto_to_uuid
-from angzarr_client.proto.angzarr import (
-    CommandResponse,
-    EventBook,
-    SyncMode,
-)
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import CommandResponse
+from angzarr_client.proto.angzarr.v1.types_pb2 import EventBook, SyncMode
 
 
 class TestCommandBuilder:
@@ -471,7 +468,7 @@ class TestQueryBuilder:
 
     def test_get_pages(self) -> None:
         """get_pages extracts pages from book."""
-        from angzarr_client.proto.angzarr import PageHeader
+        from angzarr_client.proto.angzarr.v1.types_pb2 import PageHeader
 
         client = self._mock_query_client()
         book = EventBook()

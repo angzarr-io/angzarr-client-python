@@ -21,12 +21,8 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from angzarr_client.helpers import TYPE_URL_PREFIX
-from angzarr_client.proto.angzarr import (
-    EventPage,
-    PageHeader,
-    UpcastRequest,
-    UpcastResponse,
-)
+from angzarr_client.proto.angzarr.v1.types_pb2 import EventPage, PageHeader
+from angzarr_client.proto.angzarr.v1.upcaster_pb2 import UpcastRequest, UpcastResponse
 from angzarr_client.router import (
     BuildError,
     Router,

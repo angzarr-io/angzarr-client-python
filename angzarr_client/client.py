@@ -13,25 +13,32 @@ from .error_codes import codes, keys, messages
 from .errors import ConnectionError as ClientConnectionError
 from .errors import GRPCError
 from .helpers import correlated_metadata
-from .proto.angzarr import (
+from .proto.angzarr.v1.command_handler_pb2 import (
+    CommandResponse,
+    SpeculateCommandHandlerRequest,
+)
+from .proto.angzarr.v1.command_handler_pb2_grpc import (
+    CommandHandlerCoordinatorServiceStub,
+)
+from .proto.angzarr.v1.process_manager_pb2 import (
+    ProcessManagerHandleResponse,
+    SpeculatePmRequest,
+)
+from .proto.angzarr.v1.process_manager_pb2_grpc import (
+    ProcessManagerCoordinatorServiceStub,
+)
+from .proto.angzarr.v1.projector_pb2 import SpeculateProjectorRequest
+from .proto.angzarr.v1.projector_pb2_grpc import ProjectorCoordinatorServiceStub
+from .proto.angzarr.v1.query_pb2_grpc import EventQueryServiceStub
+from .proto.angzarr.v1.saga_pb2 import SagaResponse, SpeculateSagaRequest
+from .proto.angzarr.v1.saga_pb2_grpc import SagaCoordinatorServiceStub
+from .proto.angzarr.v1.types_pb2 import (
     CascadeErrorMode,
     CommandBook,
-    CommandHandlerCoordinatorServiceStub,
     CommandRequest,
-    CommandResponse,
     EventBook,
-    EventQueryServiceStub,
-    ProcessManagerCoordinatorServiceStub,
-    ProcessManagerHandleResponse,
     Projection,
-    ProjectorCoordinatorServiceStub,
     Query,
-    SagaCoordinatorServiceStub,
-    SagaResponse,
-    SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
     SyncMode,
 )
 from .retry import RetryPolicy, default_retry_policy

@@ -23,11 +23,8 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.builder import CommandBuilder
 from angzarr_client.errors import InvalidArgumentError
-from angzarr_client.proto.angzarr import (
-    CommandBook,
-    CommandRequest,
-    CommandResponse,
-)
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import CommandResponse
+from angzarr_client.proto.angzarr.v1.types_pb2 import CommandBook, CommandRequest
 
 scenarios("command_builder.feature")
 

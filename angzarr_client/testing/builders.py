@@ -9,7 +9,7 @@ from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from ..helpers import now as _now
-from ..proto.angzarr import (
+from ..proto.angzarr.v1.types_pb2 import (
     UUID,
     CommandBook,
     CommandPage,

@@ -20,7 +20,7 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 
 from angzarr_client.router import ProcessManagerResponse
 from angzarr_client.helpers import TYPE_URL_PREFIX
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     CommandBook,
     CommandPage,
     Cover,
@@ -28,7 +28,7 @@ from angzarr_client.proto.angzarr import (
     EventPage,
     PageHeader,
 )
-from angzarr_client.proto.angzarr import process_manager_pb2 as pm_pb
+from angzarr_client.proto.angzarr.v1 import process_manager_pb2 as pm_pb
 from angzarr_client.router import (
     Router,
     applies,

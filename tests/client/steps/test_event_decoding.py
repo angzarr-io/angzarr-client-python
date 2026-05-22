@@ -33,11 +33,8 @@ from angzarr_client.helpers import (
     try_unpack,
     unpack,
 )
-from angzarr_client.proto.angzarr import (
-    CommandResponse,
-    EventBook,
-    EventPage,
-)
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import CommandResponse
+from angzarr_client.proto.angzarr.v1.types_pb2 import EventBook, EventPage
 from angzarr_client.proto.angzarr.v1.types_pb2 import PayloadReference
 
 scenarios("event_decoding.feature")

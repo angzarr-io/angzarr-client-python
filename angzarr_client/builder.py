@@ -9,11 +9,11 @@ from google.protobuf.message import Message
 from .client import CommandHandlerClient, QueryClient
 from .errors import InvalidArgumentError
 from .helpers import implicit_edition, parse_timestamp, uuid_to_proto
-from .proto.angzarr import (
+from .proto.angzarr.v1.command_handler_pb2 import CommandResponse
+from .proto.angzarr.v1.types_pb2 import (
     CommandBook,
     CommandPage,
     CommandRequest,
-    CommandResponse,
     Cover,
     EventBook,
     EventPage,

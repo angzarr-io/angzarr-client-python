@@ -5,7 +5,8 @@ from __future__ import annotations
 from google.protobuf.any_pb2 import Any as ProtoAny
 
 from angzarr_client.helpers import TYPE_URL_PREFIX
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.saga_pb2 import SagaHandleRequest
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     CommandBook,
     CommandPage,
     ContextualCommand,
@@ -13,7 +14,6 @@ from angzarr_client.proto.angzarr import (
     EventBook,
     EventPage,
     PageHeader,
-    SagaHandleRequest,
 )
 from angzarr_client.proto.angzarr.v1 import process_manager_pb2 as pm_pb
 from angzarr_client.proto.angzarr.v1 import types_pb2 as types_pb

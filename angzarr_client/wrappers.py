@@ -23,10 +23,12 @@ from abc import ABC, abstractmethod
 from typing import TypeVar
 from uuid import UUID as PyUUID
 
-from .proto.angzarr import (
+from .proto.angzarr.v1.command_handler_pb2 import (
+    CommandResponse as _CommandResponseProto,
+)
+from .proto.angzarr.v1.types_pb2 import (
     CommandBook as _CommandBookProto,
     CommandPage as _CommandPageProto,
-    CommandResponse as _CommandResponseProto,
     Cover as _CoverProto,
     EventBook as _EventBookProto,
     EventPage as _EventPageProto,

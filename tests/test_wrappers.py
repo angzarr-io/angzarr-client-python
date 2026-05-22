@@ -7,10 +7,12 @@ from angzarr_client.helpers import (
     UNKNOWN_DOMAIN,
     uuid_to_proto,
 )
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import (
+    CommandResponse as CommandResponseProto,
+)
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     CommandBook as CommandBookProto,
     CommandPage as CommandPageProto,
-    CommandResponse as CommandResponseProto,
     Cover as CoverProto,
     EventBook as EventBookProto,
     EventPage as EventPageProto,
@@ -508,7 +510,7 @@ class TestCommandBookWAdditional:
         assert CommandBook(CommandBookProto()).first_command() is None
 
     def test_merge_strategy_default_when_no_pages(self) -> None:
-        from angzarr_client.proto.angzarr import MergeStrategy
+        from angzarr_client.proto.angzarr.v1.types_pb2 import MergeStrategy
 
         assert (
             CommandBook(CommandBookProto()).merge_strategy()
@@ -516,7 +518,7 @@ class TestCommandBookWAdditional:
         )
 
     def test_merge_strategy_from_first_page(self) -> None:
-        from angzarr_client.proto.angzarr import MergeStrategy
+        from angzarr_client.proto.angzarr.v1.types_pb2 import MergeStrategy
 
         proto = CommandBookProto()
         page = proto.pages.add()
@@ -800,7 +802,7 @@ class TestCommandPageWAdditional:
         assert CommandPage(proto).payload() is None
 
     def test_merge_strategy_default(self) -> None:
-        from angzarr_client.proto.angzarr import MergeStrategy
+        from angzarr_client.proto.angzarr.v1.types_pb2 import MergeStrategy
 
         assert (
             CommandPage(CommandPageProto()).merge_strategy()

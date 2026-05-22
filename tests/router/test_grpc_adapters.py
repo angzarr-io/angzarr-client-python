@@ -24,16 +24,16 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 
 from angzarr_client.errors import CommandRejectedError
 from angzarr_client.helpers import TYPE_URL_PREFIX
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.saga_pb2 import SagaHandleRequest
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     CommandBook,
     CommandPage,
     ContextualCommand,
     Cover,
     EventBook,
     PageHeader,
-    SagaHandleRequest,
 )
-from angzarr_client.proto.angzarr import process_manager_pb2 as pm_pb
+from angzarr_client.proto.angzarr.v1 import process_manager_pb2 as pm_pb
 from angzarr_client.router import (
     Router,
     command_handler,
@@ -244,7 +244,7 @@ async def test_saga_grpc_handles_event_translation():
     any_evt = ProtoAny()
     any_evt.type_url = TYPE_URL_PREFIX + OrderCreated.DESCRIPTOR.full_name
     any_evt.value = OrderCreated(order_id="o-1").SerializeToString()
-    from angzarr_client.proto.angzarr import EventPage
+    from angzarr_client.proto.angzarr.v1.types_pb2 import EventPage
 
     page = EventPage()
     page.header.CopyFrom(PageHeader(sequence=0))
@@ -292,7 +292,7 @@ async def test_pm_grpc_handles_trigger_event():
     any_evt = ProtoAny()
     any_evt.type_url = TYPE_URL_PREFIX + OrderCreated.DESCRIPTOR.full_name
     any_evt.value = OrderCreated(order_id="o-1").SerializeToString()
-    from angzarr_client.proto.angzarr import EventPage
+    from angzarr_client.proto.angzarr.v1.types_pb2 import EventPage
 
     page = EventPage()
     page.header.CopyFrom(PageHeader(sequence=0))
@@ -328,7 +328,7 @@ async def test_projector_grpc_handles_event_book():
     any_evt = ProtoAny()
     any_evt.type_url = TYPE_URL_PREFIX + OrderCreated.DESCRIPTOR.full_name
     any_evt.value = OrderCreated(order_id="o-1").SerializeToString()
-    from angzarr_client.proto.angzarr import EventPage
+    from angzarr_client.proto.angzarr.v1.types_pb2 import EventPage
 
     page = EventPage()
     page.header.CopyFrom(PageHeader(sequence=0))

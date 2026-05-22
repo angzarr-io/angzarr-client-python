@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from google.protobuf.any_pb2 import Any as ProtoAny
 
 from angzarr_client.helpers import TYPE_URL_PREFIX
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     CommandBook,
     CommandPage,
     ContextualCommand,

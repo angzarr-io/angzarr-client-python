@@ -16,7 +16,7 @@ from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from .errors import InvalidTimestampError
-from .proto.angzarr import (
+from .proto.angzarr.v1.types_pb2 import (
     UUID,
     CommandBook,
     CommandPage,

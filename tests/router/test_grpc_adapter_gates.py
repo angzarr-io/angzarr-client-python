@@ -115,7 +115,7 @@ async def test_handle_does_not_consult_fact_or_replay_gates():
     adapter = CommandHandlerGrpc(router)
     ctx = _StubContext()
 
-    from angzarr_client.proto.angzarr import ContextualCommand
+    from angzarr_client.proto.angzarr.v1.types_pb2 import ContextualCommand
 
     await adapter.Handle(ContextualCommand(), ctx)
 

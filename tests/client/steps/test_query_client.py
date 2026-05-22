@@ -23,7 +23,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from angzarr_client.client import QueryClient
 from angzarr_client.errors import GRPCError
 from angzarr_client.helpers import TYPE_URL_PREFIX
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     EventBook,
     EventPage,
     Query,

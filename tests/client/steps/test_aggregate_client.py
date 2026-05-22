@@ -26,9 +26,9 @@ from angzarr_client.errors import (
     GRPCError,
     InvalidArgumentError,
 )
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import CommandResponse
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     CommandRequest,
-    CommandResponse,
     EventBook,
     EventPage,
     SyncMode,

@@ -19,19 +19,19 @@ from google.protobuf.message import DecodeError
 from angzarr_client.destinations import Destinations
 from angzarr_client.helpers import TYPE_URL_PREFIX
 from angzarr_client.wrappers import Cover as CoverW
-from angzarr_client.proto.angzarr import (
-    BusinessResponse,
+from angzarr_client.proto.angzarr.v1.command_handler_pb2 import BusinessResponse
+from angzarr_client.proto.angzarr.v1.process_manager_pb2 import (
+    ProcessManagerHandleResponse,
+)
+from angzarr_client.proto.angzarr.v1.saga_pb2 import SagaHandleRequest, SagaResponse
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     ContextualCommand,
     EventBook,
     EventPage,
     PageHeader,
-    ProcessManagerHandleResponse,
     Projection,
-    SagaHandleRequest,
-    SagaResponse,
-    UpcastRequest,
-    UpcastResponse,
 )
+from angzarr_client.proto.angzarr.v1.upcaster_pb2 import UpcastRequest, UpcastResponse
 from angzarr_client.proto.angzarr.v1 import types_pb2 as _types
 
 from ..error_codes import codes, keys, messages
@@ -843,7 +843,7 @@ def _merge_saga_output(emitted: Any, response: SagaResponse) -> None:
     tuple/list thereof. CommandBooks → response.commands; EventBooks
     (facts) → response.events.
     """
-    from angzarr_client.proto.angzarr import CommandBook as _CB
+    from angzarr_client.proto.angzarr.v1.types_pb2 import CommandBook as _CB
 
     if emitted is None:
         return

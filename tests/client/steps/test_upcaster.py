@@ -15,7 +15,8 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client import state_factory, upcaster, upcasts
 from angzarr_client.helpers import TYPE_URL_PREFIX
-from angzarr_client.proto.angzarr import EventPage, PageHeader, UpcastRequest
+from angzarr_client.proto.angzarr.v1.types_pb2 import EventPage, PageHeader
+from angzarr_client.proto.angzarr.v1.upcaster_pb2 import UpcastRequest
 from angzarr_client.router import Router
 
 scenarios("upcaster.feature")

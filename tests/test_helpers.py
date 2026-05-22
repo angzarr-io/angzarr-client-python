@@ -34,7 +34,7 @@ from angzarr_client.helpers import (
     type_url_matches,
     uuid_to_proto,
 )
-from angzarr_client.proto.angzarr import (
+from angzarr_client.proto.angzarr.v1.types_pb2 import (
     UUID,
     Cover,
     DomainDivergence,
@@ -212,14 +212,14 @@ class TestEventsFromResponse:
 
     def test_returns_empty_for_no_events_field(self) -> None:
         """Returns empty list when events field not set."""
-        from angzarr_client.proto.angzarr import CommandResponse
+        from angzarr_client.proto.angzarr.v1.command_handler_pb2 import CommandResponse
 
         resp = CommandResponse()
         assert events_from_response(resp) == []
 
     def test_returns_pages_when_present(self) -> None:
         """Returns event pages when present."""
-        from angzarr_client.proto.angzarr import CommandResponse
+        from angzarr_client.proto.angzarr.v1.command_handler_pb2 import CommandResponse
 
         resp = CommandResponse()
         page1 = resp.events.pages.add()
@@ -355,20 +355,20 @@ class TestDecodeEvent:
 
     def test_returns_none_for_none_page(self) -> None:
         """Returns None for None page."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         assert decode_event(None, "Cover", Cover) is None
 
     def test_returns_none_for_no_event_field(self) -> None:
         """Returns None when event field not set."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         page = EventPage(header=PageHeader(sequence=1))
         assert decode_event(page, "Cover", Cover) is None
 
     def test_returns_none_for_type_mismatch(self) -> None:
         """Returns None when type URL doesn't match."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         page = EventPage(header=PageHeader(sequence=1))
         page.event.type_url = "type.googleapis.com/some.OtherType"
@@ -377,7 +377,7 @@ class TestDecodeEvent:
 
     def test_returns_decoded_message(self) -> None:
         """Returns decoded message when type matches."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         # Create a cover and pack it
         cover = Cover(domain="test", correlation_id="abc")
@@ -392,7 +392,7 @@ class TestDecodeEvent:
 
     def test_returns_none_for_decode_failure(self) -> None:
         """Returns None when decoding fails."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         # Create page with matching type URL but invalid data
         page = EventPage(header=PageHeader(sequence=1))
@@ -520,7 +520,7 @@ class TestAdditionalHelpers:
 
     def test_type_matches_none_returns_false(self) -> None:
         from angzarr_client.helpers import type_matches
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         assert type_matches(None, Cover) is False
 
@@ -528,7 +528,7 @@ class TestAdditionalHelpers:
         from google.protobuf.any_pb2 import Any
 
         from angzarr_client.helpers import type_matches
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="x"))
@@ -538,7 +538,7 @@ class TestAdditionalHelpers:
         from google.protobuf.any_pb2 import Any
 
         from angzarr_client.helpers import try_unpack
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="x"))
@@ -549,7 +549,7 @@ class TestAdditionalHelpers:
         from google.protobuf.any_pb2 import Any
 
         from angzarr_client.helpers import try_unpack
-        from angzarr_client.proto.angzarr import Cover, EventBook
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, EventBook
 
         any_proto = Any()
         any_proto.Pack(EventBook())
@@ -560,7 +560,7 @@ class TestAdditionalHelpers:
         from google.protobuf.any_pb2 import Any
 
         from angzarr_client.helpers import unpack
-        from angzarr_client.proto.angzarr import Cover, EventBook
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, EventBook
 
         any_proto = Any()
         any_proto.Pack(EventBook())
@@ -571,7 +571,7 @@ class TestAdditionalHelpers:
         from google.protobuf.any_pb2 import Any
 
         from angzarr_client.helpers import unpack
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="xyz"))
@@ -580,7 +580,7 @@ class TestAdditionalHelpers:
 
     def test_full_type_name(self) -> None:
         from angzarr_client.helpers import full_type_name
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         assert full_type_name(Cover) == "angzarr_client.proto.angzarr.v1.Cover"
 
@@ -590,7 +590,7 @@ class TestAdditionalHelpers:
             full_type_url,
             full_type_url_for,
         )
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover
 
         assert (
             full_type_url_for(Cover)
@@ -600,7 +600,11 @@ class TestAdditionalHelpers:
 
     def test_decode_event_returns_none_on_unpack_failure(self, monkeypatch) -> None:
         from angzarr_client.helpers import decode_event
-        from angzarr_client.proto.angzarr import Cover, EventPage, PageHeader
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
+            Cover,
+            EventPage,
+            PageHeader,
+        )
 
         page = EventPage(header=PageHeader(sequence=1))
         page.event.Pack(Cover(domain="x"))

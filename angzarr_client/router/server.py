@@ -30,17 +30,15 @@ from angzarr_client.errors import (
     InvalidTimestampError,
     TransportError,
 )
-from angzarr_client.proto.angzarr import (
-    command_handler_pb2,
-    command_handler_pb2_grpc,
-    process_manager_pb2,
-    process_manager_pb2_grpc,
-    projector_pb2_grpc,
-    saga_pb2,
-    saga_pb2_grpc,
-    upcaster_pb2,
-    upcaster_pb2_grpc,
-)
+from angzarr_client.proto.angzarr.v1 import command_handler_pb2
+from angzarr_client.proto.angzarr.v1 import command_handler_pb2_grpc
+from angzarr_client.proto.angzarr.v1 import process_manager_pb2
+from angzarr_client.proto.angzarr.v1 import process_manager_pb2_grpc
+from angzarr_client.proto.angzarr.v1 import projector_pb2_grpc
+from angzarr_client.proto.angzarr.v1 import saga_pb2
+from angzarr_client.proto.angzarr.v1 import saga_pb2_grpc
+from angzarr_client.proto.angzarr.v1 import upcaster_pb2
+from angzarr_client.proto.angzarr.v1 import upcaster_pb2_grpc
 from angzarr_client.proto.angzarr.v1 import types_pb2 as types
 
 from .dispatch import DispatchError

@@ -9,7 +9,7 @@ from typing import Any
 
 from ..errors import CommandRejectedError
 from ..helpers import now
-from ..proto.angzarr import UUID, Cover, EventBook, EventPage
+from ..proto.angzarr.v1.types_pb2 import UUID, Cover, EventBook, EventPage
 from .builders import pack_event
 
 
