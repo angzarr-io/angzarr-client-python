@@ -356,6 +356,63 @@ def correlated_metadata(correlation_id: str) -> list[tuple[str, str]]:
     return [(CORRELATION_ID_HEADER, correlation_id)]
 
 
+def pack_into_ext(parent: Message) -> ProtoAny:
+    """Pack ``parent`` into a ProtoAny ready to assign to ``Cover.ext``.
+
+    The framework treats ``Cover.ext`` as opaque routing metadata that
+    propagates onto every event a child aggregate emits, so what gets
+    packed here multiplies across the event stream — keep it small.
+    """
+    any_msg = ProtoAny()
+    any_msg.Pack(parent, type_url_prefix=TYPE_URL_PREFIX)
+    return any_msg
+
+
+def unpack_parent_cover(cover: Cover | None) -> Cover | None:
+    """Extract a nested ``Cover`` from ``cover.ext`` when present.
+
+    Returns ``None`` if:
+    - ``cover`` is ``None``
+    - the ``ext`` slot is unset
+    - the packed Any contains a non-Cover payload
+
+    Most consumers should prefer a domain-specific extractor (e.g.
+    ``unpack_table_ext`` returning a ``TableExt`` with a named
+    ``tournament_cover`` field). This helper exists for the case where
+    callers pack a bare ``Cover`` into ``ext`` directly.
+    """
+    if cover is None or not cover.HasField("ext"):
+        return None
+    parent = Cover()
+    if not cover.ext.Unpack(parent):
+        return None
+    return parent
+
+
+def unpack_ext_as(cover: Cover | None, message_type: type[T]) -> T | None:
+    """Extract a typed message of ``message_type`` from ``cover.ext``.
+
+    Returns ``None`` if ``cover`` is ``None``, ``ext`` is unset, or the
+    Any payload doesn't match ``message_type``. The type check is
+    delegated to ``ProtoAny.Unpack``, which compares ``type_url``
+    against the message's full name.
+
+    Example::
+
+        from poker_app.proto.examples.v1 import table_pb2
+
+        table_ext = unpack_ext_as(source_cover, table_pb2.TableExt)
+        if table_ext is not None:
+            tournament_root = table_ext.tournament_cover.root.value
+    """
+    if cover is None or not cover.HasField("ext"):
+        return None
+    target = message_type()
+    if not cover.ext.Unpack(target):
+        return None
+    return target
+
+
 # Suppress unused-import warnings for re-exports that are imported only
 # to make `from .helpers import Query` work for users who need the
 # proto type. Query/PageHeader stay accessible through the proto path

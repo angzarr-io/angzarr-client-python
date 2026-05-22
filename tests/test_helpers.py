@@ -740,3 +740,100 @@ class TestCorrelatedMetadata:
         assert isinstance(correlated_metadata("x"), list)
         assert isinstance(correlated_metadata("x")[0], tuple)
         assert len(correlated_metadata("x")[0]) == 2
+
+
+class TestCoverExtHelpers:
+    """``Cover.ext`` pack/unpack helpers — the extension slot is the
+    routing-context mechanism for cross-aggregate parent relationships
+    (table events carrying their tournament Cover, etc.)."""
+
+    def _parent_and_child(self):
+        from angzarr_client.helpers import pack_into_ext
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, UUID
+
+        parent = Cover(domain="tournament", root=UUID(value=b"t-root-x"))
+        child = Cover(domain="table", root=UUID(value=b"tbl-root-y"))
+        child.ext.CopyFrom(pack_into_ext(parent))
+        return parent, child
+
+    def test_pack_into_ext_roundtrips_through_unpack_parent_cover(self) -> None:
+        from angzarr_client.helpers import unpack_parent_cover
+
+        parent, child = self._parent_and_child()
+        got = unpack_parent_cover(child)
+        assert got is not None
+        assert got.domain == parent.domain
+        assert got.root.value == parent.root.value
+
+    def test_unpack_parent_cover_returns_none_for_unset_ext(self) -> None:
+        from angzarr_client.helpers import unpack_parent_cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, UUID
+
+        bare = Cover(domain="standalone", root=UUID(value=b"x"))
+        assert unpack_parent_cover(bare) is None
+
+    def test_unpack_parent_cover_returns_none_for_none_input(self) -> None:
+        from angzarr_client.helpers import unpack_parent_cover
+
+        assert unpack_parent_cover(None) is None
+
+    def test_unpack_parent_cover_returns_none_for_non_cover_payload(self) -> None:
+        # Pack a non-Cover message into ext; the helper should fail to
+        # Unpack and return None rather than mis-typing.
+        from angzarr_client.helpers import pack_into_ext, unpack_parent_cover
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
+            Cover,
+            Edition,
+            UUID,
+        )
+
+        decoy = Edition(name="not-a-cover")
+        host = Cover(domain="table", root=UUID(value=b"y"))
+        host.ext.CopyFrom(pack_into_ext(decoy))
+
+        assert unpack_parent_cover(host) is None
+
+    def test_unpack_ext_as_extracts_typed_payload(self) -> None:
+        # Same packed payload, extracted via the typed helper.
+        from angzarr_client.helpers import pack_into_ext, unpack_ext_as
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
+            Cover,
+            Edition,
+            UUID,
+        )
+
+        edition = Edition(name="v2")
+        host = Cover(domain="table", root=UUID(value=b"z"))
+        host.ext.CopyFrom(pack_into_ext(edition))
+
+        got = unpack_ext_as(host, Edition)
+        assert got is not None
+        assert got.name == "v2"
+
+    def test_unpack_ext_as_returns_none_on_type_mismatch(self) -> None:
+        # Pack Edition, try to unpack as Cover — should be None.
+        from angzarr_client.helpers import pack_into_ext, unpack_ext_as
+        from angzarr_client.proto.angzarr.v1.types_pb2 import (
+            Cover,
+            Edition,
+            UUID,
+        )
+
+        edition = Edition(name="v2")
+        host = Cover(domain="table", root=UUID(value=b"z"))
+        host.ext.CopyFrom(pack_into_ext(edition))
+
+        assert unpack_ext_as(host, Cover) is None
+
+    def test_pack_into_ext_keeps_payload_small_for_single_nested_cover(self) -> None:
+        # Sanity-check on the wire-size promise in the proto docstring.
+        # A single nested Cover should serialize to under 100 bytes.
+        from angzarr_client.helpers import pack_into_ext
+        from angzarr_client.proto.angzarr.v1.types_pb2 import Cover, UUID
+
+        parent = Cover(
+            domain="tournament",
+            root=UUID(value=b"\x01" * 16),  # 16-byte UUID is realistic
+        )
+        packed = pack_into_ext(parent)
+        assert packed.ByteSize() < 100, packed.ByteSize()
