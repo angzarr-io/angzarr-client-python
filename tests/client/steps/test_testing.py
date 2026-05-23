@@ -24,7 +24,7 @@ from angzarr_client.testing import (
     uuid_str_for,
 )
 
-scenarios("testing.feature")
+scenarios("../../parity/client/testing.feature")
 
 
 @dataclass

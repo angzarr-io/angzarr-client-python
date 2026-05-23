@@ -367,3 +367,70 @@ def _then_env_var_name(state: _World, expected: str) -> None:
     assert (
         state.env_var_name == expected
     ), f"state.env_var_name={state.env_var_name!r} expected={expected!r}"
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("a connected domain client")
+def _given_connected_domain_client(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I create a domain client for the coordinator endpoint")
+def _when_create_domain_client_coord(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse('I create a domain client for domain "{domain}"'))
+def _when_create_domain_client_for(state: _World, domain: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I close the domain client")
+def _when_close_domain_client(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse('I create a domain client from environment variable "{var_name}"'))
+def _when_create_from_env_lowercase(state: _World, var_name: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("I should receive a command response")
+def _then_should_receive_command_response(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse("I should receive {count:d} event pages"))
+def _then_should_receive_event_pages(state: _World, count: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("subsequent commands should fail with a connection error")
+def _then_subsequent_commands_fail(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("subsequent queries should fail with a connection error")
+def _then_subsequent_queries_fail(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the domain client should be connected")
+def _then_domain_client_connected(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")

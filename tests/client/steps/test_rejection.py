@@ -123,3 +123,64 @@ def _then_two_funds_released(world):
     for page in world.response.events.pages:
         assert page.event.type_url.endswith("FundsReleased")
     assert world.call_log == ["Payment", "Payment2"]
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(parsers.parse('Payment is a component in domain "{domain}"'))
+def _given_payment_component_in_domain(world, domain):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("Payment compensates a rejected ReserveStock from inventory by releasing funds")
+def _given_payment_compensates_releasing(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("Payment is the active component")
+def _given_payment_active_component(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("a second compensation handler for the same rejection also releases funds")
+def _given_second_compensator(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("Payment then Payment2 are configured")
+def _given_payment_then_payment2_configured(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse("a rejection of {cmd_kind} arrives from {target}"))
+def _when_rejection_arrives_lowercase(world, cmd_kind, target):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("a FundsReleased event is emitted")
+def _then_a_funds_released_emitted(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("no events are emitted")
+def _then_no_events_emitted(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("two FundsReleased events are emitted in registration order")
+def _then_two_funds_in_order(world):
+    raise NotImplementedError("WIP: step needs implementation")

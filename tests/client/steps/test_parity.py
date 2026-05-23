@@ -13,7 +13,7 @@ from typing import Any
 
 from pytest_bdd import given, parsers, scenarios, then
 
-scenarios("parity.feature")
+scenarios("../../parity/client/parity.feature")
 
 
 _SEARCH_PATHS = (

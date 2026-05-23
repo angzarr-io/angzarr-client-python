@@ -22,7 +22,7 @@ from angzarr_client.errors import (
     TransportError,
 )
 
-scenarios("error_handling.feature")
+scenarios("../../parity/client/error_handling.feature")
 
 
 class _StubRpcError:

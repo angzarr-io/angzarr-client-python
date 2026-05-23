@@ -47,31 +47,22 @@ class _ToType:
 
 
 @given(
-    parsers.re(
-        r'a class "(?P<cls_name>[^"]+)" decorated as an upcaster named'
-        r' "(?P<up_name>[^"]+)" in domain "(?P<domain>[^"]+)"'
-    )
+    parsers.re(r'an upcaster named "(?P<up_name>[^"]+)" in domain "(?P<domain>[^"]+)"')
 )
-def _given_upcaster_class(
-    state: _State, cls_name: str, up_name: str, domain: str
-) -> None:
+def _given_upcaster_class(state: _State, up_name: str, domain: str) -> None:
     try:
 
         @upcaster(name=up_name, domain=domain)
         class UpcasterCls:
             pass
 
-        UpcasterCls.__name__ = cls_name
         state.cls = UpcasterCls
     except Exception as exc:
         state.errors.append(exc)
 
 
 @given(
-    parsers.re(
-        r'a method declared as upcasting from "(?P<from_name>[^"]+)"'
-        r' to "(?P<to_name>[^"]+)"'
-    )
+    parsers.re(r'an upcasting rule from "(?P<from_name>[^"]+)" to "(?P<to_name>[^"]+)"')
 )
 def _given_upcasts_method(state: _State, from_name: str, to_name: str) -> None:
     try:
@@ -85,7 +76,7 @@ def _given_upcasts_method(state: _State, from_name: str, to_name: str) -> None:
         state.errors.append(exc)
 
 
-@given("a method declared as a state factory")
+@given("an upcaster with a state factory")
 def _given_state_factory_method(state: _State) -> None:
     try:
 
@@ -98,16 +89,16 @@ def _given_state_factory_method(state: _State) -> None:
         state.errors.append(exc)
 
 
-@then("the class declaration compiles without error")
-def _then_class_compiles(state: _State) -> None:
+@then("the declaration is accepted")
+def _then_declaration_accepted(state: _State) -> None:
+    """Single business-outcome assertion replacing the legacy split
+    ``the class declaration compiles without error`` /
+    ``the method declaration compiles without error``. Either a class
+    or method may have been declared depending on which Given step ran;
+    accepting at least one being populated keeps the assertion uniform.
+    """
     assert not state.errors, f"declaration raised: {state.errors}"
-    assert state.cls is not None
-
-
-@then("the method declaration compiles without error")
-def _then_method_compiles(state: _State) -> None:
-    assert not state.errors, f"declaration raised: {state.errors}"
-    assert state.fn is not None
+    assert state.cls is not None or state.fn is not None
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +172,7 @@ def _given_incoming_v1(state: _State) -> None:
     state.chain_event_msg = OrderCreatedV1(order_id="o-1", customer_id="c-1")
 
 
-@when("I dispatch the upcast request")
+@when("the V1 event is upcasted")
 def _when_dispatch_chain(state: _State) -> None:
     builder = Router("upcaster-chain")
     for cls in state.chain_classes:

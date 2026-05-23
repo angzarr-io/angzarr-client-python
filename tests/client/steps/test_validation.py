@@ -27,7 +27,9 @@ class _S:
     pass
 
 
-@when(parsers.parse('I declare a @command_handler for domain "{domain}" without state'))
+@when(
+    parsers.parse('I declare an aggregate handler for domain "{domain}" without state')
+)
 def _cmd_handler_missing_state(world, domain):
     try:
 
@@ -39,7 +41,7 @@ def _cmd_handler_missing_state(world, domain):
         world.dispatch_exc = exc
 
 
-@when(parsers.parse('I declare a @saga named "{name}" from "{source}" without target'))
+@when(parsers.parse('I declare a saga named "{name}" from "{source}" without target'))
 def _saga_missing_target(world, name, source):
     try:
 
@@ -51,7 +53,7 @@ def _saga_missing_target(world, name, source):
         world.dispatch_exc = exc
 
 
-@when(parsers.parse('I declare a @process_manager for name "{name}" without pm_domain'))
+@when(parsers.parse('I declare a process manager for name "{name}" without pm_domain'))
 def _pm_missing_pm_domain(world, name):
     try:
 
@@ -65,7 +67,7 @@ def _pm_missing_pm_domain(world, name):
         world.dispatch_exc = exc
 
 
-@when(parsers.parse('I declare a @process_manager for name "{name}" without sources'))
+@when(parsers.parse('I declare a process manager for name "{name}" without sources'))
 def _pm_missing_sources(world, name):
     try:
 
@@ -79,7 +81,7 @@ def _pm_missing_sources(world, name):
         world.dispatch_exc = exc
 
 
-@when(parsers.parse('I declare a @process_manager for name "{name}" without targets'))
+@when(parsers.parse('I declare a process manager for name "{name}" without targets'))
 def _pm_missing_targets(world, name):
     try:
 
@@ -93,7 +95,7 @@ def _pm_missing_targets(world, name):
         world.dispatch_exc = exc
 
 
-@when(parsers.parse('I declare a @projector named "{name}" without domains'))
+@when(parsers.parse('I declare a projector named "{name}" without domains'))
 def _projector_missing_domains(world, name):
     try:
 
@@ -113,14 +115,14 @@ def _given_bare_class(world):
     world.classes["Order"] = Order
 
 
-@given("Order has the @command_handler decorator applied")
+@given("Order is declared as an aggregate handler")
 def _apply_cmd_handler(world):
     world.classes["Order"] = command_handler(domain="order", state=_S)(
         world.classes["Order"]
     )
 
 
-@when("I also apply the @saga decorator to Order")
+@when("I also declare Order as a saga")
 def _apply_second_decorator(world):
     try:
         saga(name="x", source="a", target="b")(world.classes["Order"])
@@ -128,7 +130,7 @@ def _apply_second_decorator(world):
         world.dispatch_exc = exc
 
 
-@given(parsers.parse('a method "{name}" with the @handles decorator applied'))
+@given(parsers.parse('a method "{name}" declared as a command handler'))
 def _given_method_with_handles(world, name):
     def handle(self, cmd, state):  # noqa: ARG001
         return None
@@ -137,7 +139,7 @@ def _given_method_with_handles(world, name):
     world.classes[name] = handles(CreateOrder)(handle)
 
 
-@when(parsers.parse('I also apply the @applies decorator to "{name}"'))
+@when(parsers.parse('I also declare "{name}" as an event applier'))
 def _also_apply_applies(world, name):
     try:
         applies(OrderCreated)(world.classes[name])

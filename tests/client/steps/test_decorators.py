@@ -14,7 +14,7 @@ from pytest_bdd import given, parsers, scenarios, then
 
 from angzarr_client import command_handler, saga, upcaster
 
-scenarios("decorators.feature")
+scenarios("../../parity/client/decorators.feature")
 
 
 @dataclass

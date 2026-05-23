@@ -123,3 +123,22 @@ def _when_five_created(world):
 @then(parsers.parse("the factory was invoked exactly {n:d} time"))
 def _then_factory_count(world, n):
     assert world.observed["factory_calls"] == n, world.observed["factory_calls"]
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("Output is the active projector")
+def _given_output_active_projector(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("every entry was appended by the same projector instance")
+def _then_entries_same_instance(world):
+    raise NotImplementedError("WIP: step needs implementation")

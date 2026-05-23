@@ -677,3 +677,246 @@ def _last_request_sync_mode_was(self: _World, mode: SyncMode) -> bool:
 
 
 _World.last_request_sync_mode_was = _last_request_sync_mode_was  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("a client connected to the test backend")
+def _given_client_backend(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse('I send a "{cmd_type}" command with data "{data}"'))
+def _when_send_command_with_data(state: _World, cmd_type: str, data: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse('I send an "{cmd_type}" command at sequence {seq:d}'))
+def _when_send_named_at_sequence(state: _World, cmd_type: str, seq: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse("I send a command at sequence {seq:d}"))
+def _when_send_at_sequence(state: _World, seq: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse('I send a command tagged with correlation ID "{cid}"'))
+def _when_send_with_correlation(state: _World, cid: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse('I look up the current sequence for "{domain}" root "{root}"'))
+def _when_lookup_current_sequence(state: _World, domain: str, root: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I retry the command at that sequence")
+def _when_retry_at_that_sequence(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I send a command without waiting for downstream work")
+def _when_send_async_business_vocab(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I send a command and wait for projectors")
+def _when_send_wait_projectors(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I send a command and wait for downstream sagas")
+def _when_send_wait_sagas(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I send a command with a malformed payload")
+def _when_send_malformed(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I send a command missing required fields")
+def _when_send_missing_fields(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse('I send a command to domain "{domain}"'))
+def _when_send_to_domain(state: _World, domain: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse("I send a command that produces {n:d} events"))
+def _when_send_multi_event(state: _World, n: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse('I read back the events for "{domain}" root "{root}"'))
+def _when_read_back_events(state: _World, domain: str, root: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I attempt to send a command")
+def _when_attempt_send(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("the aggregate service does not respond in time")
+def _given_service_does_not_respond(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I send a command with a short timeout")
+def _when_send_with_short_timeout(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(
+    parsers.parse('I send a "{cmd_type}" command for root "{root}" at sequence {seq:d}')
+)
+def _when_send_for_root(state: _World, cmd_type: str, root: str, seq: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the command is accepted")
+def _then_command_is_accepted(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse('a single "{event_type}" event is recorded'))
+def _then_single_event_recorded(state: _World, event_type: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse("the new events continue the history from sequence {seq:d}"))
+def _then_continue_from_sequence(state: _World, seq: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse('the resulting events carry correlation ID "{cid}"'))
+def _then_events_carry_correlation(state: _World, cid: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the command is refused because the aggregate has moved on")
+def _then_refused_moved_on(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("one command is accepted")
+def _then_one_command_accepted(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the other is refused because the aggregate has moved on")
+def _then_other_refused(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the response returns before any projectors have caught up")
+def _then_response_before_projectors(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the response reflects the projectors having processed the event")
+def _then_response_reflects_projectors(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the response reflects the downstream sagas having completed")
+def _then_response_reflects_sagas(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the command is refused as invalid")
+def _then_refused_invalid(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the refusal names the missing field")
+def _then_refusal_names_field(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the command is refused because the domain is unknown")
+def _then_refused_unknown_domain(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse("{n:d} events are recorded"))
+def _then_events_recorded(state: _World, n: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse("the events occupy consecutive sequences starting at {seq:d}"))
+def _then_consecutive_sequences(state: _World, seq: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse("either all {n:d} events are present or none of them are"))
+def _then_atomic_or_none(state: _World, n: int) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the call fails because the service cannot be reached")
+def _then_fails_unreachable(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the call fails because the deadline was exceeded")
+def _then_fails_deadline(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the aggregate now exists with one event")
+def _then_aggregate_now_exists_one(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the history is empty and the next sequence is 0")
+def _then_history_empty(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")

@@ -20,7 +20,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from angzarr_client.destinations import Destinations
 from angzarr_client.proto.angzarr.v1 import types_pb2 as types
 
-scenarios("wire_parity.feature")
+scenarios("../../parity/client/wire_parity.feature")
 
 
 @dataclass

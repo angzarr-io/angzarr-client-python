@@ -577,3 +577,22 @@ def _then_fail_invalid_argument(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, GRPCError)
     assert state.last_error.grpc_code == grpc.StatusCode.INVALID_ARGUMENT
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("a what-if execution surface available")
+def _given_what_if_surface(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the projected execution leaves no trace")
+def _then_projected_no_trace(state: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")

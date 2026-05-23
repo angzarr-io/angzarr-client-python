@@ -419,7 +419,7 @@ def _then_events_at_correct_sequence(state: _State) -> None:
     assert state.events_persisted
 
 
-@then("the command fails with aggregate's error")
+@then("the command fails with the aggregate's rejection reason")
 def _then_fails_aggregate_error(state: _State) -> None:
     assert state.command_failed
 

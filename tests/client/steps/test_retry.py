@@ -12,7 +12,7 @@ from angzarr_client import CommandRejectedError
 from angzarr_client.error_codes import codes, keys
 from angzarr_client.retry import ExponentialBackoffRetry, default_retry_policy
 
-scenarios("retry.feature")
+scenarios("../../parity/client/retry.feature")
 
 
 @dataclass

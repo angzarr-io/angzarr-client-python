@@ -189,3 +189,106 @@ def _reset_call_log(world):
     world.dispatch_exc = None
     world.response = None
     yield
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("an empty handler configuration")
+def _given_empty_handler_config(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("a component that has not been marked as a handler kind")
+def _given_unmarked_component(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    parsers.parse('a command handler "{name}" for domain "{domain}" with order state')
+)
+def _given_command_handler_with_order_state(world, name, domain):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    parsers.parse(
+        'another command handler "{name}" for domain "{domain}" with payment state'
+    )
+)
+def _given_another_command_handler_payment_state(world, name, domain):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    'two command handlers Alpha and Beta for domain "order" both handling '
+    "the same command"
+)
+def _given_two_handlers_same_command(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("the handler reports how many times it has been introspected")
+def _given_introspection_counter(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("I attempt to register it")
+def _when_attempt_register(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the configuration is rejected because no handlers are registered")
+def _then_rejected_no_handlers(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the configuration is rejected because the component is not a recognised handler")
+def _then_rejected_not_recognised(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the result routes commands to their handlers")
+def _then_routes_commands(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the configuration is rejected for mixing handler kinds")
+def _then_rejected_mixed_kinds(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(
+    "the configuration is rejected because two command handlers share "
+    "the same domain and command"
+)
+def _then_rejected_shared_pair(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the handler has been introspected exactly once")
+def _then_introspected_once(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the result routes saga notifications to their handlers")
+def _then_routes_saga_notifications(world):
+    raise NotImplementedError("WIP: step needs implementation")

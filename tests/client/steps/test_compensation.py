@@ -550,3 +550,142 @@ def _then_router_emits(comp_world: _World) -> None:
 def _then_ctx_issuer_type(comp_world: _World, expected: str) -> None:
     # PM/saga distinction is simulated — accept either as long as the scenario asks
     assert expected in ("saga", "process_manager")
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when("the compensation context is constructed from the rejection")
+def _when_construct_from_rejection(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the context carries the rejected command")
+def _then_ctx_carries_cmd(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the context carries the rejection reason")
+def _then_ctx_carries_reason(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the context carries the saga origin")
+def _then_ctx_carries_origin(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the saga origin is preserved")
+def _then_saga_origin_preserved(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the correlation ID is preserved")
+def _then_correlation_preserved(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the notification carries the rejected command")
+def _then_notif_carries_cmd(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the notification carries the rejection reason")
+def _then_notif_carries_reason(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the source aggregate and sequence are recorded")
+def _then_source_agg_seq_recorded(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse('the notification identifies the issuing saga as "{name}"'))
+def _then_identifies_issuing_saga(comp_world: _World, name: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the notification has a cover")
+def _then_notification_has_cover(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the notification payload contains a RejectionNotification")
+def _then_notif_payload_contains(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the notification carries its dispatch time")
+def _then_notif_carries_dispatch_time(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the command book preserves the correlation ID")
+def _then_book_preserves_correlation(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(parsers.parse('the rejection reason equals "{expected}"'))
+def _then_rejection_reason_equals(comp_world: _World, expected: str) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the rejection reason carries the full error details")
+def _then_reason_full_details(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the rejected command is the original command")
+def _then_rejected_is_original_new(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("all command fields are preserved")
+def _then_all_fields_preserved(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the full saga origin chain is preserved")
+def _then_full_chain_preserved(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the root cause can be traced through the chain")
+def _then_root_cause_traced(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("saga rejections produce a compensation notification")
+def _then_saga_produces_compensation(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("process manager rejections produce a compensation notification")
+def _then_pm_produces_compensation(comp_world: _World) -> None:
+    raise NotImplementedError("WIP: step needs implementation")

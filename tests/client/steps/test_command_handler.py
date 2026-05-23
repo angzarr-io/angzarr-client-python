@@ -234,3 +234,135 @@ def _given_reading_handler(world):
 @then("the handler observed state.created = false")
 def _then_state_default_false(world):
     assert world.observed["created"] is False
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    parsers.parse('a command handler "{name}" for domain "{domain}" with order state')
+)
+def _given_handler_with_order_state(world, name, domain):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("OrderCreated marks the order as created")
+def _given_created_marks_order(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("CreateOrder emits OrderCreated")
+def _given_create_emits_created(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("Order is the active aggregate handler")
+def _given_order_active(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(parsers.parse("a prior history with an OrderCreated event at sequence {seq:d}"))
+def _given_prior_history_at_seq(world, seq):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("the aggregate supplies its own initial state with created = true")
+def _given_aggregate_initial_state_created(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    "Order handles CreateOrder by emitting OrderCreated only when "
+    "the order is already created"
+)
+def _given_order_emits_when_created(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("the aggregate does not supply its own initial state")
+def _given_aggregate_no_initial_state(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("Order handles CreateOrder by reading whether the order is created")
+def _given_order_reads_created(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("the incoming command has cover.ext set to a packed parent Cover")
+def _given_incoming_ext_packed(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("a command handler whose emit step sets EventBook cover.ext explicitly")
+def _given_handler_sets_ext(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("the incoming command also has a different cover.ext set")
+def _given_incoming_different_ext(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("the incoming command's cover has no ext field set")
+def _given_incoming_no_ext(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the order is treated as already created")
+def _then_order_already_created(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the unknown command is rejected as invalid input")
+def _then_unknown_rejected(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("when the handler emits nothing, no events are produced")
+def _then_nothing_emitted_no_events(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the handler observes that the order is not created")
+def _then_handler_observes_not_created(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the response's EventBook cover.ext is the same packed parent Cover")
+def _then_book_ext_same_packed(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the response's EventBook cover.ext is the handler-set value")
+def _then_book_ext_handler_set(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the response's EventBook cover has no ext field set")
+def _then_book_no_ext(world):
+    raise NotImplementedError("WIP: step needs implementation")

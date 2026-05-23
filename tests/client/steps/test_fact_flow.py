@@ -247,13 +247,17 @@ def _then_action_requested_injected(state: _State, player_name: str) -> None:
     assert state.fact_injected is not None
 
 
-@then("the fact is persisted with the next sequence number")
+@then("the fact is appended at the next sequence number")
 def _then_fact_next_seq(state: _State) -> None:
     assert state.fact_sequence is not None
 
 
-@then("the player aggregate contains an ActionRequested event")
-def _then_player_has_action(state: _State) -> None:
+@then(
+    parsers.re(
+        r"(?P<player_name>\S+)'s player aggregate records the " r"ActionRequested fact"
+    )
+)
+def _then_player_records_fact(state: _State, player_name: str) -> None:
     assert state.player_aggregate is not None
     assert len(state.player_aggregate.events) > 0
 
@@ -319,10 +323,16 @@ def _then_cover_correlation_id(state: _State) -> None:
     assert state.fact_injected.correlation_id != ""
 
 
-@then(parsers.parse('the saga fails with error containing "{message}"'))
-def _then_saga_fails(state: _State, message: str) -> None:
+@then("the saga fails because the target domain does not exist")
+def _then_saga_fails_missing_domain(state: _State) -> None:
+    """Combined business-rejection assertion.
+
+    Replaces ``the saga fails with error containing "not found"`` —
+    business prose says *why* the saga fails (target domain absent)
+    rather than asserting on the literal error string.
+    """
     assert state.error is not None
-    assert message.lower() in state.error.lower()
+    assert "not found" in state.error.lower()
 
 
 @then("no commands from that saga are executed")

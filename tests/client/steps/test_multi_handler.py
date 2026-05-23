@@ -720,3 +720,32 @@ def _then_saga_a_calls(world, n):
 @then(parsers.parse("SagaB's factory was invoked exactly {n:d} time"))
 def _then_saga_b_calls(world, n):
     assert world.observed.get("saga_b_calls", 0) == n
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(
+    parsers.parse(
+        'registration is rejected because two command handlers claim {cmd} in "{domain}"'
+    )
+)
+def _then_registration_rejected_dup(world, cmd, domain):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("the configuration is accepted")
+def _then_configuration_accepted(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then("each saga handles the event exactly once")
+def _then_each_saga_handles_once(world):
+    raise NotImplementedError("WIP: step needs implementation")

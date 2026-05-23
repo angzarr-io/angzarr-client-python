@@ -249,3 +249,95 @@ def _then_sequences(world, seq_list: str):
     expected = [int(s.strip()) for s in seq_list.split(",")]
     actual = [int(p.header.sequence) for p in _pages(world)]
     assert actual == expected, f"expected {expected}, got {actual}"
+
+
+# ---------------------------------------------------------------------------
+# WIP — Batch 6/7 new business-vocab phrasing
+# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
+# rather than passing silently. Replace each as the proper impl lands.
+# ---------------------------------------------------------------------------
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("deposits update Payment's bankroll")
+def _given_deposits_update_bankroll(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    "Payment compensates a rejected ReserveStock from inventory by emitting "
+    "FundsReleased with the current bankroll"
+)
+def _given_compensates_with_bankroll(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    'a command handler "Payment" for domain "payment" with two compensation handlers'
+)
+def _given_payment_two_compensation_handlers(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    "Payment compensates a rejected ReserveStock from inventory by emitting FundsReleased"
+)
+def _given_compensates_reserve(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    "Payment compensates a rejected ProcessPayment from payment by emitting WorkflowFailed"
+)
+def _given_compensates_process_payment(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    "Payment compensates a rejected ReserveStock from inventory by emitting "
+    "two FundsReleased events"
+)
+def _given_compensates_two_funds(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given("Payment is configured")
+def _given_payment_configured(world):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(
+    parsers.parse("a prior history with a FundsDeposited event of bankroll {amount:d}")
+)
+def _given_prior_history_bankroll(world, amount):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@given(parsers.parse("a prior history ending at sequence {seq:d}"))
+def _given_prior_history_ending(world, seq):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@when(parsers.parse("a rejection of {cmd_kind} arrives from {target}"))
+def _when_rejection_arrives(world, cmd_kind, target):
+    raise NotImplementedError("WIP: step needs implementation")
+
+
+# TODO (WIP): Implement this step matcher properly.
+@then(
+    parsers.parse(
+        "compensation events are appended after sequence {prior:d}, "
+        "taking sequences {a:d} and {b:d}"
+    )
+)
+def _then_compensation_appended_after(world, prior, a, b):
+    raise NotImplementedError("WIP: step needs implementation")

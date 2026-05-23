@@ -37,7 +37,7 @@ from angzarr_client.proto.angzarr.v1.command_handler_pb2 import CommandResponse
 from angzarr_client.proto.angzarr.v1.types_pb2 import EventBook, EventPage
 from angzarr_client.proto.angzarr.v1.types_pb2 import PayloadReference
 
-scenarios("event_decoding.feature")
+scenarios("../../parity/client/event_decoding.feature")
 
 
 # Concrete proto message used to stand in for "OrderCreated" / "ItemAdded"

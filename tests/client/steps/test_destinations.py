@@ -16,7 +16,7 @@ from pytest_bdd import given, parsers, scenarios, then
 
 from angzarr_client.destinations import Destinations
 
-scenarios("destinations.feature")
+scenarios("../../parity/client/destinations.feature")
 
 
 @dataclass

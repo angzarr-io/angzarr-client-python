@@ -1,12 +1,12 @@
 """Step defs for features/coordinator-contract/state_building.feature.
 
 EXPLICIT SIMULATION — finding #26 in PARITY_AUDIT.md. The feature
-describes a `build_state(state, event_book)` + `_apply_event` public
-API that doesn't exist in either client (both have private
-`_rebuild_state` / runtime equivalents called internally). The
-simulation here documents the contract. Kept running so the prose
-doesn't bit-rot pending a coordinator-tier suite that exposes the
-real surface.
+describes the state-building contract (apply a sequence of
+type-erased events to a starting state via a per-type handler
+dispatch). Clients implement this internally via private
+`_rebuild_state` / runtime equivalents. The simulation here documents
+the contract. Kept running so the prose doesn't bit-rot pending a
+coordinator-tier suite that exposes the real surface.
 """
 
 from __future__ import annotations
@@ -225,15 +225,21 @@ def _given_multiple_increments(state: _State, i1: int, i2: int, i3: int) -> None
     )
 
 
-@given("events wrapped in google.protobuf.Any")
-def _given_any_wrapped_events(state: _State) -> None:
+@given("events stored in a type-erased envelope")
+def _given_type_erased_events(state: _State) -> None:
     state.event_book = _MockEventBook(
         events=[_MockEvent(0, "type.googleapis.com/test.OrderCreated")]
     )
 
 
-@given(parsers.parse('an event with type_url "{type_url}"'))
-def _given_event_with_type_url(state: _State, type_url: str) -> None:
+@given(parsers.parse('an event whose envelope identifies type "{type_id}"'))
+def _given_event_with_type_identifier(state: _State, type_id: str) -> None:
+    # Mirror the prior type_url step: store as a type.googleapis.com-style URL.
+    type_url = (
+        type_id
+        if type_id.startswith("type.googleapis.com/")
+        else f"type.googleapis.com/{type_id}"
+    )
     state.event_book = _MockEventBook(events=[_MockEvent(0, type_url, b"data")])
 
 
@@ -310,15 +316,18 @@ def _given_existing_state(state: _State) -> None:
     )
 
 
-@given("a build_state function")
-def _given_build_state_function(state: _State) -> None:
+@given("a starting state and a sequence of type-erased events")
+def _given_starting_state_and_events(state: _State) -> None:
     state.event_book = _MockEventBook(
-        events=[_MockEvent(0, "type.googleapis.com/test.OrderCreated")]
+        events=[
+            _MockEvent(0, "type.googleapis.com/test.OrderCreated"),
+            _MockEvent(1, "type.googleapis.com/test.ItemAdded"),
+        ]
     )
 
 
-@given("an _apply_event function")
-def _given_apply_event_function(state: _State) -> None:
+@given("a state and a type-erased event")
+def _given_state_and_type_erased_event(state: _State) -> None:
     state.event_book = _MockEventBook(
         events=[_MockEvent(0, "type.googleapis.com/test.OrderCreated")]
     )
@@ -372,13 +381,13 @@ def _when_apply_single_event(state: _State) -> None:
     _run_build(state)
 
 
-@when("I call build_state(state, events)")
-def _when_call_build_state(state: _State) -> None:
+@when("state is built")
+def _when_state_is_built(state: _State) -> None:
     _run_build(state)
 
 
-@when("I call _apply_event(state, event_any)")
-def _when_call_apply_event(state: _State) -> None:
+@when("the event is applied")
+def _when_event_is_applied(state: _State) -> None:
     _run_build(state)
 
 
@@ -494,8 +503,8 @@ def _then_field_equals(state: _State, expected: int) -> None:
     assert state.built_state.field_value == expected
 
 
-@then("the Any wrapper should be unpacked")
-def _then_any_unpacked(state: _State) -> None:
+@then("the envelope should be unwrapped")
+def _then_envelope_unwrapped(state: _State) -> None:
     assert state.built_state is not None
 
 
@@ -516,8 +525,8 @@ def _then_named_handler_invoked(state: _State, handler: str) -> None:
     pass
 
 
-@then("the type_url suffix should match the handler")
-def _then_type_url_matches(state: _State) -> None:
+@then("the type identifier should resolve to that handler")
+def _then_type_identifier_resolves(state: _State) -> None:
     pass
 
 
@@ -531,13 +540,8 @@ def _then_deserialization_failure(state: _State) -> None:
     pass
 
 
-@then("the behavior depends on language")
-def _then_behavior_depends_on_language(state: _State) -> None:
-    pass
-
-
-@then("either default value is used or error is raised")
-def _then_default_or_error(state: _State) -> None:
+@then("the error should indicate the missing field")
+def _then_missing_field(state: _State) -> None:
     pass
 
 
@@ -569,31 +573,26 @@ def _then_original_unchanged(state: _State) -> None:
     assert state.initial_state.order_id == "existing"
 
 
-@then("each event should be unpacked from Any")
-def _then_events_unpacked(state: _State) -> None:
+@then("each event should be unwrapped from its envelope")
+def _then_events_unwrapped(state: _State) -> None:
     pass
 
 
-@then("_apply_event should be called for each")
-def _then_apply_event_called(state: _State) -> None:
+@then("the event application step should run for each event")
+def _then_event_application_runs(state: _State) -> None:
     pass
 
 
-@then("final state should be returned")
-def _then_final_state_returned(state: _State) -> None:
+@then("the resulting state should be returned")
+def _then_resulting_state_returned(state: _State) -> None:
     assert state.built_state is not None
 
 
-@then("the event should be unpacked")
-def _then_event_unpacked(state: _State) -> None:
+@then("the handler registered for that event type should be invoked")
+def _then_handler_registered_invoked(state: _State) -> None:
     pass
 
 
-@then("the correct type handler should be invoked")
-def _then_correct_handler(state: _State) -> None:
-    pass
-
-
-@then("state should be mutated")
-def _then_state_mutated(state: _State) -> None:
+@then("the produced state should reflect the event")
+def _then_produced_state_reflects_event(state: _State) -> None:
     assert state.built_state is not None

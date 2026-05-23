@@ -33,7 +33,7 @@ from angzarr_client.proto.angzarr.v1.types_pb2 import CommandRequest
 
 from ._fakes import RecordingStub, StubRpcError
 
-scenarios("connection.feature")
+scenarios("../../parity/client/connection.feature")
 
 
 @dataclass
