@@ -16,6 +16,7 @@ from .decorators import (
 )
 from .dispatch import DispatchError
 from .responses import (
+    Emit,
     ProcessManagerResponse,
     RejectionHandlerResponse,
     SagaHandlerResponse,
@@ -47,6 +48,7 @@ __all__ = [
     "state_factory",
     "upcasts",
     # Response types
+    "Emit",
     "SagaHandlerResponse",
     "ProcessManagerResponse",
     "RejectionHandlerResponse",

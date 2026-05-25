@@ -97,6 +97,11 @@ First because: stubs at lines 353/361/367 (`_then_book_ext_*`) are now
 Captures momentum + validates the round template against the simplest
 possible un-stubs.
 
+R1 closeout: 9 of 10 scenarios un-skipped immediately. C-0147 was
+initially deferred as a framework gap (handlers had no public API to
+set ``EventBook.cover.ext``), then closed by adding the ``Emit``
+wrapper — see post-R9 work in commits after `d9fe26e`.
+
 ### R2 — Tiny files combined (7 stubs)
 Bundle `projector.py` (2) + `speculative_client.py` (2) +
 `multi_handler.py` (3) in one round. Three files, one commit. Validates
@@ -235,9 +240,18 @@ matchers needing vocab aliases per the E3 pattern.
   integration boundary. Those live in examples-python's cucumber
   acceptance suite and are addressed by the existing kind cluster
   workflow.
-- Auditing the `WIP_SCENARIOS` file header comment. Once empty, the
-  file should be deleted along with the `pytest_collection_modifyitems`
-  hook in `conftest.py` — drop both in a final cleanup commit.
 - Anything related to the `pmg-reservation-pm` CrashLoopBackOff or the
   `poker-angzarr-status` ImagePullBackOff observed during the kind
   survey — those are coordinator / image issues outside this plan.
+
+## Phase 1 closeout
+
+**Done.** 334 passed, 0 skipped. All 114 originally-skipped scenarios
+either ship green or were dropped as not-our-coverage (8 sidecar-tier
+edition_propagation; 0 framework-gap remaining after Emit landed).
+
+`tests/client/wip_scenarios.py` deleted; the
+`pytest_collection_modifyitems` hook in `tests/client/conftest.py`
+removed. Future scenarios that need temporary skipping should re-add
+the file + hook (git history shows the pattern) or use pytest's
+built-in `@pytest.mark.skip` directly.

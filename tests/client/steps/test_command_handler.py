@@ -276,11 +276,13 @@ def _then_state_default_false(world):
 
 
 # ---------------------------------------------------------------------------
-# Cover.ext propagation (C-0146, C-0148). C-0147 (handler-set ext wins) is
-# not exercisable through the public dispatch path today — handlers return
-# events, not a cover, so there's no API to set EventBook.cover.ext from a
-# handler. The fill-only semantic is unit-tested directly against
-# _propagate_cover_ext in tests/router/test_dispatch_command_handler.py.
+# Cover.ext propagation (C-0146, C-0147, C-0148). Handlers that need to
+# override the framework's auto-propagation return ``Emit(events=...,
+# cover_ext=...)`` — see angzarr_client.router.responses.Emit. The
+# fill-only propagation logic lives in
+# angzarr_client/router/dispatch.py::_propagate_cover_ext and is
+# unit-tested at the dispatch layer in
+# tests/router/test_dispatch_command_handler.py.
 # ---------------------------------------------------------------------------
 
 
@@ -310,27 +312,51 @@ def _then_book_no_ext(world):
     assert not world.response.events.cover.HasField("ext")
 
 
-# C-0147: stubs remain — see file header. Removing these would silently
-# break decorator-discovery for the scenario. Scenario stays in
-# WIP_SCENARIOS until the router exposes a handler-cover surface.
+# C-0147: handler-set ext wins over framework fill-only propagation.
+
+
 @given("a command handler whose emit step sets EventBook cover.ext explicitly")
 def _given_handler_sets_ext(world):
-    raise NotImplementedError(
-        "C-0147 framework gap: handlers can't set EventBook.cover.ext "
-        "through the current router/dispatch surface."
-    )
+    """Rebuild the router with an Order handler that returns
+    ``Emit(events=..., cover_ext=<handler-chosen Cover>)``. The Cover the
+    handler chose is stashed on ``world.observed["handler_set_ext_domain"]``
+    so the Then matcher can assert it survived against the framework's
+    fill-only propagation."""
+    from angzarr_client.router import Emit
+
+    handler_parent = Cover(domain="handler-set")
+    world.observed["handler_set_ext_domain"] = "handler-set"
+
+    @command_handler(domain="order", state=OrderState)
+    class Order:
+        @handles(CreateOrder)
+        def on_create(self, cmd, state, seq):
+            return Emit(
+                events=OrderCreated(order_id=cmd.order_id, customer_id="c-1"),
+                cover_ext=handler_parent,
+            )
+
+    world.handlers = [Order()]
+    h = world.handlers[0]
+    world.router = Router("agg").with_handler(type(h), lambda h=h: h).build()
 
 
 @given("the incoming command also has a different cover.ext set")
 def _given_incoming_different_ext(world):
-    raise NotImplementedError(
-        "C-0147 framework gap: paired with _given_handler_sets_ext."
-    )
+    """Stamp incoming cover.ext with a DIFFERENT Cover than the handler
+    will set (different domain) so the assertion can distinguish which
+    one survived."""
+    different = Cover(domain="from-command")
+    ext = ProtoAny()
+    ext.Pack(different, type_url_prefix=TYPE_URL_PREFIX)
+    world.observed["incoming_ext"] = ext
 
 
 @then("the response's EventBook cover.ext is the handler-set value")
 def _then_book_ext_handler_set(world):
-    raise NotImplementedError(
-        "C-0147 framework gap: assertion unreachable until handler-cover "
-        "surface exists."
-    )
+    """Verify the handler-set ext won over the incoming-command ext via
+    the fill-only propagation guarantee."""
+    assert world.response.events.cover.HasField("ext")
+    unpacked = Cover()
+    assert world.response.events.cover.ext.Unpack(unpacked)
+    assert unpacked.domain == world.observed["handler_set_ext_domain"]

@@ -2,9 +2,11 @@
 
 Simple containers used by user code as the return value of ``@handles`` methods
 on sagas (``SagaHandlerResponse``), process managers (``ProcessManagerResponse``),
-and ``@rejected`` handlers (``RejectionHandlerResponse``). Kept separate from the
-dispatch / runtime modules so application code can import them without pulling
-in the dispatch machinery.
+``@rejected`` handlers (``RejectionHandlerResponse``), and command handlers that
+need to override the auto-propagated ``EventBook.cover.ext`` (``Emit``).
+
+Kept separate from the dispatch / runtime modules so application code can
+import them without pulling in the dispatch machinery.
 
 Mirrors the Rust ``router::responses`` module so cross-language users can
 reach the same types at the same logical path.
@@ -13,8 +15,38 @@ reach the same types at the same logical path.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Iterable, Union
+
+from google.protobuf.any_pb2 import Any as ProtoAny
+from google.protobuf.message import Message
 
 from angzarr_client.proto.angzarr.v1 import types_pb2 as types
+
+
+@dataclass
+class Emit:
+    """Return value of a command-handler ``@handles`` method when the
+    handler needs to set ``EventBook.cover.ext`` explicitly.
+
+    Common case (auto-propagation): handlers return bare events (a single
+    proto or a list/tuple of protos) and the framework fills
+    ``cover.ext`` from the incoming command's cover. See
+    ``angzarr_client.router.dispatch._propagate_cover_ext`` and proto
+    ``types.proto`` Cover docstring.
+
+    Override case: a handler that wants to stamp a *different* parent
+    routing context onto its events returns ``Emit(events=..., cover_ext=...)``.
+    The framework's fill-only propagation sees ``cover.ext`` already set
+    and leaves it alone (C-0147).
+
+    ``cover_ext`` accepts either a pre-packed ``google.protobuf.Any`` or
+    a bare proto ``Message`` — bare messages get packed automatically via
+    ``angzarr_client.helpers.pack_into_ext`` (the canonical packing path
+    for ``Cover.ext``).
+    """
+
+    events: Union[Message, Iterable[Message], None] = None
+    cover_ext: Union[ProtoAny, Message, None] = None
 
 
 class SagaHandlerResponse:

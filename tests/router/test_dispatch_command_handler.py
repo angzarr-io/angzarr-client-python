@@ -370,3 +370,121 @@ def test_dispatch_no_command_ext_leaves_events_ext_unset():
     response = router.dispatch(_make_contextual_command(CreateOrder(order_id="o-1")))
 
     assert not response.events.cover.HasField("ext")
+
+
+# --------------------------------------------------------------------------
+# Emit wrapper: handler-set cover.ext wins over fill-only propagation
+# C-0147 — handler-set ext on the emitted EventBook is not overridden.
+# --------------------------------------------------------------------------
+
+
+def test_dispatch_emit_with_cover_ext_overrides_command_ext():
+    """Handler returning Emit(events, cover_ext=...) wins over the
+    framework's auto-propagation from command.cover.ext (fill-only).
+    """
+    from angzarr_client.router import Emit
+
+    handler_parent = Cover(domain="handler-set")
+
+    @command_handler(domain="order", state=OrderState)
+    class OrderAggregate:
+        @handles(CreateOrder)
+        def on_create(self, cmd, state, seq):
+            return Emit(
+                events=OrderCreated(order_id=cmd.order_id),
+                cover_ext=handler_parent,
+            )
+
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
+
+    request = _make_command_with_ext(
+        CreateOrder(order_id="o-1"), Cover(domain="from-command")
+    )
+    response = router.dispatch(request)
+
+    assert response.events.cover.HasField("ext")
+    unpacked = Cover()
+    assert response.events.cover.ext.Unpack(unpacked)
+    assert unpacked.domain == "handler-set"
+
+
+def test_dispatch_emit_without_cover_ext_falls_through_to_command_ext():
+    """Emit(events=..., cover_ext=None) → fill-only propagation from
+    command.cover.ext still runs (the override path is opt-in)."""
+    from angzarr_client.router import Emit
+
+    @command_handler(domain="order", state=OrderState)
+    class OrderAggregate:
+        @handles(CreateOrder)
+        def on_create(self, cmd, state, seq):
+            return Emit(events=OrderCreated(order_id=cmd.order_id))
+
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
+
+    request = _make_command_with_ext(
+        CreateOrder(order_id="o-1"), Cover(domain="from-command")
+    )
+    response = router.dispatch(request)
+
+    unpacked = Cover()
+    assert response.events.cover.ext.Unpack(unpacked)
+    assert unpacked.domain == "from-command"
+
+
+def test_dispatch_emit_accepts_prepacked_any():
+    """Emit.cover_ext accepts a pre-packed google.protobuf.Any as well as
+    a bare proto Message (bare Messages get Pack'd via pack_into_ext)."""
+    from angzarr_client.router import Emit
+
+    prepacked = ProtoAny()
+    prepacked.Pack(Cover(domain="prepacked"), type_url_prefix="type.googleapis.com/")
+
+    @command_handler(domain="order", state=OrderState)
+    class OrderAggregate:
+        @handles(CreateOrder)
+        def on_create(self, cmd, state, seq):
+            return Emit(
+                events=OrderCreated(order_id=cmd.order_id),
+                cover_ext=prepacked,
+            )
+
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
+    response = router.dispatch(_make_contextual_command(CreateOrder(order_id="o-1")))
+
+    unpacked = Cover()
+    assert response.events.cover.ext.Unpack(unpacked)
+    assert unpacked.domain == "prepacked"
+
+
+def test_dispatch_emit_with_multiple_events_packs_all_pages():
+    """Emit(events=[a, b, c]) → 3-page EventBook with cover.ext set."""
+    from angzarr_client.router import Emit
+
+    @command_handler(domain="order", state=OrderState)
+    class OrderAggregate:
+        @handles(CreateOrder)
+        def on_create(self, cmd, state, seq):
+            return Emit(
+                events=[
+                    OrderCreated(order_id="a"),
+                    OrderCreated(order_id="b"),
+                    OrderCreated(order_id="c"),
+                ],
+                cover_ext=Cover(domain="batch-parent"),
+            )
+
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
+    response = router.dispatch(_make_contextual_command(CreateOrder(order_id="o-1")))
+
+    assert len(response.events.pages) == 3
+    unpacked = Cover()
+    assert response.events.cover.ext.Unpack(unpacked)
+    assert unpacked.domain == "batch-parent"

@@ -36,7 +36,7 @@ from angzarr_client.proto.angzarr.v1 import types_pb2 as _types
 
 from ..error_codes import codes, keys, messages
 from ..errors import CommandRejectedError
-from .responses import ProcessManagerResponse
+from .responses import Emit, ProcessManagerResponse
 
 _LOG = logging.getLogger(__name__)
 
@@ -890,15 +890,33 @@ def _pack_events(emitted: Any, base_seq: int) -> EventBook:
     Accepts:
       - a single proto message → one-page EventBook
       - a tuple/list of proto messages → multi-page EventBook
+      - an ``Emit(events, cover_ext)`` wrapper → multi-page EventBook with
+        ``book.cover.ext`` pre-stamped from ``cover_ext`` (Pack'd if it's
+        a bare proto Message; used as-is if it's already a ProtoAny). The
+        fill-only propagation downstream (``_propagate_cover_ext``)
+        sees the ext already set and leaves it alone — C-0147.
     """
     if emitted is None:
         return EventBook()
+
+    cover_ext_override: ProtoAny | None = None
+    if isinstance(emitted, Emit):
+        cover_ext_override = _normalize_cover_ext(emitted.cover_ext)
+        emitted = emitted.events
+        if emitted is None:
+            book = EventBook()
+            if cover_ext_override is not None:
+                book.cover.ext.CopyFrom(cover_ext_override)
+            return book
+
     if isinstance(emitted, (list, tuple)):
         messages = list(emitted)
     else:
         messages = [emitted]
 
     book = EventBook()
+    if cover_ext_override is not None:
+        book.cover.ext.CopyFrom(cover_ext_override)
     for offset, msg in enumerate(messages):
         page = EventPage()
         page.header.CopyFrom(PageHeader(sequence=base_seq + offset))
@@ -908,6 +926,22 @@ def _pack_events(emitted: Any, base_seq: int) -> EventBook:
         page.event.CopyFrom(any_msg)
         book.pages.append(page)
     return book
+
+
+def _normalize_cover_ext(value: Any) -> ProtoAny | None:
+    """Coerce ``Emit.cover_ext`` to a ``google.protobuf.Any``.
+
+    ``None`` returns ``None``. A pre-packed ``ProtoAny`` is returned as-is.
+    A bare proto ``Message`` is packed via the canonical
+    ``pack_into_ext`` path (matches Cover.ext convention; TYPE_URL_PREFIX).
+    """
+    if value is None:
+        return None
+    if isinstance(value, ProtoAny):
+        return value
+    from angzarr_client.helpers import pack_into_ext
+
+    return pack_into_ext(value)
 
 
 def dispatch_upcaster(

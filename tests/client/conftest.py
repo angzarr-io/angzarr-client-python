@@ -12,30 +12,6 @@ from typing import Any
 
 import pytest
 
-from tests.client.wip_scenarios import WIP_SCENARIOS
-
-
-def pytest_collection_modifyitems(config, items):
-    """Mark scenarios with TODO-stub matchers as skip.
-
-    Replaces the @wip gherkin-tag mechanism (which baked harness state
-    into the .feature spec). See tests/client/wip_scenarios.py for the
-    maintained skiplist. Iterates collected pytest items, finds the
-    pytest-bdd Scenario object attached to each, and applies
-    `pytest.mark.skip` when its (feature_basename, scenario_name) is
-    in WIP_SCENARIOS.
-    """
-    skip_marker = pytest.mark.skip(
-        reason="WIP: matcher implementation pending; see tests/client/wip_scenarios.py"
-    )
-    for item in items:
-        scen = getattr(getattr(item, "function", None), "__scenario__", None)
-        if scen is None:
-            continue
-        feature_basename = scen.feature.filename.rsplit("/", 1)[-1]
-        if (feature_basename, scen.name) in WIP_SCENARIOS:
-            item.add_marker(skip_marker)
-
 
 @dataclass
 class World:
