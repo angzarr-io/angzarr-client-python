@@ -116,11 +116,22 @@ the cross-file flow.
 Largest file. Pre-flight: estimate body count and decide whether to
 split into R8a/R8b (target ≤25 stubs per commit for review-ability).
 
-### R9 — edition_propagation.py (19 stubs)
-Last because: per triage, ~5 of these stubs need a small `World`
-extension (capture edition state across PM/saga dispatch hops). If the
-extension turns out cleaner as a dedicated R0a (Round-9-prep), pull it
-forward.
+### R9 — edition_propagation.py (19 stubs) — DELETED, not deferred
+Outcome: the file's scaffold was removed entirely. The
+edition-propagation contract is coordinator-tier (Rust sidecar) —
+implemented in `core/main/src/orchestration/process_manager/edition_propagation.rs`
+and `core/main/src/orchestration/saga/grpc/mod.rs:99-116`, with
+authoritative unit-test coverage in
+`process_manager/edition_propagation.test.rs`. The Python router
+dispatch path explicitly does not implement it (see
+`dispatch.py:644-645`, audit-#86 reversion).
+
+The Python client doesn't own coverage for coordinator-tier contracts,
+so the scaffold at `tests/client/steps/test_edition_propagation.py`
+was removed; the 8 `edition_propagation.feature` WIP entries were
+dropped from `WIP_SCENARIOS`. The feature file remains in the spec
+repo (`vendor/angzarr-project/features/coordinator-contract/`) but is
+never collected by Python pytest.
 
 ## Per-stub workflow
 

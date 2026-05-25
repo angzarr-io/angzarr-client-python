@@ -24,46 +24,15 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
         "command_handler.feature",
         "Handler-set ext on the emitted EventBook is not overridden",
     ),
-    # edition_propagation.feature — 7 scenarios deferred per
-    # WIP_CLEANUP_PLAN.md R9. The edition-propagation contract is
-    # coordinator-tier (Rust sidecar), not client-tier. The Python router
-    # dispatch path explicitly does not implement it (see
+    # edition_propagation.feature is NOT loaded by the Python test
+    # harness. The edition-propagation contract is coordinator-tier
+    # (Rust sidecar) — implemented in core/main/src/orchestration/
+    # {process_manager/edition_propagation.rs, saga/grpc/mod.rs:99-116}
+    # with authoritative unit-test coverage in process_manager/
+    # edition_propagation.test.rs. The Python router dispatch path
+    # explicitly does not implement it (see
     # angzarr_client/router/dispatch.py:644-645, audit-#86 reversion).
-    # Stubs live in tests/client/steps/test_edition_propagation.py with
-    # explanatory NotImplementedError messages. Un-skipping requires
-    # either a fake coordinator simulator in the test harness or a real
-    # coordinator-tier integration runner — separate engineering
-    # initiatives, not mechanical un-stubbing.
-    (
-        "edition_propagation.feature",
-        "Coordinator always overrides handler-set edition with source edition",
-    ),
-    (
-        "edition_propagation.feature",
-        "Coordinator always overrides handler-set edition with trigger edition",
-    ),
-    (
-        "edition_propagation.feature",
-        "PM propagates trigger edition to every emitted process_events book",
-    ),
-    (
-        "edition_propagation.feature",
-        "PM propagates trigger edition to outgoing commands",
-    ),
-    (
-        "edition_propagation.feature",
-        "Saga propagates main-timeline (empty) edition unchanged",
-    ),
-    (
-        "edition_propagation.feature",
-        "Saga propagates source edition to outgoing commands",
-    ),
-    (
-        "edition_propagation.feature",
-        "Saga propagates source edition to outgoing events",
-    ),
-    (
-        "edition_propagation.feature",
-        "Saga propagation preserves source edition divergences",
-    ),
+    # The Python client doesn't own coverage for coordinator-tier
+    # contracts, so the scaffold was removed (was
+    # tests/client/steps/test_edition_propagation.py).
 }
