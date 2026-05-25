@@ -263,3 +263,110 @@ def test_event_carries_incremented_sequence_from_seq_parameter():
     )
 
     assert response.events.pages[0].header.sequence == 7
+
+
+# --------------------------------------------------------------------------
+# Cover.ext propagation: command → emitted events
+# --------------------------------------------------------------------------
+
+
+def _make_command_with_ext(
+    cmd_msg, ext_msg, domain: str = "order"
+) -> ContextualCommand:
+    """Like ``_make_contextual_command`` but stamps ``cover.ext`` from
+    ``ext_msg`` on the command. Used to verify the framework copies the
+    ext slot onto the emitted EventBook's cover."""
+    any_cmd = ProtoAny()
+    any_cmd.type_url = f"type.googleapis.com/{cmd_msg.DESCRIPTOR.full_name}"
+    any_cmd.value = cmd_msg.SerializeToString()
+
+    page = CommandPage()
+    page.header.CopyFrom(PageHeader(sequence=0))
+    page.command.CopyFrom(any_cmd)
+
+    cover = Cover(domain=domain)
+    cover.ext.Pack(ext_msg, type_url_prefix="type.googleapis.com/")
+
+    book = CommandBook()
+    book.cover.CopyFrom(cover)
+    book.pages.append(page)
+
+    request = ContextualCommand()
+    request.command.CopyFrom(book)
+    return request
+
+
+def test_dispatch_propagates_cover_ext_from_command_to_events():
+    """Cover.ext on the incoming command is stamped onto the emitted
+    EventBook's cover.
+
+    Per the ``types.proto`` Cover doc: 'the framework stamps this slot
+    onto every event a child aggregate emits'. Tests the fill semantic
+    using a nested Cover packed into ``ext`` as the parent-routing
+    convention (consumers like ``unpack_parent_cover`` rely on this)."""
+
+    @command_handler(domain="order", state=OrderState)
+    class OrderAggregate:
+        @handles(CreateOrder)
+        def on_create(self, cmd, state, seq):
+            return OrderCreated(order_id=cmd.order_id)
+
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
+
+    parent_cover = Cover(domain="tournament")
+    request = _make_command_with_ext(CreateOrder(order_id="o-1"), parent_cover)
+    response = router.dispatch(request)
+
+    assert response.events.cover.HasField("ext")
+    unpacked = Cover()
+    assert response.events.cover.ext.Unpack(unpacked)
+    assert unpacked.domain == "tournament"
+
+
+def test_dispatch_does_not_override_handler_set_ext():
+    """Fill-only: if the handler-emitted EventBook already has ext set,
+    the propagation step must not override it. (Today the Python emit
+    path does not let handlers set the cover, so this case is exercised
+    by future-proofing the helper directly via _propagate_cover_ext.)"""
+    from angzarr_client.router.dispatch import _propagate_cover_ext
+
+    handler_cover = Cover(domain="from-handler")
+    handler_ext_carrier = Cover(domain="handler-set")
+    handler_cover.ext.Pack(handler_ext_carrier, type_url_prefix="type.googleapis.com/")
+
+    events = EventBook()
+    events.cover.CopyFrom(handler_cover)
+
+    cmd_book = CommandBook()
+    cmd_book.cover.CopyFrom(Cover(domain="order"))
+    cmd_book.cover.ext.Pack(
+        Cover(domain="command-set"), type_url_prefix="type.googleapis.com/"
+    )
+
+    _propagate_cover_ext(events, cmd_book)
+
+    # Handler's ext wins (fill-only — no override).
+    unpacked = Cover()
+    assert events.cover.ext.Unpack(unpacked)
+    assert unpacked.domain == "handler-set"
+
+
+def test_dispatch_no_command_ext_leaves_events_ext_unset():
+    """If the incoming command has no ext, the emitted EventBook's cover
+    ext stays unset — the framework doesn't synthesize one."""
+
+    @command_handler(domain="order", state=OrderState)
+    class OrderAggregate:
+        @handles(CreateOrder)
+        def on_create(self, cmd, state, seq):
+            return OrderCreated(order_id=cmd.order_id)
+
+    router = (
+        Router("agg").with_handler(OrderAggregate, lambda: OrderAggregate()).build()
+    )
+
+    response = router.dispatch(_make_contextual_command(CreateOrder(order_id="o-1")))
+
+    assert not response.events.cover.HasField("ext")

@@ -343,7 +343,9 @@ def dispatch_command(
                 raise
 
             response = BusinessResponse()
-            response.events.CopyFrom(_pack_events(emitted, base_seq=base_seq))
+            events_book = _pack_events(emitted, base_seq=base_seq)
+            _propagate_cover_ext(events_book, cmd_book)
+            response.events.CopyFrom(events_book)
             return response
 
     raise DispatchError(
@@ -860,6 +862,26 @@ def _merge_saga_output(emitted: Any, response: SagaResponse) -> None:
                 error_code=codes.SAGA_HANDLER_UNSUPPORTED_RETURN_TYPE,
                 extras={keys.ACTUAL_RETURN_TYPE: type(item).__name__},
             )
+
+
+def _propagate_cover_ext(events_book: EventBook, cmd_book: Any) -> None:
+    """Fill the emitted ``EventBook.cover.ext`` from the incoming command.
+
+    Per ``types.proto`` Cover documentation, the framework stamps the
+    ``ext`` slot onto every event a child aggregate emits so downstream
+    sagas/projectors can find the parent routing context (e.g. table
+    events carrying the tournament Cover) without each handler having
+    to thread it through manually.
+
+    Fill-only: never overrides an ext the handler set explicitly.
+    Other cover fields (domain/root/correlation_id/edition) stay the
+    coordinator's responsibility — we only touch ``ext``.
+    """
+    if not cmd_book.HasField("cover") or not cmd_book.cover.HasField("ext"):
+        return
+    if events_book.cover.HasField("ext"):
+        return
+    events_book.cover.ext.CopyFrom(cmd_book.cover.ext)
 
 
 def _pack_events(emitted: Any, base_seq: int) -> EventBook:
