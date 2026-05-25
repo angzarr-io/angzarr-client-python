@@ -17,42 +17,6 @@ needs implementation").
 """
 
 WIP_SCENARIOS: set[tuple[str, str]] = {
-    ("aggregate_client.feature", "A command for an unknown domain is refused"),
-    (
-        "aggregate_client.feature",
-        "A command missing required fields is refused with the field name",
-    ),
-    (
-        "aggregate_client.feature",
-        "A fire-and-forget command returns before downstream work runs",
-    ),
-    ("aggregate_client.feature", "A malformed command is refused as invalid"),
-    ("aggregate_client.feature", "A multi-event command lands atomically"),
-    ("aggregate_client.feature", "A single command can produce multiple events"),
-    (
-        "aggregate_client.feature",
-        "Commands carry a correlation ID through to their events",
-    ),
-    ("aggregate_client.feature", "Executing a command on a brand-new aggregate"),
-    ("aggregate_client.feature", "Executing a command on an existing aggregate"),
-    ("aggregate_client.feature", "Only one of two concurrent writes can land"),
-    (
-        "aggregate_client.feature",
-        "Retrying at the current sequence after a stale write succeeds",
-    ),
-    ("aggregate_client.feature", "Sending a command at the wrong sequence is refused"),
-    ("aggregate_client.feature", "The client surfaces a connection failure"),
-    (
-        "aggregate_client.feature",
-        "The client surfaces a timeout when the service is slow",
-    ),
-    ("aggregate_client.feature", "The first command on an aggregate creates it"),
-    (
-        "aggregate_client.feature",
-        "The first command on an aggregate must start at sequence 0",
-    ),
-    ("aggregate_client.feature", "Waiting for projectors before returning"),
-    ("aggregate_client.feature", "Waiting for the full saga chain before returning"),
     # C-0147 — framework gap: handlers can't set EventBook.cover.ext through
     # the current router/dispatch surface. Scenario stays WIP until a
     # public handler-cover API exists. Stubs live in test_command_handler.py.
