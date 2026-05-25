@@ -53,22 +53,6 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
     ),
     ("aggregate_client.feature", "Waiting for projectors before returning"),
     ("aggregate_client.feature", "Waiting for the full saga chain before returning"),
-    ("builder.feature", "A single saga handler builds a saga-routing router"),
-    ("builder.feature", "An unmarked component cannot be registered as a handler"),
-    (
-        "builder.feature",
-        "Command handlers for distinct domains build a command-handling router",
-    ),
-    (
-        "builder.feature",
-        "Each registered handler is introspected at most once at build time",
-    ),
-    ("builder.feature", "Empty configuration fails to build"),
-    ("builder.feature", "Mixed handler kinds are rejected"),
-    (
-        "builder.feature",
-        "Two command handlers for the same domain and command pair are rejected at build time",
-    ),
     # C-0147 — framework gap: handlers can't set EventBook.cover.ext through
     # the current router/dispatch surface. Scenario stays WIP until a
     # public handler-cover API exists. Stubs live in test_command_handler.py.
