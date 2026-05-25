@@ -104,9 +104,6 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
     ("domain-client.feature", "Fetching events through the fluent query builder"),
     ("domain-client.feature", "Reads and writes share the underlying connection"),
     ("domain-client.feature", "Sending a command through the fluent builder"),
-    ("process_manager.feature", "PM receives a trigger and emits a command"),
-    ("process_manager.feature", "PM skips events from domains outside its sources"),
-    ("process_manager.feature", "PM state is rebuilt from its own process events"),
     (
         "query_client.feature",
         "A correlation query gathers events across every aggregate it touched",
@@ -166,9 +163,6 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
         "rejected_compensation.feature",
         "State is rebuilt before the compensation handler runs",
     ),
-    ("rejection.feature", "A matching rejection fires the compensation"),
-    ("rejection.feature", "A rejection Payment does not compensate is ignored"),
-    ("rejection.feature", "Multiple compensators for the same rejection all run"),
     (
         "edition_propagation.feature",
         "Coordinator always overrides handler-set edition with source edition",

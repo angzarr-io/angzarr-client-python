@@ -25,6 +25,7 @@ class WorkflowState:
 
 
 @given(parsers.parse('a process manager "Fulfillment" with pm_domain "fulfillment"'))
+@given('a process manager "Fulfillment" for the fulfillment domain')
 def _given_pm_stub(world):
     world.classes["__pm_config__"] = {"pm_domain": "fulfillment"}
 
@@ -40,11 +41,13 @@ def _given_pm_targets(world, t):
 
 
 @given("the PM has state WorkflowState with orders_seen int")
+@given("the PM tracks the number of orders seen")
 def _given_pm_state(world):
     world.classes["__pm_config__"]["state"] = WorkflowState
 
 
 @given("the PM applies OrderCompleted by incrementing state.orders_seen")
+@given("OrderCompleted advances the orders-seen count")
 def _given_pm_applier(world):
     world.classes["__pm_applier__"] = True
 
@@ -55,6 +58,7 @@ def _given_pm_handler(world):
 
 
 @given("the router is built with the Fulfillment PM")
+@given("Fulfillment is the active process manager")
 def _given_pm_built(world):
     cfg = world.classes["__pm_config__"]
     observed = world.observed
@@ -119,6 +123,7 @@ def _given_pm_prior(world):
 
 
 @then(parsers.parse("the PM observed state.orders_seen = {n:d}"))
+@then(parsers.parse("the PM has seen {n:d} completed orders"))
 def _then_pm_orders_seen(world, n):
     assert world.observed["orders_seen"] == n
 
@@ -135,40 +140,3 @@ def _then_response_no_commands(world):
     """Mirror Rust's `the response contains no commands` assertion."""
     assert world.response is not None, "expected a dispatched response"
     assert len(world.response.commands) == 0
-
-
-# ---------------------------------------------------------------------------
-# WIP — Batch 6/7 new business-vocab phrasing
-# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
-# rather than passing silently. Replace each as the proper impl lands.
-# ---------------------------------------------------------------------------
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given('a process manager "Fulfillment" for the fulfillment domain')
-def _given_pm_fulfillment_for_domain(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given("the PM tracks the number of orders seen")
-def _given_pm_tracks_orders_seen(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given("OrderCompleted advances the orders-seen count")
-def _given_advance_orders_seen(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given("Fulfillment is the active process manager")
-def _given_fulfillment_active(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse("the PM has seen {n:d} completed orders"))
-def _then_pm_has_seen(world, n):
-    raise NotImplementedError("WIP: step needs implementation")
