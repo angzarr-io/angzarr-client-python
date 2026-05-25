@@ -30,6 +30,7 @@ def _given_projector_handler(world):
 
 
 @given("the router is built with the Output projector")
+@given("Output is the active projector")
 def _given_projector_built(world):
     world.handlers.append(world.classes["Output"]())
     h = world.handlers[0]
@@ -106,6 +107,7 @@ def _given_projector_counting(world):
 def _when_five_created(world):
     Output = world.classes["Output"]
     observed = world.observed
+    observed.setdefault("factory_calls", 0)
 
     def factory():
         observed["factory_calls"] += 1
@@ -125,20 +127,8 @@ def _then_factory_count(world, n):
     assert world.observed["factory_calls"] == n, world.observed["factory_calls"]
 
 
-# ---------------------------------------------------------------------------
-# WIP — Batch 6/7 new business-vocab phrasing
-# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
-# rather than passing silently. Replace each as the proper impl lands.
-# ---------------------------------------------------------------------------
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given("Output is the active projector")
-def _given_output_active_projector(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
 @then("every entry was appended by the same projector instance")
 def _then_entries_same_instance(world):
-    raise NotImplementedError("WIP: step needs implementation")
+    # Reuse semantic: factory is invoked exactly once per dispatch, even
+    # when the EventBook holds multiple matching events. See C-0086.
+    assert world.observed["factory_calls"] == 1, world.observed["factory_calls"]

@@ -679,6 +679,12 @@ def _when_build_player(world):
         'build fails with DuplicateCommandHandler for domain "{domain}" and {cmd_type}'
     )
 )
+@then(
+    parsers.parse(
+        "registration is rejected because two command handlers claim "
+        '{cmd_type} in "{domain}"'
+    )
+)
 def _then_build_fails_duplicate(world, domain, cmd_type):
     # Audit #72: BuildError carries structured `code` + `details` rather
     # than interpolating runtime values into the message.
@@ -696,6 +702,7 @@ def _then_build_fails_duplicate(world, domain, cmd_type):
 
 
 @then("build succeeds with a CommandHandlerRouter")
+@then("the configuration is accepted")
 def _then_build_succeeds_ch(world):
     from angzarr_client.router.runtime import CommandHandlerRouter
 
@@ -722,30 +729,11 @@ def _then_saga_b_calls(world, n):
     assert world.observed.get("saga_b_calls", 0) == n
 
 
-# ---------------------------------------------------------------------------
-# WIP — Batch 6/7 new business-vocab phrasing
-# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
-# rather than passing silently. Replace each as the proper impl lands.
-# ---------------------------------------------------------------------------
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(
-    parsers.parse(
-        'registration is rejected because two command handlers claim {cmd} in "{domain}"'
-    )
-)
-def _then_registration_rejected_dup(world, cmd, domain):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the configuration is accepted")
-def _then_configuration_accepted(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
 @then("each saga handles the event exactly once")
 def _then_each_saga_handles_once(world):
-    raise NotImplementedError("WIP: step needs implementation")
+    # C-0087 fan-out arity: each saga's handler runs exactly once per
+    # event regardless of how many matching @handles methods the class
+    # declares. Two sagas registered → call_log has SagaA and SagaB,
+    # each exactly once.
+    assert world.call_log.count("SagaA") == 1, world.call_log
+    assert world.call_log.count("SagaB") == 1, world.call_log
