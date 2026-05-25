@@ -80,45 +80,6 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
     ("compensation.feature", "Saga origin chain is maintained"),
     ("compensation.feature", "Saga rejections produce a compensation notification"),
     (
-        "query_client.feature",
-        "A correlation query gathers events across every aggregate it touched",
-    ),
-    ("query_client.feature", "A correlation query with no matches returns nothing"),
-    ("query_client.feature", "A query against an unknown aggregate returns nothing"),
-    (
-        "query_client.feature",
-        "A query as of a sequence returns history up to that point",
-    ),
-    (
-        "query_client.feature",
-        "A query as of a timestamp returns history up to that moment",
-    ),
-    ("query_client.feature", "A query fails clearly when the backend is unreachable"),
-    (
-        "query_client.feature",
-        "A query in a named edition returns only that edition's history",
-    ),
-    ("query_client.feature", "A query preserves event types and payloads exactly"),
-    ("query_client.feature", "A query returns the full history of an aggregate"),
-    (
-        "query_client.feature",
-        "A query surfaces the latest snapshot alongside the history",
-    ),
-    ("query_client.feature", "A query with an empty domain is refused"),
-    (
-        "query_client.feature",
-        "A range query starting at a sequence returns the tail of history",
-    ),
-    (
-        "query_client.feature",
-        "A range query starting past the end of history returns nothing",
-    ),
-    (
-        "query_client.feature",
-        "A range query with an upper bound includes both endpoints",
-    ),
-    ("query_client.feature", "An edition's history is isolated from the main timeline"),
-    (
         "edition_propagation.feature",
         "Coordinator always overrides handler-set edition with source edition",
     ),

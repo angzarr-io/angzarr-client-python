@@ -181,6 +181,7 @@ def _serve(state: _World, query: Query) -> EventBook:
 
 
 @given("a QueryClient connected to the test backend")
+@given("a query surface available")
 def _given_client(state: _World) -> None:
     _ensure_client(state)
 
@@ -429,6 +430,7 @@ def _when_attempt_query(state: _World) -> None:
 
 
 @then(parsers.parse("I should receive an EventBook with {count:d} events"))
+@then(parsers.parse("I receive {count:d} events"))
 def _then_receive_events(state: _World, count: int) -> None:
     assert state.last_book is not None, str(state.last_error)
     assert len(state.last_book.pages) == count
@@ -444,6 +446,7 @@ def _then_next_sequence(state: _World, seq: int) -> None:
 
 
 @then(parsers.parse("events should be in sequence order {start:d} to {end:d}"))
+@then(parsers.parse("the events are in sequence order {start:d} to {end:d}"))
 def _then_events_in_order(state: _World, start: int, end: int) -> None:
     assert state.last_book is not None
     for i, page in enumerate(state.last_book.pages):
@@ -451,6 +454,7 @@ def _then_events_in_order(state: _World, start: int, end: int) -> None:
 
 
 @then(parsers.parse('the first event should have type "{event_type}"'))
+@then(parsers.parse('the first event has type "{event_type}"'))
 def _then_first_event_type(state: _World, event_type: str) -> None:
     assert state.last_book is not None
     assert state.last_book.pages
@@ -458,6 +462,7 @@ def _then_first_event_type(state: _World, event_type: str) -> None:
 
 
 @then(parsers.parse('the first event should have payload "{payload}"'))
+@then(parsers.parse('the first event has payload "{payload}"'))
 def _then_first_event_payload(state: _World, payload: str) -> None:
     assert state.last_book is not None
     assert state.last_book.pages
@@ -467,6 +472,7 @@ def _then_first_event_payload(state: _World, payload: str) -> None:
 
 
 @then(parsers.parse("the first event should have sequence {seq:d}"))
+@then(parsers.parse("the first event has sequence {seq:d}"))
 def _then_first_event_sequence(state: _World, seq: int) -> None:
     assert state.last_book is not None
     assert state.last_book.pages
@@ -474,6 +480,7 @@ def _then_first_event_sequence(state: _World, seq: int) -> None:
 
 
 @then(parsers.parse("the last event should have sequence {seq:d}"))
+@then(parsers.parse("the last event has sequence {seq:d}"))
 def _then_last_event_sequence(state: _World, seq: int) -> None:
     assert state.last_book is not None
     assert state.last_book.pages
@@ -481,26 +488,37 @@ def _then_last_event_sequence(state: _World, seq: int) -> None:
 
 
 @then("I should receive events up to that timestamp")
+@then("I receive events up to that timestamp")
 def _then_receive_events_up_to_timestamp(state: _World) -> None:
     assert state.last_book is not None
 
 
 @then("I should receive events from that edition only")
+@then("I receive events from that edition only")
 def _then_receive_events_from_edition(state: _World) -> None:
     assert state.last_book is not None
     assert len(state.last_book.pages) > 0
 
 
 @then("I should receive events from all correlated aggregates")
+@then("I receive events from all correlated aggregates")
 def _then_receive_correlated_events(state: _World) -> None:
     assert state.last_book is not None
     assert state.last_book.pages
 
 
 @then("I should receive no events")
+@then("I receive no events")
 def _then_receive_no_events(state: _World) -> None:
     assert state.last_book is not None
     assert not state.last_book.pages
+
+
+@then("the history is empty and the next sequence is 0")
+def _then_history_empty_next_zero(state: _World) -> None:
+    assert state.last_book is not None
+    assert not state.last_book.pages
+    assert state.last_book.next_sequence == 0
 
 
 @then("the EventBook should include the snapshot")
@@ -510,12 +528,14 @@ def _then_event_book_includes_snapshot(state: _World) -> None:
 
 
 @then(parsers.parse("the returned snapshot should be at sequence {seq:d}"))
+@then(parsers.parse("the result carries a snapshot taken at sequence {seq:d}"))
 def _then_snapshot_at_sequence(state: _World, seq: int) -> None:
     assert state.last_book is not None
     assert state.last_book.snapshot.sequence == seq
 
 
 @then("the operation should fail with invalid argument error")
+@then("the query is refused because a domain is required")
 def _then_fail_invalid_argument(state: _World) -> None:
     assert state.last_error is not None
     assert isinstance(state.last_error, GRPCError)
@@ -523,6 +543,7 @@ def _then_fail_invalid_argument(state: _World) -> None:
 
 
 @then("the operation should fail with connection error")
+@then("the query fails because the backend is unreachable")
 def _then_fail_connection_error(state: _World) -> None:
     assert state.last_error is not None
     # `service unavailable` is mapped to GRPCError(UNAVAILABLE) here;
@@ -530,100 +551,3 @@ def _then_fail_connection_error(state: _World) -> None:
     # UNAVAILABLE — that's the cross-language contract.
     assert isinstance(state.last_error, GRPCError)
     assert state.last_error.is_connection_error()
-
-
-# ---------------------------------------------------------------------------
-# WIP — Batch 6/7 new business-vocab phrasing
-# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
-# rather than passing silently. Replace each as the proper impl lands.
-# ---------------------------------------------------------------------------
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given("a query surface available")
-def _given_query_surface_available(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the history is empty and the next sequence is 0")
-def _then_history_empty_next_zero(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse("I receive {count:d} events"))
-def _then_i_receive_events(state: _World, count: int) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse("the events are in sequence order {start:d} to {end:d}"))
-def _then_events_in_order_new(state: _World, start: int, end: int) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse('the first event has type "{event_type}"'))
-def _then_first_has_type(state: _World, event_type: str) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse('the first event has payload "{payload}"'))
-def _then_first_has_payload(state: _World, payload: str) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse("the first event has sequence {seq:d}"))
-def _then_first_has_sequence(state: _World, seq: int) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse("the last event has sequence {seq:d}"))
-def _then_last_has_sequence(state: _World, seq: int) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("I receive no events")
-def _then_i_receive_no_events(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("I receive events up to that timestamp")
-def _then_receive_to_timestamp(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("I receive events from that edition only")
-def _then_receive_from_edition_only(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("I receive events from all correlated aggregates")
-def _then_receive_correlated(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse("the result carries a snapshot taken at sequence {seq:d}"))
-def _then_result_carries_snapshot(state: _World, seq: int) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the query is refused because a domain is required")
-def _then_refused_domain_required(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the query fails because the backend is unreachable")
-def _then_query_fails_unreachable(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
