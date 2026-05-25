@@ -316,6 +316,7 @@ def _given_pm_router(comp_world: _World) -> None:
 
 
 @when("I build a CompensationContext")
+@when("the compensation context is constructed from the rejection")
 def _when_build_ctx(comp_world: _World) -> None:
     comp_world.compensation_context = _CompensationContext.from_rejection(
         comp_world.rejected_command,
@@ -381,18 +382,35 @@ def _when_pm_rejected(comp_world: _World) -> None:
 
 
 @then("the context should include the rejected command")
+@then("the context carries the rejected command")
 def _then_ctx_cmd(comp_world: _World) -> None:
     assert comp_world.compensation_context.rejected_command is not None
 
 
 @then("the context should include the rejection reason")
+@then("the context carries the rejection reason")
 def _then_ctx_reason(comp_world: _World) -> None:
     assert comp_world.compensation_context.rejection_reason != ""
 
 
 @then("the context should include the saga origin")
+@then("the context carries the saga origin")
+@then("the saga origin is preserved")
 def _then_ctx_origin(comp_world: _World) -> None:
     assert comp_world.compensation_context.saga_origin is not None
+
+
+@then("the correlation ID is preserved")
+def _then_correlation_preserved(comp_world: _World) -> None:
+    assert comp_world.compensation_context.correlation_id != ""
+
+
+@then("the source aggregate and sequence are recorded")
+def _then_source_agg_seq_recorded(comp_world: _World) -> None:
+    notif = comp_world.rejection_notification
+    assert notif is not None
+    assert notif.source_domain != ""
+    assert notif.source_event_sequence != 0
 
 
 @then(parsers.parse('the saga_origin saga_name should be "{expected}"'))
@@ -416,11 +434,13 @@ def _then_ctx_corr(comp_world: _World, expected: str) -> None:
 
 
 @then("the notification should include the rejected command")
+@then("the notification carries the rejected command")
 def _then_notif_cmd(comp_world: _World) -> None:
     assert comp_world.rejection_notification.rejected_command is not None
 
 
 @then("the notification should include the rejection reason")
+@then("the notification carries the rejection reason")
 def _then_notif_reason(comp_world: _World) -> None:
     assert comp_world.rejection_notification.rejection_reason != ""
 
@@ -441,6 +461,7 @@ def _then_source_seq(comp_world: _World, expected: int) -> None:
 
 
 @then(parsers.parse('the issuer_name should be "{expected}"'))
+@then(parsers.parse('the notification identifies the issuing saga as "{expected}"'))
 def _then_issuer_name(comp_world: _World, expected: str) -> None:
     assert comp_world.rejection_notification.issuer_name == expected
 
@@ -451,11 +472,13 @@ def _then_issuer_type(comp_world: _World, expected: str) -> None:
 
 
 @then("the notification should have a cover")
+@then("the notification has a cover")
 def _then_notif_cover(comp_world: _World) -> None:
     assert comp_world.notification.cover_domain != ""
 
 
 @then("the notification payload should contain RejectionNotification")
+@then("the notification payload contains a RejectionNotification")
 def _then_payload_has_rejection(comp_world: _World) -> None:
     assert "RejectionNotification" in comp_world.notification.payload_type_url
 
@@ -466,6 +489,7 @@ def _then_payload_type_url(comp_world: _World, expected: str) -> None:
 
 
 @then("the notification should have a sent_at timestamp")
+@then("the notification carries its dispatch time")
 def _then_notif_sent_at(comp_world: _World) -> None:
     assert comp_world.notification.sent_at > 0
 
@@ -476,6 +500,7 @@ def _then_timestamp_recent(comp_world: _World) -> None:
 
 
 @then("the command book should target the source aggregate")
+@then("the command book targets the source aggregate")
 def _then_targets_source(comp_world: _World) -> None:
     assert comp_world.command_book.cover.domain != ""
 
@@ -489,6 +514,7 @@ def _then_merge_commutative(comp_world: _World) -> None:
 
 
 @then("the command book should preserve correlation ID")
+@then("the command book preserves the correlation ID")
 def _then_preserves_corr(comp_world: _World) -> None:
     assert comp_world.command_book.cover.correlation_id != ""
 
@@ -504,21 +530,25 @@ def _then_book_root(comp_world: _World) -> None:
 
 
 @then(parsers.parse('the rejection_reason should be "{expected}"'))
+@then(parsers.parse('the rejection reason equals "{expected}"'))
 def _then_rejection_reason(comp_world: _World, expected: str) -> None:
     assert comp_world.rejection_notification.rejection_reason == expected
 
 
 @then("the rejection_reason should contain the full error details")
+@then("the rejection reason carries the full error details")
 def _then_reason_has_details(comp_world: _World) -> None:
     assert "structured" in comp_world.rejection_notification.rejection_reason
 
 
 @then("the rejected_command should be the original command")
+@then("the rejected command is the original command")
 def _then_rejected_is_original(comp_world: _World) -> None:
     assert comp_world.rejection_notification.rejected_command is not None
 
 
 @then("all command fields should be preserved")
+@then("all command fields are preserved")
 def _then_fields_preserved(comp_world: _World) -> None:
     cmd = comp_world.rejection_notification.rejected_command
     assert cmd.HasField("cover")
@@ -526,11 +556,13 @@ def _then_fields_preserved(comp_world: _World) -> None:
 
 
 @then("the full saga origin chain should be preserved")
+@then("the full saga origin chain is preserved")
 def _then_chain_preserved(comp_world: _World) -> None:
     assert comp_world.compensation_context.saga_origin is not None
 
 
 @then("root cause can be traced through the chain")
+@then("the root cause can be traced through the chain")
 def _then_trace_root(comp_world: _World) -> None:
     assert comp_world.compensation_context.saga_origin.triggering_domain != ""
 
@@ -541,6 +573,8 @@ def _then_router_builds(comp_world: _World) -> None:
 
 
 @then("the router should emit a rejection notification")
+@then("saga rejections produce a compensation notification")
+@then("process manager rejections produce a compensation notification")
 def _then_router_emits(comp_world: _World) -> None:
     notif = comp_world.compensation_context.build_rejection_notification()
     assert notif.rejection_reason != ""
@@ -550,142 +584,3 @@ def _then_router_emits(comp_world: _World) -> None:
 def _then_ctx_issuer_type(comp_world: _World, expected: str) -> None:
     # PM/saga distinction is simulated — accept either as long as the scenario asks
     assert expected in ("saga", "process_manager")
-
-
-# ---------------------------------------------------------------------------
-# WIP — Batch 6/7 new business-vocab phrasing
-# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
-# rather than passing silently. Replace each as the proper impl lands.
-# ---------------------------------------------------------------------------
-
-
-# TODO (WIP): Implement this step matcher properly.
-@when("the compensation context is constructed from the rejection")
-def _when_construct_from_rejection(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the context carries the rejected command")
-def _then_ctx_carries_cmd(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the context carries the rejection reason")
-def _then_ctx_carries_reason(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the context carries the saga origin")
-def _then_ctx_carries_origin(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the saga origin is preserved")
-def _then_saga_origin_preserved(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the correlation ID is preserved")
-def _then_correlation_preserved(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the notification carries the rejected command")
-def _then_notif_carries_cmd(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the notification carries the rejection reason")
-def _then_notif_carries_reason(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the source aggregate and sequence are recorded")
-def _then_source_agg_seq_recorded(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse('the notification identifies the issuing saga as "{name}"'))
-def _then_identifies_issuing_saga(comp_world: _World, name: str) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the notification has a cover")
-def _then_notification_has_cover(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the notification payload contains a RejectionNotification")
-def _then_notif_payload_contains(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the notification carries its dispatch time")
-def _then_notif_carries_dispatch_time(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the command book preserves the correlation ID")
-def _then_book_preserves_correlation(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse('the rejection reason equals "{expected}"'))
-def _then_rejection_reason_equals(comp_world: _World, expected: str) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the rejection reason carries the full error details")
-def _then_reason_full_details(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the rejected command is the original command")
-def _then_rejected_is_original_new(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("all command fields are preserved")
-def _then_all_fields_preserved(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the full saga origin chain is preserved")
-def _then_full_chain_preserved(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the root cause can be traced through the chain")
-def _then_root_cause_traced(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("saga rejections produce a compensation notification")
-def _then_saga_produces_compensation(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("process manager rejections produce a compensation notification")
-def _then_pm_produces_compensation(comp_world: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
