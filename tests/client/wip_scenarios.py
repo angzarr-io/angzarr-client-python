@@ -69,33 +69,12 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
         "builder.feature",
         "Two command handlers for the same domain and command pair are rejected at build time",
     ),
-    (
-        "command_handler.feature",
-        "Aggregate-supplied initial state constructs an already-created order",
-    ),
-    (
-        "command_handler.feature",
-        "Command cover.ext is stamped onto the emitted EventBook's cover",
-    ),
-    (
-        "command_handler.feature",
-        "Default state constructor is used when the aggregate does not supply its own",
-    ),
-    ("command_handler.feature", "Handler returning None yields empty BusinessResponse"),
+    # C-0147 — framework gap: handlers can't set EventBook.cover.ext through
+    # the current router/dispatch surface. Scenario stays WIP until a
+    # public handler-cover API exists. Stubs live in test_command_handler.py.
     (
         "command_handler.feature",
         "Handler-set ext on the emitted EventBook is not overridden",
-    ),
-    (
-        "command_handler.feature",
-        "No command ext leaves the emitted EventBook cover.ext unset",
-    ),
-    ("command_handler.feature", "State is rebuilt from prior events before dispatch"),
-    ("command_handler.feature", "Unknown aggregate receives a creation command"),
-    ("command_handler.feature", "Unknown command type returns INVALID_ARGUMENT"),
-    (
-        "command_handler.feature",
-        "With zero prior events, state remains at its constructed default",
     ),
     ("compensation.feature", "Build context from rejected command"),
     ("compensation.feature", "Build notification command book for routing"),
