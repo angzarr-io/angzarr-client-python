@@ -95,15 +95,6 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
     ("compensation.feature", "Rejection reason is preserved exactly"),
     ("compensation.feature", "Saga origin chain is maintained"),
     ("compensation.feature", "Saga rejections produce a compensation notification"),
-    ("domain-client.feature", "Closing the client severs both read and write paths"),
-    (
-        "domain-client.feature",
-        "Connecting to a domain exposes both query and command access",
-    ),
-    ("domain-client.feature", "Connecting via environment variable"),
-    ("domain-client.feature", "Fetching events through the fluent query builder"),
-    ("domain-client.feature", "Reads and writes share the underlying connection"),
-    ("domain-client.feature", "Sending a command through the fluent builder"),
     (
         "query_client.feature",
         "A correlation query gathers events across every aggregate it touched",
@@ -143,26 +134,6 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
         "A range query with an upper bound includes both endpoints",
     ),
     ("query_client.feature", "An edition's history is isolated from the main timeline"),
-    (
-        "rejected_compensation.feature",
-        "Compensation events are appended in sequence after prior history",
-    ),
-    (
-        "rejected_compensation.feature",
-        "Compensation handlers route by (source_domain, command) pair",
-    ),
-    (
-        "rejected_compensation.feature",
-        "Multiple compensation handlers on one class do not cross-fire",
-    ),
-    (
-        "rejected_compensation.feature",
-        "No matching compensation handler yields empty compensation",
-    ),
-    (
-        "rejected_compensation.feature",
-        "State is rebuilt before the compensation handler runs",
-    ),
     (
         "edition_propagation.feature",
         "Coordinator always overrides handler-set edition with source edition",

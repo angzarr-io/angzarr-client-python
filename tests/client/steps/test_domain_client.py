@@ -169,6 +169,7 @@ def _given_aggregate_with_events(
 
 
 @given("a connected DomainClient")
+@given("a connected domain client")
 def _given_connected(state: _World) -> None:
     state.client = _make_client(state)
 
@@ -192,11 +193,13 @@ def _given_env_var(state: _World, var_name: str) -> None:
 
 
 @when("I create a DomainClient for the coordinator endpoint")
+@when("I create a domain client for the coordinator endpoint")
 def _when_create_coordinator(state: _World) -> None:
     state.client = _make_client(state)
 
 
 @when(parsers.parse('I create a DomainClient for domain "{domain}"'))
+@when(parsers.parse('I create a domain client for domain "{domain}"'))
 def _when_create_domain(state: _World, domain: str) -> None:
     state.domain = domain
     state.client = _make_client(state)
@@ -259,6 +262,7 @@ def _when_query_resulting(state: _World) -> None:
 
 
 @when("I close the DomainClient")
+@when("I close the domain client")
 def _when_close(state: _World) -> None:
     """Mark all wrapped mocks as closed so subsequent calls raise
     ConnectionError. The composed DomainClient `close()` would normally
@@ -271,6 +275,7 @@ def _when_close(state: _World) -> None:
 
 
 @when(parsers.parse('I create a DomainClient from environment variable "{var_name}"'))
+@when(parsers.parse('I create a domain client from environment variable "{var_name}"'))
 def _when_create_from_env(state: _World, var_name: str) -> None:
     state.env_var_name = var_name
     state.client = _make_client(state)
@@ -294,12 +299,14 @@ def _then_can_command(state: _World) -> None:
 
 
 @then("I should receive a CommandResponse")
+@then("I should receive a command response")
 def _then_command_response(state: _World) -> None:
     assert state.last_command_resp is not None
     assert isinstance(state.last_command_resp, CommandResponse)
 
 
 @then(parsers.parse("I should receive {count:d} EventPages"))
+@then(parsers.parse("I should receive {count:d} event pages"))
 def _then_event_pages(state: _World, count: int) -> None:
     assert state.fetched_pages == count
 
@@ -316,6 +323,7 @@ def _then_same_connection(state: _World) -> None:
 
 
 @then("subsequent commands should fail with ConnectionError")
+@then("subsequent commands should fail with a connection error")
 def _then_commands_fail(state: _World) -> None:
     """After close(), the recording mock raises ConnectionError on the
     next handle_command call. Real DomainClient.close() closes the
@@ -327,6 +335,7 @@ def _then_commands_fail(state: _World) -> None:
 
 
 @then("subsequent queries should fail with ConnectionError")
+@then("subsequent queries should fail with a connection error")
 def _then_queries_fail(state: _World) -> None:
     assert state.closed
     assert state.client is not None
@@ -335,6 +344,7 @@ def _then_queries_fail(state: _World) -> None:
 
 
 @then("the DomainClient should be connected")
+@then("the domain client should be connected")
 def _then_connected(state: _World) -> None:
     assert state.client is not None
     # Connectedness in the injected case = the wrapped clients are not
@@ -367,70 +377,3 @@ def _then_env_var_name(state: _World, expected: str) -> None:
     assert (
         state.env_var_name == expected
     ), f"state.env_var_name={state.env_var_name!r} expected={expected!r}"
-
-
-# ---------------------------------------------------------------------------
-# WIP — Batch 6/7 new business-vocab phrasing
-# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
-# rather than passing silently. Replace each as the proper impl lands.
-# ---------------------------------------------------------------------------
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given("a connected domain client")
-def _given_connected_domain_client(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@when("I create a domain client for the coordinator endpoint")
-def _when_create_domain_client_coord(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@when(parsers.parse('I create a domain client for domain "{domain}"'))
-def _when_create_domain_client_for(state: _World, domain: str) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@when("I close the domain client")
-def _when_close_domain_client(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@when(parsers.parse('I create a domain client from environment variable "{var_name}"'))
-def _when_create_from_env_lowercase(state: _World, var_name: str) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("I should receive a command response")
-def _then_should_receive_command_response(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then(parsers.parse("I should receive {count:d} event pages"))
-def _then_should_receive_event_pages(state: _World, count: int) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("subsequent commands should fail with a connection error")
-def _then_subsequent_commands_fail(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("subsequent queries should fail with a connection error")
-def _then_subsequent_queries_fail(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@then("the domain client should be connected")
-def _then_domain_client_connected(state: _World) -> None:
-    raise NotImplementedError("WIP: step needs implementation")

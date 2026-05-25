@@ -47,6 +47,9 @@ def _given_stateful(world):
 
 
 @given('a command handler "Payment" for domain "payment" with two @rejected handlers')
+@given(
+    'a command handler "Payment" for domain "payment" with two compensation handlers'
+)
 def _given_two_rejected(world):
     world.classes["__variant__"] = "double"
 
@@ -61,6 +64,7 @@ def _given_no_rejected(world):
 
 
 @given("Payment @applies FundsDeposited by setting state.bankroll")
+@given("deposits update Payment's bankroll")
 def _payment_applies(world):
     world.classes["__applies__"] = True
 
@@ -68,6 +72,10 @@ def _payment_applies(world):
 @given(
     'Payment has a @rejected("inventory", "ReserveStock") handler that emits '
     "FundsReleased carrying state.bankroll"
+)
+@given(
+    "Payment compensates a rejected ReserveStock from inventory by emitting "
+    "FundsReleased with the current bankroll"
 )
 def _build_stateful_funds(world):
     applies_on = world.classes.get("__applies__", False)
@@ -91,6 +99,10 @@ def _build_stateful_funds(world):
     'Payment has a @rejected("inventory", "ReserveStock") handler emitting '
     "two FundsReleased events"
 )
+@given(
+    "Payment compensates a rejected ReserveStock from inventory by emitting "
+    "two FundsReleased events"
+)
 def _build_two_events(world):
     @command_handler(domain="payment", state=_PaymentState)
     class Payment:
@@ -108,6 +120,9 @@ def _build_two_events(world):
     'Payment has a @rejected("inventory", "ReserveStock") handler emitting '
     "FundsReleased"
 )
+@given(
+    "Payment compensates a rejected ReserveStock from inventory by emitting FundsReleased"
+)
 def _add_funds_released(world):
     world.classes.setdefault("__pending__", {})["funds_released"] = True
     _maybe_build_double(world)
@@ -116,6 +131,9 @@ def _add_funds_released(world):
 @given(
     'Payment has a @rejected("payment", "ProcessPayment") handler emitting '
     "WorkflowFailed"
+)
+@given(
+    "Payment compensates a rejected ProcessPayment from payment by emitting WorkflowFailed"
 )
 def _add_workflow_failed(world):
     world.classes.setdefault("__pending__", {})["workflow_failed"] = True
@@ -144,6 +162,7 @@ def _maybe_build_double(world):
 
 
 @given("the router is built with the Payment handler")
+@given("Payment is configured")
 def _given_router_built(world):
     cls = world.classes["Payment"]
     inst = cls()
@@ -158,6 +177,9 @@ def _given_router_built(world):
     parsers.parse(
         "a prior EventBook with a FundsDeposited event of bankroll {amount:d}"
     )
+)
+@given(
+    parsers.parse("a prior history with a FundsDeposited event of bankroll {amount:d}")
 )
 def _given_prior_deposited(world, amount: int):
     from tests.client.steps._helpers import event_book
@@ -176,6 +198,18 @@ def _given_prior_next_seq(world, seq: int):
     world.prior_events = book
 
 
+@given(parsers.parse("a prior history ending at sequence {seq:d}"))
+def _given_prior_history_ending_at(world, seq: int):
+    # "Ending at sequence N" → last event was at N → next event at N+1.
+    # The old "whose next_sequence is" vocab set next_sequence directly;
+    # this one means the sequence of the LAST event, so add 1.
+    from tests.client.steps._helpers import event_book
+
+    book = event_book([], domain="payment")
+    book.next_sequence = seq + 1
+    world.prior_events = book
+
+
 # --- When -------------------------------------------------------------------
 
 
@@ -185,6 +219,7 @@ def _given_prior_next_seq(world, seq: int):
         "is dispatched"
     )
 )
+@when(parsers.parse("a rejection of {cmd_kind} arrives from {target}"))
 def _when_notification_dispatched(world, cmd_kind: str, target: str):
     ctors = {
         "ReserveStock": lambda: ReserveStock(order_id="o-1", sku="sku-1", quantity=1),
@@ -251,88 +286,6 @@ def _then_sequences(world, seq_list: str):
     assert actual == expected, f"expected {expected}, got {actual}"
 
 
-# ---------------------------------------------------------------------------
-# WIP — Batch 6/7 new business-vocab phrasing
-# Stubs raise NotImplementedError so unimplemented vocabulary fails loudly
-# rather than passing silently. Replace each as the proper impl lands.
-# ---------------------------------------------------------------------------
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given("deposits update Payment's bankroll")
-def _given_deposits_update_bankroll(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given(
-    "Payment compensates a rejected ReserveStock from inventory by emitting "
-    "FundsReleased with the current bankroll"
-)
-def _given_compensates_with_bankroll(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given(
-    'a command handler "Payment" for domain "payment" with two compensation handlers'
-)
-def _given_payment_two_compensation_handlers(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given(
-    "Payment compensates a rejected ReserveStock from inventory by emitting FundsReleased"
-)
-def _given_compensates_reserve(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given(
-    "Payment compensates a rejected ProcessPayment from payment by emitting WorkflowFailed"
-)
-def _given_compensates_process_payment(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given(
-    "Payment compensates a rejected ReserveStock from inventory by emitting "
-    "two FundsReleased events"
-)
-def _given_compensates_two_funds(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given("Payment is configured")
-def _given_payment_configured(world):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given(
-    parsers.parse("a prior history with a FundsDeposited event of bankroll {amount:d}")
-)
-def _given_prior_history_bankroll(world, amount):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@given(parsers.parse("a prior history ending at sequence {seq:d}"))
-def _given_prior_history_ending(world, seq):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
-@when(parsers.parse("a rejection of {cmd_kind} arrives from {target}"))
-def _when_rejection_arrives(world, cmd_kind, target):
-    raise NotImplementedError("WIP: step needs implementation")
-
-
-# TODO (WIP): Implement this step matcher properly.
 @then(
     parsers.parse(
         "compensation events are appended after sequence {prior:d}, "
@@ -340,4 +293,9 @@ def _when_rejection_arrives(world, cmd_kind, target):
     )
 )
 def _then_compensation_appended_after(world, prior, a, b):
-    raise NotImplementedError("WIP: step needs implementation")
+    # New-vocab equivalent of _then_sequences: assert the compensation
+    # events take exactly [a, b] in sequence order. `prior` is informational
+    # (the next_sequence on the inbound EventBook); the cucumber asserts
+    # the framework picked up from there.
+    actual = [int(p.header.sequence) for p in _pages(world)]
+    assert actual == [a, b], f"expected [{a}, {b}], got {actual}; prior={prior}"
