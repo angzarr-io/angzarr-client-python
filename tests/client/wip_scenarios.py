@@ -24,6 +24,16 @@ WIP_SCENARIOS: set[tuple[str, str]] = {
         "command_handler.feature",
         "Handler-set ext on the emitted EventBook is not overridden",
     ),
+    # edition_propagation.feature — 7 scenarios deferred per
+    # WIP_CLEANUP_PLAN.md R9. The edition-propagation contract is
+    # coordinator-tier (Rust sidecar), not client-tier. The Python router
+    # dispatch path explicitly does not implement it (see
+    # angzarr_client/router/dispatch.py:644-645, audit-#86 reversion).
+    # Stubs live in tests/client/steps/test_edition_propagation.py with
+    # explanatory NotImplementedError messages. Un-skipping requires
+    # either a fake coordinator simulator in the test harness or a real
+    # coordinator-tier integration runner — separate engineering
+    # initiatives, not mechanical un-stubbing.
     (
         "edition_propagation.feature",
         "Coordinator always overrides handler-set edition with source edition",
