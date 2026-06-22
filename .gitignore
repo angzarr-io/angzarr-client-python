@@ -75,3 +75,6 @@ sererr/**/*_pb2_grpc.pyi
 # scripts/generate_protos.py relocates it; gitignore the transient too.
 /google/
 /health/
+
+# mutation testing reports (disposable)
+mutants-reports/
