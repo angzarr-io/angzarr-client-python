@@ -1,5 +1,9 @@
 [build-system]
-requires = ["hatchling"]
+# grpcio-tools generates the framework protos (protoc + gRPC plugin, protobuf
+# 7.x gencode) and serves prost-build's protoc while cargo builds the
+# router-ffi library (hatch_build.py, scripts/native_build.py). Building a
+# wheel needs cargo on PATH and Linux x86_64.
+requires = ["hatchling", "grpcio-tools>=1.84,<1.85"]
 build-backend = "hatchling.build"
 
 [project]
@@ -43,6 +47,7 @@ Documentation = "https://angzarr.io/docs"
 
 [project.optional-dependencies]
 dev = [
+    "grpcio-tools>=1.84,<1.85",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-bdd>=7.0.0",
@@ -63,7 +68,8 @@ path = "VERSION"
 pattern = "(?P<version>.+)"
 
 [tool.hatch.build]
-# Generated protos and the vendored router-ffi library are not in git.
+# Generated protos and the router-ffi library are built into the wheel, not
+# kept in git.
 artifacts = [
     "angzarr_client/proto/**/*.py",
     "angzarr_client/proto/**/*.pyi",
@@ -72,6 +78,28 @@ artifacts = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["angzarr_client"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+# Everything a wheel build needs: the package, the build hook and scripts,
+# the spec protos and the router sources at their pinned revisions.
+include = [
+    "angzarr_client/**/*.py",
+    "codegen/",
+    "hatch_build.py",
+    "scripts/",
+    "VERSION",
+    "README.md",
+    "LICENSE",
+    "angzarr-project/proto/",
+    "angzarr-router/Cargo.toml",
+    "angzarr-router/Cargo.lock",
+    "angzarr-router/crates/",
+    "angzarr-router/proto/",
+]
+exclude = ["angzarr_client/proto/io", "angzarr_client/proto/sererr"]
 
 [tool.pytest.ini_options]
 # Feature paths are relative to the angzarr-project submodule
@@ -98,8 +126,10 @@ source_paths = [
     "angzarr_client/client.py",
     "angzarr_client/errors.py",
     "angzarr_client/helpers.py",
+    "angzarr_client/host.py",
     "angzarr_client/identity.py",
     "angzarr_client/retry.py",
+    "angzarr_client/server.py",
     "angzarr_client/validation.py",
     "angzarr_client/wrappers.py",
     "angzarr_client/router/_dispatch.py",
@@ -108,7 +138,7 @@ pytest_add_cli_args_test_selection = ["tests/"]
 # mutmut runs the suite from a copy under mutants/: the tests read the spec
 # features (angzarr-project), the router conformance suite (angzarr-router)
 # and scripts/ in place.
-also_copy = ["angzarr_client/", "angzarr-project/", "angzarr-router/", "scripts/"]
+also_copy = ["angzarr_client/", "angzarr-project/", "angzarr-router/", "scripts/", "codegen/"]
 
 [tool.ruff]
 exclude = [

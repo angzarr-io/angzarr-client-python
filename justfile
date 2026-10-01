@@ -10,37 +10,21 @@ TOP := justfile_directory()
 CLI_REV := "734b1bbdd4e913f19f8cb87f3f1dd95c06053d99"
 CLI := env_var_or_default("ANGZARR_CLI", TOP / ".tools" / "angzarr")
 
-# The router-ffi cdylib, built from the angzarr-router submodule (the pinned
-# revision) and vendored into the package (`just router-lib`).
-ROUTER_LIB_DIR := TOP / "angzarr_client" / "router" / "_lib"
-ROUTER_TARGET := TOP / ".router-target"
 
 default:
     @just --list
 
 # Python types for the framework contract and the router ABI
-# (angzarr_client/proto/, gitignored), with imports rerooted under the package.
+# (angzarr_client/proto/, gitignored), generated with grpcio-tools and with
+# imports rerooted under the package (scripts/native_build.py; the wheel build
+# runs the same code).
 proto:
-    rm -rf {{TOP}}/angzarr_client/proto/io {{TOP}}/angzarr_client/proto/sererr
-    cd {{TOP}} && buf generate --template buf.gen.yaml \
-        --path angzarr-project/proto/io/angzarr/v1 \
-        --path angzarr-project/proto/io/angzarr/status \
-        --path angzarr-project/proto/sererr \
-        --path angzarr-router/proto/io
-    cd {{TOP}} && uv run python scripts/fixup_gen_imports.py angzarr_client/proto \
-        io=angzarr_client.proto.io sererr=angzarr_client.proto.sererr
+    cd {{TOP}} && uv run --extra dev python scripts/native_build.py proto
 
 # Build the router-ffi cdylib from the pinned angzarr-router submodule against
 # this repository's angzarr-project protos, and vendor it into the package.
 router-lib:
-    cd {{TOP}} && ANGZARR_PROJECT_PROTO={{TOP}}/angzarr-project/proto \
-        cargo build --manifest-path angzarr-router/Cargo.toml -p angzarr-router-ffi \
-        --release --target-dir {{ROUTER_TARGET}}
-    mkdir -p {{ROUTER_LIB_DIR}}
-    for lib in libangzarr_router_ffi.so libangzarr_router_ffi.dylib angzarr_router_ffi.dll; do \
-        if [ -f {{ROUTER_TARGET}}/release/$lib ]; then cp {{ROUTER_TARGET}}/release/$lib {{ROUTER_LIB_DIR}}/; fi; \
-    done
-    ls {{ROUTER_LIB_DIR}}
+    cd {{TOP}} && uv run --extra dev python scripts/native_build.py router-lib
 
 # Install the angzarr CLI at CLI_REV into .tools/ (skipped when ANGZARR_CLI
 # names another binary).
@@ -147,9 +131,13 @@ mutation-test: prepare
     echo "Kill rate: ${rate}% (${killed}/${evaluated} evaluable; ${no_tests} untested)"
     if [ "$rate" -lt 80 ]; then echo "FAIL: kill rate below 80%"; exit 1; fi
 
-# Build the package (wheel ships the generated protos and the router library).
-build: prepare
+# Build the sdist and the manylinux wheel (the wheel build generates the protos
+# and builds the router library itself), then prove the wheel installs and
+# loads in a clean environment.
+build:
+    rm -rf {{TOP}}/dist
     cd {{TOP}} && uv build
+    cd {{TOP}} && uv run --isolated --no-project --with dist/*.whl python scripts/check_wheel.py
 
 # Publish to PyPI
 publish: build

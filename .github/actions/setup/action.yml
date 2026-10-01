@@ -1,8 +1,9 @@
 name: Toolchains
 description: >
-  The tools the justfile recipes call: just, uv, buf, Go (builds the angzarr
-  CLI at the justfile's CLI_REV), Rust + protoc (build the router-ffi cdylib
-  from the angzarr-router submodule).
+  The tools the justfile recipes call: just, uv, buf (renders the codegen
+  templates), Go (builds the angzarr CLI at the justfile's CLI_REV) and Rust
+  (builds the router-ffi cdylib from the angzarr-router submodule; protoc
+  comes from grpcio-tools).
 runs:
   using: composite
   steps:
@@ -15,9 +16,6 @@ runs:
       with:
         go-version: "1.25"
         cache: false
-    - name: protoc
-      shell: bash
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
     - uses: Swatinem/rust-cache@v2
       with:
         workspaces: angzarr-router -> ../.router-target
