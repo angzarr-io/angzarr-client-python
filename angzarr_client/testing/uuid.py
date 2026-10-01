@@ -19,16 +19,16 @@ def uuid_for(name: str, namespace: UUID = DEFAULT_TEST_NAMESPACE) -> bytes:
     Returns bytes suitable for use as aggregate root IDs.
 
     Args:
-        name: A string identifier (e.g., "player-alice", "table-1")
+        name: A string identifier (e.g., "entity-1")
         namespace: UUID namespace for generation (defaults to test namespace)
 
     Returns:
         16-byte UUID as bytes
 
     Example:
-        root = uuid_for("player-alice")
+        root = uuid_for("entity-1")
         assert len(root) == 16
-        assert uuid_for("player-alice") == root  # deterministic
+        assert uuid_for("entity-1") == root  # deterministic
     """
     return uuid5(namespace, name).bytes
 
@@ -44,7 +44,7 @@ def uuid_str_for(name: str, namespace: UUID = DEFAULT_TEST_NAMESPACE) -> str:
         UUID as standard string format (8-4-4-4-12)
 
     Example:
-        id_str = uuid_str_for("player-alice")
+        id_str = uuid_str_for("entity-1")
         assert "-" in id_str  # standard UUID format
     """
     return str(uuid5(namespace, name))
@@ -61,8 +61,8 @@ def uuid_obj_for(name: str, namespace: UUID = DEFAULT_TEST_NAMESPACE) -> UUID:
         UUID object
 
     Example:
-        id_obj = uuid_obj_for("player-alice")
-        assert id_obj.bytes == uuid_for("player-alice")
+        id_obj = uuid_obj_for("entity-1")
+        assert id_obj.bytes == uuid_for("entity-1")
     """
     return uuid5(namespace, name)
 

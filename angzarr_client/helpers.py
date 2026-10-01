@@ -143,7 +143,7 @@ def decode_event(page: EventPage, full_type_name: str, msg_class: type[T]) -> T 
     """Decode a page's event payload if its type URL matches the given name.
 
     Runtime-name dispatch — ``full_type_name`` is the fully-qualified
-    proto name (e.g. ``"orders.OrderCreated"``), compared exactly with the
+    proto name (e.g. ``"my.pkg.v1.SomethingHappened"``), compared exactly with the
     name after the type URL's last ``/`` (any prefix). The class-keyed shortcut is
     ``EventPage(page).decode_typed(msg_class)`` (derives the name from
     ``msg_class.DESCRIPTOR.full_name``); use this free function when the

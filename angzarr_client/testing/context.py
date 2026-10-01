@@ -30,20 +30,20 @@ class ScenarioContext:
 
     Example:
         ctx = ScenarioContext()
-        ctx.domain = "player"
-        ctx.root = uuid_for("player-alice")
+        ctx.domain = "my-domain"
+        ctx.root = uuid_for("entity-1")
 
-        # Given player registered
-        ctx.add_event(PlayerRegistered(email="alice@test.com"))
+        # Given a prior event
+        ctx.add_event(SomethingHappened(value=1))
 
-        # When deposit funds
+        # When a command runs
         try:
-            ctx.result = handler.handle(deposit_cmd, ctx.event_book())
+            ctx.result = handler.handle(command, ctx.event_book())
         except CommandRejectedError as e:
             ctx.error = e
 
-        # Then balance updated
-        assert ctx.result.new_balance == 100
+        # Then its result reflects the prior event
+        assert ctx.result.total == 1
     """
 
     # Current aggregate being tested

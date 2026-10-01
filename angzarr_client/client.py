@@ -58,7 +58,7 @@ def resolve_ch_endpoint(
     """Resolve domain to command handler coordinator endpoint.
 
     Args:
-        domain: The domain name (e.g., "player", "table", "hand")
+        domain: The domain name
         mode: Transport mode. If None, detected from ANGZARR_MODE env var.
         uds_base: Base path for Unix Domain Sockets (standalone mode)
         namespace: Kubernetes namespace (distributed mode)
@@ -66,8 +66,8 @@ def resolve_ch_endpoint(
 
     Returns:
         Endpoint string suitable for _create_channel:
-        - Standalone: /tmp/angzarr/ch-player.sock
-        - Distributed: ch-player.angzarr.svc:1310
+        - Standalone: /tmp/angzarr/ch-<domain>.sock
+        - Distributed: ch-<domain>.angzarr.svc:1310
 
     Environment Variables:
         ANGZARR_MODE: "standalone" or "distributed" (default: "distributed")
@@ -585,7 +585,7 @@ class DomainClient:
         Resolves the domain name to the appropriate endpoint based on transport mode.
 
         Args:
-            domain: Domain name (e.g., "player", "table")
+            domain: Domain name
             mode: Transport mode (standalone=UDS, distributed=K8s DNS).
                   If None, detected from ANGZARR_MODE env var.
 
@@ -594,13 +594,13 @@ class DomainClient:
 
         Examples:
             # Auto-detect mode from ANGZARR_MODE env var
-            player = DomainClient.for_domain("player")
+            client = DomainClient.for_domain(domain)
 
             # Explicitly use standalone mode (Unix Domain Sockets)
-            player = DomainClient.for_domain("player", TransportMode.STANDALONE)
+            client = DomainClient.for_domain(domain, TransportMode.STANDALONE)
 
             # Explicitly use distributed mode (K8s DNS)
-            player = DomainClient.for_domain("player", TransportMode.DISTRIBUTED)
+            client = DomainClient.for_domain(domain, TransportMode.DISTRIBUTED)
         """
         endpoint = resolve_ch_endpoint(domain, mode)
         return cls.connect(endpoint)

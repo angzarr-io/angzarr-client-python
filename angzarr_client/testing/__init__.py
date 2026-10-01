@@ -16,17 +16,17 @@ Example usage:
         pack_event,
     )
 
-    def test_player_registration():
+    def test_handler_sees_prior_events():
         ctx = ScenarioContext()
-        ctx.domain = "player"
-        ctx.root = uuid_for("player-alice")
+        ctx.domain = "my-domain"
+        ctx.root = uuid_for("entity-1")
 
         # Build event book with prior events
         book = ctx.event_book()
 
         # Execute command and verify
         result = handler.handle(cmd, book)
-        assert result.player_id == "player_alice@test.com"
+        assert result.entity_id == "entity-1"
 """
 
 from .builders import (
