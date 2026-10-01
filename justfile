@@ -138,7 +138,7 @@ mutation-test: prepare
     set -euo pipefail
     cd {{TOP}}
     rm -rf mutants
-    uv run --extra dev mutmut run || true
+    uv run --extra dev mutmut run
     uv run --extra dev mutmut export-cicd-stats
     read -r total killed no_tests < <(python3 -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['total'], d['killed'], d['no_tests'])")
     evaluated=$((total - no_tests))

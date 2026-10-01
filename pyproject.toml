@@ -93,7 +93,7 @@ filterwarnings = [
 ]
 
 [tool.mutmut]
-paths_to_mutate = [
+source_paths = [
     "angzarr_client/builder.py",
     "angzarr_client/client.py",
     "angzarr_client/errors.py",
@@ -105,7 +105,10 @@ paths_to_mutate = [
     "angzarr_client/router/_dispatch.py",
 ]
 pytest_add_cli_args_test_selection = ["tests/"]
-also_copy = ["angzarr_client/"]
+# mutmut runs the suite from a copy under mutants/: the tests read the spec
+# features (angzarr-project), the router conformance suite (angzarr-router)
+# and scripts/ in place.
+also_copy = ["angzarr_client/", "angzarr-project/", "angzarr-router/", "scripts/"]
 
 [tool.ruff]
 exclude = [
