@@ -16,9 +16,22 @@ The home of [Angzarr](https://angzarr.io) for Python:
   `SpeculativeClient`, `DomainClient` and the `CommandBuilder` /
   `QueryBuilder` fluent builders, for code that talks to a running
   coordinator.
+- **`ComponentHost`** — a generic gRPC host for the registered components:
+  the coordinator-facing framework services, health/readiness, transport
+  from the environment, and a hook for the application's own services.
 - **`angzarr_client.testing`** — test helpers (`make_cover`,
   `make_event_book`, `uuid_for`, `ScenarioContext`, …), imported from that
   module explicitly.
+
+## Installing
+
+Linux x86_64 only. Wheels are tagged `manylinux_2_<N>_x86_64` and carry the
+generated framework protos and the router-ffi library. Installing from git
+builds the wheel, which needs a Rust toolchain (`cargo`) on `PATH`:
+
+```bash
+pip install "angzarr-client @ git+https://github.com/angzarr-io/angzarr-client-python@<commit>"
+```
 
 ## Generating a component
 
@@ -56,17 +69,30 @@ framework protos from `angzarr_client.proto`; the template parameters
 (`codegen/manifest.yaml`). The template contract is angzarr-cli's
 `docs/templates.md`.
 
-Implement the stub, register it, and dispatch:
+Implement the stub and host it:
 
 ```python
-from angzarr_client.router import Router
-from myapp.gen.orders.v1.order_aggregate_angzarr import register_order_aggregate
-from myapp.order_aggregate_angzarr_handler import OrderAggregate
+from angzarr_client import ComponentHost, configure_logging
+from myapp.gen.my.v1.thing_aggregate_angzarr import new_thing_aggregate_dispatch
+from myapp.thing_aggregate_angzarr_handler import ThingAggregate
 
-router = Router()
-register_order_aggregate(router, OrderAggregate())
-response = router.dispatch(contextual_command)   # a BusinessResponse
+configure_logging()
+host = ComponentHost()
+host.add_aggregate(new_thing_aggregate_dispatch(ThingAggregate()))
+# An application's own gRPC service, served and health-reported alongside:
+# host.add_service(add_MyQueryServiceServicer_to_server, MyQueryServicer(), "my.v1.MyQueryService")
+host.run()   # binds the transport the environment selects; stops on SIGTERM / SIGINT
 ```
+
+`add_saga`, `add_process_manager`, `add_projector` and `add_upcaster` serve the
+other kinds. The transport comes from the environment: `TRANSPORT_TYPE=tcp`
+(default; `ANGZARR_BIND_ADDRESS`, else `[::]:$PORT`) or `TRANSPORT_TYPE=uds`
+(`$UDS_BASE_PATH/$SERVICE_NAME[-<qualifier>].sock`, removed on shutdown).
+Health reports `NOT_SERVING` until the server listens and the readiness probes
+pass, and again once shutdown begins; in-flight calls then finish within the
+grace period. A coded failure from a handler travels as its gRPC status, with
+a `google.rpc.Status` / `ErrorInfo` (reason = the error code) in
+`grpc-status-details-bin`.
 
 ## Coordinator clients
 
@@ -76,11 +102,11 @@ from angzarr_client import DomainClient
 client = DomainClient.connect("localhost:1310")
 response = (
     client.command_handler
-    .command("orders", order_root)
-    .with_command("/orders.v1.CreateOrder", create_order)
+    .command("my-domain", root)
+    .with_command("/my.v1.DoSomething", do_something)
     .execute()
 )
-events = client.query.query("orders", order_root).get_event_book()
+events = client.query.query("my-domain", root).get_event_book()
 ```
 
 Type URLs are `"/"` + the message's fully-qualified name (`TYPE_URL_PREFIX`);
@@ -96,8 +122,9 @@ protos and the conformance suite). Initialise both without `--recursive`.
 
 | recipe | does |
 |---|---|
-| `just proto` | generate the framework + ABI protos into `angzarr_client/proto/` |
-| `just router-lib` | build the router-ffi cdylib from `angzarr-router/` (cargo, protoc) and vendor it into `angzarr_client/router/_lib/` |
+| `just proto` | generate the framework + ABI protos into `angzarr_client/proto/` (grpcio-tools) |
+| `just router-lib` | build the router-ffi cdylib from `angzarr-router/` (cargo) and vendor it into `angzarr_client/router/_lib/` |
+| `just build` | sdist + manylinux wheel (the wheel build runs both of the above; `scripts/native_build.py`), then install the wheel in a clean environment and check it loads |
 | `just cli` | install the angzarr CLI at the pinned `CLI_REV` into `.tools/` (`ANGZARR_CLI=<binary>` uses another build) |
 | `just conformance-gen` | render the router's conformance fixture with `codegen/` into `tests/router/gen/` |
 | `just test` | all of the above, then unit, binding, router-conformance and client-feature tests |

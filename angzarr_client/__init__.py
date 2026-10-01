@@ -56,6 +56,7 @@ from .helpers import (
     type_url_matches_exact,
     uuid_to_proto,
 )
+from .host import ComponentHost, ConfigurationError, PassThroughUpcaster
 from .identity import compute_root, to_proto_bytes
 from .retry import (
     ExponentialBackoffRetry,
@@ -65,13 +66,9 @@ from .retry import (
 from .server import (
     DEFAULT_BIND_HOST,
     ENV_BIND_ADDRESS,
-    ServerConfig,
-    cleanup_socket,
     configure_logging,
-    create_server,
     get_transport_config,
     resolve_bind_address,
-    run_server,
 )
 from .validation import (
     require_exists,
@@ -117,11 +114,12 @@ __all__ = [
     "CommandPage",
     "CommandRejectedError",
     "CommandResponse",
+    # Component host
+    "ComponentHost",
+    "ConfigurationError",
     "ConnectionError",
     "Cover",
     "CoverBearer",
-    # Router binding (resolved on first use)
-    "Destinations",
     "DomainClient",
     "EventBook",
     "EventPage",
@@ -129,25 +127,22 @@ __all__ = [
     "GRPCError",
     "InvalidArgumentError",
     "InvalidTimestampError",
+    "PassThroughUpcaster",
     "Query",
     "QueryBuilder",
     "QueryClient",
     # Retry
     "RetryPolicy",
-    "ServerConfig",
     "SpeculativeClient",
     "TransportError",
     "TransportMode",
     # Wrappers (user-facing object surface for framework protos)
     "Wrapped",
-    "cleanup_socket",
     # Identity
     "compute_root",
-    # Server
     "configure_logging",
     # Pure utilities (non-accessor — accessors live on wrapper classes)
     "correlated_metadata",
-    "create_server",
     "default_retry_policy",
     "destination_map",
     "full_type_url",
@@ -169,7 +164,6 @@ __all__ = [
     "require_status_not",
     "resolve_bind_address",
     "resolve_ch_endpoint",
-    "run_server",
     "to_proto_bytes",
     "type_name_from_url",
     "type_url",
@@ -177,14 +171,3 @@ __all__ = [
     "type_url_matches_exact",
     "uuid_to_proto",
 ]
-
-
-def __getattr__(name: str):
-    """``Destinations`` (what saga and process-manager handlers receive)
-    resolves from the router binding on first use, so importing this package
-    does not load the router-ffi library."""
-    if name == "Destinations":
-        from .router import Destinations
-
-        return Destinations
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
-from unittest.mock import AsyncMock, MagicMock
+import types
+from datetime import datetime
 
 import pytest
+import structlog
 
 from angzarr_client import server as srv
 
@@ -115,6 +119,39 @@ class TestGetTransportConfig:
         assert address.startswith("unix:")
 
 
+class TestUdsDefaultBasePath:
+    """Without ``UDS_BASE_PATH`` the socket lives under ``/tmp/angzarr``. The
+    module's filesystem calls are recorded rather than performed, so the test
+    never touches a real ``/tmp/angzarr``."""
+
+    @pytest.fixture
+    def fs(self, monkeypatch):
+        made: list[tuple[str, bool]] = []
+        removed: list[str] = []
+        fake_path = types.SimpleNamespace(
+            dirname=os.path.dirname, exists=lambda path: True
+        )
+        fake_os = types.SimpleNamespace(
+            environ=os.environ,
+            path=fake_path,
+            makedirs=lambda path, exist_ok=False: made.append((path, exist_ok)),
+            remove=removed.append,
+        )
+        monkeypatch.setattr(srv, "os", fake_os)
+        return made, removed
+
+    def test_socket_defaults_under_tmp_angzarr(self, monkeypatch, fs) -> None:
+        monkeypatch.setenv("TRANSPORT_TYPE", "uds")
+        monkeypatch.setenv("DOMAIN", "orders")
+        made, removed = fs
+        assert srv.get_transport_config() == (
+            "uds",
+            "unix:/tmp/angzarr/business-orders.sock",
+        )
+        assert made == [("/tmp/angzarr", True)]
+        assert removed == ["/tmp/angzarr/business-orders.sock"]
+
+
 class TestResolveBindAddress:
     """Audit #77: helper exposed at the crate root for symmetry with
     Rust's ``resolve_bind_address``."""
@@ -165,247 +202,34 @@ class TestConfigureLogging:
         assert called["context_class"] is dict
 
 
-def _fake_server_handle(address: str = "[::]:9999"):
-    """Build a ``ServerHandle`` whose ``server.wait_for_termination`` raises
-    ``KeyboardInterrupt`` so ``run_server`` exits the asyncio loop cleanly.
-    """
-    fake_server = MagicMock()
-    fake_server.start = AsyncMock()
-    fake_server.wait_for_termination = AsyncMock(side_effect=KeyboardInterrupt)
-    handle = srv.ServerHandle(
-        server=fake_server,
-        address=address,
-        transport_signal=srv.TransportSignal(),
-        health_servicer=AsyncMock(),
-    )
-    return handle, fake_server
+@pytest.fixture
+def structlog_config():
+    saved = structlog.get_config()
+    yield
+    structlog.configure(**saved)
 
 
-class TestCreateServer:
-    async def test_tcp_default_builds_server(self, monkeypatch) -> None:
-        add_servicer = MagicMock()
-        servicer = object()
-        handle = srv.create_server(
-            add_servicer_func=add_servicer,
-            servicer=servicer,
-            service_name="angzarr_client.proto.angzarr.Test",
+class TestConfigureLoggingEffects:
+    def test_replaces_a_prior_configuration_with_json_lines_on_stdout(
+        self, structlog_config, capsys
+    ) -> None:
+        # A prior configuration that would drop or swallow everything.
+        structlog.configure(
+            processors=[],
+            wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL),
+            logger_factory=structlog.ReturnLoggerFactory(),
         )
-        assert add_servicer.call_count == 1
-        assert handle.address.startswith("[::]:")
-        assert isinstance(handle.transport_signal, srv.TransportSignal)
-        # Health starts NOT_SERVING for both the overall ("") and named services.
-        from grpc_health.v1 import health_pb2
-
-        assert (
-            handle.health_servicer._server_status[""]
-            == health_pb2.HealthCheckResponse.NOT_SERVING
-        )
-        assert (
-            handle.health_servicer._server_status["angzarr_client.proto.angzarr.Test"]
-            == health_pb2.HealthCheckResponse.NOT_SERVING
-        )
-
-    async def test_uds_builds_server(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setenv("TRANSPORT_TYPE", "uds")
-        monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
-        add_servicer = MagicMock()
-        servicer = object()
-        handle = srv.create_server(add_servicer_func=add_servicer, servicer=servicer)
-        assert handle.address.startswith("unix:")
-
-    async def test_no_service_name_skips_named_health(self, monkeypatch) -> None:
-        add_servicer = MagicMock()
-        handle = srv.create_server(
-            add_servicer_func=add_servicer,
-            servicer=object(),
-            service_name="",
-        )
-        assert add_servicer.call_count == 1
-        # Only the overall ("") name is registered; no per-service entry.
-        assert list(handle.health_servicer._server_status.keys()) == [""]
-
-
-class TestRunServerLogging:
-    def test_sets_default_port_when_missing(self, monkeypatch) -> None:
-        monkeypatch.delenv("PORT", raising=False)
-        handle, fake_server = _fake_server_handle()
-        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
-        logger = MagicMock()
-        with pytest.raises(KeyboardInterrupt):
-            srv.run_server(
-                add_servicer_func=lambda *a, **kw: None,
-                servicer=object(),
-                service_name="angzarr_client.proto.angzarr.Test",
-                domain="orders",
-                default_port="9999",
-                logger=logger,
-            )
-        assert os.environ["PORT"] == "9999"
-        # Audit #83: two info calls — `server_started` on the way in
-        # and `server_shutdown` in the finally block.
-        events = [c.args[0] for c in logger.info.call_args_list]
-        assert events == ["server_started", "server_shutdown"]
-        fake_server.start.assert_awaited_once()
-
-    def test_preserves_existing_port(self, monkeypatch) -> None:
-        monkeypatch.setenv("PORT", "4242")
-        handle, _ = _fake_server_handle("[::]:4242")
-        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
-        with pytest.raises(KeyboardInterrupt):
-            srv.run_server(
-                add_servicer_func=lambda *a, **kw: None,
-                servicer=object(),
-                default_port="9999",
-            )
-        assert os.environ["PORT"] == "4242"
-
-    def test_prints_when_no_logger(self, monkeypatch, capsys) -> None:
-        handle, _ = _fake_server_handle("[::]:50052")
-        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
-        with pytest.raises(KeyboardInterrupt):
-            srv.run_server(
-                add_servicer_func=lambda *a, **kw: None,
-                servicer=object(),
-                service_name="angzarr_client.proto.angzarr.Test",
-                domain="orders",
-            )
-        out = capsys.readouterr().out
-        assert "angzarr_client.proto.angzarr.Test" in out
-        assert "orders" in out
-
-    def test_marks_transport_bound_after_start(self, monkeypatch) -> None:
-        handle, fake_server = _fake_server_handle()
-        signal = handle.transport_signal
-        assert not signal.is_bound()
-        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
-        with pytest.raises(KeyboardInterrupt):
-            srv.run_server(
-                add_servicer_func=lambda *a, **kw: None,
-                servicer=object(),
-                default_port="9999",
-            )
-        # The supervisor coroutine sees this signal as bound after start().
-        assert signal.is_bound()
-        fake_server.start.assert_awaited_once()
-
-    def test_run_server_publishes_not_serving_on_shutdown(self, monkeypatch) -> None:
-        # Audit #83: every registered health name flipped to NOT_SERVING
-        # in the finally block after `wait_for_termination` returns.
-        from grpc_health.v1 import health_pb2
-
-        handle, _ = _fake_server_handle()
-        monkeypatch.setattr(srv, "create_server", lambda *a, **kw: handle)
-        with pytest.raises(KeyboardInterrupt):
-            srv.run_server(
-                add_servicer_func=lambda *a, **kw: None,
-                servicer=object(),
-                service_name="angzarr_client.proto.angzarr.Test",
-                domain="orders",
-                default_port="9999",
-            )
-        # Every awaited call on the mock health_servicer is recorded;
-        # we expect at least one set(name, NOT_SERVING) per registered
-        # service name (overall "" and the explicit service_name).
-        calls = handle.health_servicer.set.await_args_list
-        publishes = [
-            (args[0], args[1])
-            for args, _ in (call for call in calls)
-            if len(args) >= 2 and args[1] == health_pb2.HealthCheckResponse.NOT_SERVING
+        srv.configure_logging()
+        log = structlog.get_logger()
+        log.debug("probe_debug", n=1)
+        log.info("probe_info", k="v")
+        lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert [(r["event"], r["level"]) for r in lines] == [
+            ("probe_debug", "debug"),
+            ("probe_info", "info"),
         ]
-        published_names = {name for name, _ in publishes}
-        assert "" in published_names
-        assert "angzarr_client.proto.angzarr.Test" in published_names
-
-
-class TestPublishShutdownStatus:
-    """Audit #83: helper flips every registered health name to
-    NOT_SERVING so K8s drains the pod on shutdown."""
-
-    async def test_flips_every_name(self) -> None:
-        from grpc_health.v1 import health_pb2
-
-        from angzarr_client.server import _publish_shutdown_status
-
-        servicer = AsyncMock()
-        await _publish_shutdown_status(servicer, ["", "svc.A", "svc.B"])
-
-        calls = servicer.set.await_args_list
-        assert len(calls) == 3
-        for call, expected_name in zip(calls, ["", "svc.A", "svc.B"], strict=True):
-            args, _ = call
-            assert args[0] == expected_name
-            assert args[1] == health_pb2.HealthCheckResponse.NOT_SERVING
-
-    async def test_empty_names_is_noop(self) -> None:
-        from angzarr_client.server import _publish_shutdown_status
-
-        servicer = AsyncMock()
-        await _publish_shutdown_status(servicer, [])
-        servicer.set.assert_not_awaited()
-
-
-class TestCleanupSocket:
-    def test_removes_existing_socket(self, tmp_path) -> None:
-        sock = tmp_path / "my.sock"
-        sock.write_text("x")
-        srv.cleanup_socket(str(sock))
-        assert not sock.exists()
-
-    def test_noop_when_empty_path(self) -> None:
-        srv.cleanup_socket("")  # should not raise
-
-    def test_noop_when_missing_file(self, tmp_path) -> None:
-        srv.cleanup_socket(str(tmp_path / "never-created.sock"))
-
-    def test_swallows_os_error(self, monkeypatch, tmp_path) -> None:
-        sock = tmp_path / "sock"
-        sock.write_text("x")
-
-        def explode(_path):
-            raise OSError("nope")
-
-        monkeypatch.setattr(os, "remove", explode)
-        srv.cleanup_socket(str(sock))  # must not raise
-
-
-class TestServerConfig:
-    def test_default_port_and_no_uds(self) -> None:
-        cfg = srv.ServerConfig()
-        assert cfg.port == 50052
-        assert cfg.uds_path is None
-
-    def test_from_env_default_when_empty(self) -> None:
-        cfg = srv.ServerConfig.from_env(default_port=1234)
-        assert cfg.port == 1234
-        assert cfg.uds_path is None
-
-    def test_from_env_port(self, monkeypatch) -> None:
-        monkeypatch.setenv("PORT", "9999")
-        cfg = srv.ServerConfig.from_env()
-        assert cfg.port == 9999
-        assert cfg.uds_path is None
-
-    def test_from_env_grpc_port_fallback(self, monkeypatch) -> None:
-        monkeypatch.setenv("GRPC_PORT", "8888")
-        cfg = srv.ServerConfig.from_env()
-        assert cfg.port == 8888
-
-    def test_from_env_uds_mode(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
-        monkeypatch.setenv("SERVICE_NAME", "business")
-        monkeypatch.setenv("DOMAIN", "player")
-        cfg = srv.ServerConfig.from_env()
-        assert cfg.uds_path == str(tmp_path / "business-player.sock")
-
-    def test_from_env_uds_partial_env_falls_back_to_tcp(self, monkeypatch) -> None:
-        # UDS mode requires all three env vars; missing any → TCP.
-        monkeypatch.setenv("UDS_BASE_PATH", "/tmp/x")
-        monkeypatch.setenv("SERVICE_NAME", "business")
-        cfg = srv.ServerConfig.from_env(default_port=7777)
-        assert cfg.uds_path is None
-        assert cfg.port == 7777
-
-    def test_from_env_invalid_port_falls_back(self, monkeypatch) -> None:
-        monkeypatch.setenv("PORT", "not-a-number")
-        cfg = srv.ServerConfig.from_env(default_port=2222)
-        assert cfg.port == 2222
+        assert (lines[0]["n"], lines[1]["k"]) == (1, "v")
+        assert set(lines[1]) == {"event", "level", "timestamp", "k"}
+        for record in lines:
+            assert isinstance(record["timestamp"], str)
+            assert datetime.fromisoformat(record["timestamp"]).year >= 2024
