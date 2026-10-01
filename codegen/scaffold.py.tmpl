@@ -1,0 +1,24 @@
+{{- /*
+The scaffold file (<component>_angzarr_handler.py): a class implementing
+<Component>Handler with one TODO method per command / event. Rendered once;
+the CLI never overwrites an existing file.
+*/ -}}
+{{- $c := .component -}}
+{{- $sigs := dict "sigs" (list) -}}
+{{- include "py.sigs" (dict "component" $c "out" $sigs) -}}
+# Scaffolded ONCE by angzarr codegen python — this file is YOURS.
+#
+# Regeneration will NOT overwrite this file. It is your responsibility to
+# keep the generated <Component>Handler interface implemented: when a
+# command or event is added to the proto, the handler will be missing a
+# method until you add it here.
+
+{{ include "py.imports" . -}}
+class {{ $c.stub_name }}:
+    """Implements {{ $c.name }}Handler."""
+{{- range $sigs.sigs }}
+
+    def {{ .name }}{{ .params }}{{ .returns }}:
+        raise NotImplementedError({{ quote (printf "TODO: implement %s.%s" $c.stub_name .name) }})
+{{- end }}
+

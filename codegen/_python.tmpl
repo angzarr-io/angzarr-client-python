@@ -1,0 +1,132 @@
+{{- /*
+Shared blocks for the Python wiring and scaffold.
+
+Every control action left-trims ({{- ... }}) and sits on its own line, so a
+line of literal text renders as exactly one output line.
+*/ -}}
+
+{{- /* py.rel: a relative import of the dotted module .target as seen from
+the dotted package .from — "from <dots><package> import <module>". */ -}}
+{{- define "py.rel" -}}
+{{- $parts := split "." .target -}}
+{{- $from := split "." .from -}}
+{{- $to := initial $parts -}}
+{{- $c := commonPrefix $from $to -}}
+from {{ repeat (add (sub (len $from) $c) 1) "." }}{{ join "." (slice $to $c) }} import {{ last $parts }}
+{{- end -}}
+
+{{- /* py.framework: the import of an angzarr framework module (.target, dotted,
+e.g. io.angzarr.v1.types_pb2) — from the framework package when one is
+configured, else relative to .from. */ -}}
+{{- define "py.framework" -}}
+{{- if .params.framework_package -}}
+{{- $parts := split "." .target -}}
+from {{ .params.framework_package }}.{{ join "." (initial $parts) }} import {{ last $parts }}
+{{- else -}}
+{{ include "py.rel" (dict "from" .from "target" .target) }}
+{{- end -}}
+{{- end -}}
+
+{{- /* py.imports: the import block shared by the wiring and the scaffold. */ -}}
+{{- define "py.imports" -}}
+{{- $from := replace "/" "." .file.dir -}}
+{{- $c := .component -}}
+from typing import Optional, Protocol
+
+import {{ .params.runtime_module }} as _az
+{{ include "py.framework" (dict "params" .params "from" $from "target" "io.angzarr.v1.types_pb2") }} as _t
+{{- if and (eq $c.kind "AGGREGATE") (or $c.rejections $c.undos) }}
+{{ include "py.framework" (dict "params" .params "from" $from "target" "io.angzarr.v1.command_handler_pb2") }} as _ch
+{{- end }}
+{{- if eq $c.kind "PROCESS_MANAGER" }}
+{{ include "py.framework" (dict "params" .params "from" $from "target" "io.angzarr.v1.process_manager_pb2") }} as _pm
+{{- end }}
+{{- range .imports }}
+{{- $pkg := "" }}
+{{- if ne .dir "." }}{{ $pkg = replace "/" "." .dir }}{{ end }}
+{{- $module := printf "%s_pb2" .stem }}
+{{- if and $.params.framework_package (or (hasPrefix "io/angzarr/v1/" .path) (hasPrefix "sererr/" .path)) }}
+from {{ $.params.framework_package }}.{{ $pkg }} import {{ $module }} as {{ .alias }}
+{{- else if eq $pkg "" }}
+import {{ $module }} as {{ .alias }}
+{{- else }}
+{{ include "py.rel" (dict "from" $from "target" (printf "%s.%s" $pkg $module)) }} as {{ .alias }}
+{{- end }}
+{{- end }}
+
+{{ end -}}
+
+{{- /* py.sigs: appends the component's handler method signatures to
+.out.sigs as {name, params, returns} — one list shared by the Protocol and the
+scaffold so the two never drift. */ -}}
+{{- define "py.sigs" -}}
+{{- $c := .component -}}
+{{- $out := .out -}}
+{{- $state := "" -}}
+{{- if $c.state }}{{ $state = typeRef $c.state }}{{ end -}}
+{{- if eq $c.kind "SAGA" -}}
+{{- range $c.handlers -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, event: %s, dests: _az.Destinations, source: _az.PageContext)" (typeRef .message)) "returns" " -> tuple[list[_t.CommandBook], list[_t.EventBook]]")) -}}
+{{- end -}}
+{{- else if eq $c.kind "AGGREGATE" -}}
+{{- range $c.handlers -}}
+{{- $returns := " -> Optional[_t.EventBook]" -}}
+{{- if .typed_emit }}{{ $returns = printf " -> list[%s]" (typeRef (index .emits 0)) }}{{ end -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, cmd: %s, state: %s, cctx: _az.CommandContext)" (typeRef .message) $state) "returns" $returns)) -}}
+{{- end -}}
+{{- range $c.appliers -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, state: %s, event: %s, ctx: _az.PageContext)" $state (typeRef .message)) "returns" " -> None")) -}}
+{{- end -}}
+{{- range $c.rejections -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, n: _t.Notification, rejection: _t.RejectionNotification, state: %s, cctx: _az.CommandContext)" $state) "returns" " -> Optional[_ch.BusinessResponse]")) -}}
+{{- end -}}
+{{- range $c.facts -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, fact: %s, state: %s)" (typeRef .message) $state) "returns" " -> Optional[_az.FactRecord]")) -}}
+{{- end -}}
+{{- range $c.undos -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, n: _t.Notification, compensate: _t.Compensate, state: %s, cctx: _az.CommandContext)" $state) "returns" " -> Optional[_ch.BusinessResponse]")) -}}
+{{- end -}}
+{{- else if eq $c.kind "PROCESS_MANAGER" -}}
+{{- range $c.handlers -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, event: %s, state: %s, dests: _az.Destinations, trigger_cover: Optional[_t.Cover])" (typeRef .message) $state) "returns" " -> _pm.ProcessManagerHandleResponse")) -}}
+{{- end -}}
+{{- range $c.appliers -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, state: %s, event: %s, ctx: _az.PageContext)" $state (typeRef .message)) "returns" " -> None")) -}}
+{{- end -}}
+{{- range $c.rejections -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, n: _t.Notification, rejection: _t.RejectionNotification, state: %s)" $state) "returns" " -> Optional[_pm.ProcessManagerHandleResponse]")) -}}
+{{- end -}}
+{{- else if eq $c.kind "PROJECTOR" -}}
+{{- range $c.handlers -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, projection: %s, event: %s, ctx: _az.PageContext)" $state (typeRef .message)) "returns" " -> None")) -}}
+{{- end -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake $c.finish_method) "params" (printf "(self, projection: %s, events: _t.EventBook)" $state) "returns" " -> _t.Projection")) -}}
+{{- else -}}
+{{- fail (printf "unsupported component kind %s" $c.kind) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* py.unpack: parse an Any payload (.any) into the typed message .target,
+raising the binding's coded decode error on failure. */ -}}
+{{- define "py.unpack" }}
+        try:
+            {{ .target }}.ParseFromString({{ .any }}.value)
+        except Exception as exc:
+            raise _az.any_decode_error({{ .any }}.type_url, exc)
+{{- end -}}
+
+{{- /* py.domains: a domain list as comma-separated string literals. */ -}}
+{{- define "py.domains" -}}
+{{- range $i, $d := . }}{{ if $i }}, {{ end }}{{ quote $d }}{{ end -}}
+{{- end -}}
+
+{{- /* py.appliers: register each applier on the rebuilder. */ -}}
+{{- define "py.appliers" -}}
+{{- range .appliers }}
+    def _apply_{{ snake .method }}(state, payload, ctx):
+        event = {{ typeRef .message }}()
+{{- include "py.unpack" (dict "target" "event" "any" "payload") }}
+        handler.{{ snake .method }}(state, event, ctx)
+    rebuilder.apply_with_context({{ quote .message.full_name }}, _apply_{{ snake .method }})
+{{- end -}}
+{{- end -}}

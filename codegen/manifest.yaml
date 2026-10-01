@@ -1,0 +1,34 @@
+# angzarr codegen / scaffold templates for Python.
+#
+# Rendered by the angzarr CLI (`angzarr codegen python`, `angzarr scaffold
+# python`) with the plugin option templates=<this repo>@<rev> or a local path.
+# The contract — manifest fields, the model the templates read, the helper
+# functions — is angzarr-cli's docs/templates.md.
+schema_version: 1
+language: python
+
+params:
+  # Module the generated wiring imports the router binding from (bound to _az).
+  runtime_module: angzarr_client.router
+  # Package the angzarr framework protos (io/angzarr/v1, sererr) are imported
+  # from. Empty imports them relatively, for a generated tree that holds the
+  # framework protos itself.
+  framework_package: angzarr_client.proto
+
+imports:
+  # One module alias per referenced proto file: _<file stem>, never one of the
+  # fixed aliases the templates use.
+  alias_prefix: "_"
+  reserved_aliases: [_az, _t, _ch, _pm]
+
+types:
+  # A message class: <module alias>.<Outer>.<Inner>.
+  message: '{{ .import.alias }}.{{ join "." .message.nested_names }}'
+
+outputs:
+  - mode: codegen
+    path: '{{ .file.dir }}/{{ snake .component.name }}_angzarr.py'
+    template: wiring.py.tmpl
+  - mode: scaffold
+    path: '{{ .file.dir }}/{{ snake .component.name }}_angzarr_handler.py'
+    template: scaffold.py.tmpl
