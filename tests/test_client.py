@@ -6,13 +6,6 @@ from unittest.mock import Mock, patch
 import grpc
 import pytest
 
-from angzarr_client.client import (
-    CommandHandlerClient,
-    DomainClient,
-    QueryClient,
-    SpeculativeClient,
-)
-from angzarr_client.errors import GRPCError
 from angzarr_client._pb import (
     CommandBook,
     CommandRequest,
@@ -27,6 +20,13 @@ from angzarr_client._pb import (
     SpeculateProjectorRequest,
     SpeculateSagaRequest,
 )
+from angzarr_client.client import (
+    CommandHandlerClient,
+    DomainClient,
+    QueryClient,
+    SpeculativeClient,
+)
+from angzarr_client.errors import GRPCError
 
 
 class MockRpcError(grpc.RpcError):

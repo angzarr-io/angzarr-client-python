@@ -27,7 +27,6 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
 
 import grpc
 import pytest
@@ -70,24 +69,24 @@ DOMAIN = "orders"
 @dataclass
 class _World:
     monkeypatch: pytest.MonkeyPatch
-    backend: Optional[GrpcBackend] = None
+    backend: GrpcBackend | None = None
     stopped: list[GrpcBackend] = field(default_factory=list)
-    closed_port: Optional[int] = None
+    closed_port: int | None = None
     sockets: dict[str, str] = field(default_factory=dict)
     temp_dirs: list[str] = field(default_factory=list)
     probes: list[TlsProbe] = field(default_factory=list)
     channels: list[grpc.Channel] = field(default_factory=list)
-    query: Optional[QueryClient] = None
-    command: Optional[CommandHandlerClient] = None
-    speculative: Optional[SpeculativeClient] = None
-    domain: Optional[DomainClient] = None
-    channel: Optional[grpc.Channel] = None
-    channel_peer: Optional[str] = None
-    connect_book: Optional[EventBook] = None
-    error: Optional[Exception] = None
-    operation_error: Optional[Exception] = None
-    failed_client: Optional[QueryClient] = None
-    first_port: Optional[int] = None
+    query: QueryClient | None = None
+    command: CommandHandlerClient | None = None
+    speculative: SpeculativeClient | None = None
+    domain: DomainClient | None = None
+    channel: grpc.Channel | None = None
+    channel_peer: str | None = None
+    connect_book: EventBook | None = None
+    error: Exception | None = None
+    operation_error: Exception | None = None
+    failed_client: QueryClient | None = None
+    first_port: int | None = None
 
     # -- environment mapping ------------------------------------------------
 
@@ -485,10 +484,8 @@ def _then_both_share_connection(state: _World) -> None:
     assert [r.method for r in rpcs] == ["HandleCommand", "GetEventBook"]
     assert len({r.peer for r in rpcs}) == 1, [r.peer for r in rpcs]
     # One channel, owned by the DomainClient, underlies both sub-clients.
-    assert (
-        state.domain.command_handler._channel is state.domain._channel
-    )  # noqa: SLF001
-    assert state.domain.query._channel is state.domain._channel  # noqa: SLF001
+    assert state.domain.command_handler._channel is state.domain._channel
+    assert state.domain.query._channel is state.domain._channel
 
 
 @when(parsers.parse('I create a Client connected to "{endpoint}"'))
@@ -637,7 +634,7 @@ def _when_create_new_client(state: _World) -> None:
 def _then_new_connection_independent(state: _World) -> None:
     client = state.connected_query()
     assert state.failed_client is not None
-    assert client._channel is not state.failed_client._channel  # noqa: SLF001
+    assert client._channel is not state.failed_client._channel
     state.failed_client.close()
     # Closing the failed client does not affect the new one.
     query_ok(client)

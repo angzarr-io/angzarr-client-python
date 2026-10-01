@@ -6,8 +6,9 @@ from __future__ import annotations
 import pytest
 
 from angzarr_client.router import Router
-from .gen.test.counter import counter_aggregate_angzarr
+
 from .fixture import CounterAggregate, Observation
+from .gen.test.counter import counter_aggregate_angzarr
 
 
 @pytest.fixture

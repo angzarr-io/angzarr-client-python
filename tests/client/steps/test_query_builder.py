@@ -12,15 +12,14 @@ asserted against fake state — PARITY_AUDIT.md plan item P1.12.b.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 from uuid import UUID, uuid4
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
+from angzarr_client._pb import EventBook, Query
 from angzarr_client.builder import QueryBuilder
 from angzarr_client.errors import InvalidTimestampError
-from angzarr_client._pb import EventBook, Query
 
 scenarios("parity/client/query_builder.feature")
 
@@ -35,7 +34,7 @@ class _MockQueryClient:
     a stub EventBook."""
 
     def __init__(self) -> None:
-        self.last_query: Optional[Query] = None
+        self.last_query: Query | None = None
 
     def get_event_book(self, query: Query, timeout: float | None = None) -> EventBook:
         self.last_query = query
@@ -52,13 +51,13 @@ class _MockQueryClient:
 class _World:
     client: _MockQueryClient = field(default_factory=_MockQueryClient)
     domain: str = ""
-    root: Optional[UUID] = None
+    root: UUID | None = None
     has_root: bool = False
-    builder: Optional[QueryBuilder] = None
-    built: Optional[Query] = None
-    build_error: Optional[Exception] = None
-    fetched_book: Optional[EventBook] = None
-    fetched_pages: Optional[list] = None
+    builder: QueryBuilder | None = None
+    built: Query | None = None
+    build_error: Exception | None = None
+    fetched_book: EventBook | None = None
+    fetched_pages: list | None = None
 
 
 @pytest.fixture

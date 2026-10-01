@@ -8,7 +8,6 @@ bool`` and ``domains`` (declaration order).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then
@@ -20,7 +19,7 @@ scenarios("parity/client/destinations.feature")
 
 @dataclass
 class _State:
-    destinations: Optional[Destinations] = None
+    destinations: Destinations | None = None
 
 
 @pytest.fixture

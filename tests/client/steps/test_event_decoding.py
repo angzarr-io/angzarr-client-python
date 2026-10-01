@@ -16,29 +16,28 @@ suffix-vs-fully-qualified matching — that's where divergences surface.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import pytest
+from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.protobuf.wrappers_pb2 import StringValue
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.helpers import (
-    decode_event,
-    events_from_response,
-    full_type_url_for,
-    type_name_from_url,
-    try_unpack,
-    unpack,
-)
 from angzarr_client._pb import (
     CommandResponse,
     EventBook,
     EventPage,
 )
+from angzarr_client.helpers import (
+    decode_event,
+    events_from_response,
+    full_type_url_for,
+    try_unpack,
+    type_name_from_url,
+    unpack,
+)
 from angzarr_client.proto.io.angzarr.v1.types_pb2 import PayloadReference
-from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
 scenarios("parity/client/event_decoding.feature")
 
@@ -92,13 +91,13 @@ def _make_event_page(
 
 @dataclass
 class _State:
-    current_event: Optional[EventPage] = None
-    decoded_msg: Optional[object] = None
+    current_event: EventPage | None = None
+    decoded_msg: object | None = None
     decode_is_none: bool = False
     match_result: bool = False
     events_list: list[EventPage] = field(default_factory=list)
-    command_response: Optional[CommandResponse] = None
-    last_error: Optional[Exception] = None
+    command_response: CommandResponse | None = None
+    last_error: Exception | None = None
 
 
 @pytest.fixture

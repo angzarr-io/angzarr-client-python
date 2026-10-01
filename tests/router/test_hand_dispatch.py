@@ -8,6 +8,12 @@ from __future__ import annotations
 
 import pytest
 
+from angzarr_client.proto.io.angzarr.v1 import (
+    command_handler_pb2,
+    process_manager_pb2,
+    saga_pb2,
+    types_pb2,
+)
 from angzarr_client.router import (
     AggregateDispatch,
     CodedError,
@@ -18,14 +24,9 @@ from angzarr_client.router import (
     Router,
     SagaDispatch,
 )
-from angzarr_client.proto.io.angzarr.v1 import (
-    command_handler_pb2,
-    process_manager_pb2,
-    saga_pb2,
-    types_pb2,
-)
-from .gen.test.counter import counter_pb2
+
 from . import builders
+from .gen.test.counter import counter_pb2
 
 
 class _HandlerAbort(BaseException):

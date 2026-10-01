@@ -22,7 +22,6 @@ import socket
 import threading
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Optional
 
 import grpc
 
@@ -104,8 +103,8 @@ class GrpcBackend:
         self,
         server: grpc.Server,
         recorder: _Recorder,
-        port: Optional[int],
-        socket_path: Optional[str],
+        port: int | None,
+        socket_path: str | None,
     ) -> None:
         self._server = server
         self._rec = recorder
@@ -126,7 +125,7 @@ class GrpcBackend:
         return server, rec
 
     @classmethod
-    def start_tcp(cls, port: int = 0) -> "GrpcBackend":
+    def start_tcp(cls, port: int = 0) -> GrpcBackend:
         """Listen on ``localhost:<port>``; ``0`` picks a free port."""
         server, rec = cls._build()
         bound = server.add_insecure_port(f"localhost:{port}")
@@ -136,7 +135,7 @@ class GrpcBackend:
         return cls(server, rec, bound, None)
 
     @classmethod
-    def start_uds(cls, path: str) -> "GrpcBackend":
+    def start_uds(cls, path: str) -> GrpcBackend:
         """Listen only on the Unix socket at absolute ``path``."""
         server, rec = cls._build()
         if server.add_insecure_port(f"unix://{path}") == 0:
@@ -186,7 +185,7 @@ class TlsProbe:
         while not self._stop.is_set():
             try:
                 conn, _ = self._sock.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return

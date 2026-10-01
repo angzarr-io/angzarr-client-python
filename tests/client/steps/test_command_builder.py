@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field, replace
-from typing import Optional
 
 import pytest
 from google.protobuf.message import Message
@@ -24,7 +23,6 @@ from angzarr_client.client import CommandHandlerClient
 from angzarr_client.error_codes import codes
 from angzarr_client.errors import ClientError
 from angzarr_client.helpers import full_type_url
-
 from tests.fixtures import CreateOrder
 
 from ._fakes import RecordingStub
@@ -54,16 +52,16 @@ class _Recipe:
 
     domain: str = ""
     # None -> client.command_new (auto-generated root).
-    root: Optional[uuid.UUID] = None
-    correlation_id: Optional[str] = None
-    sequence: Optional[int] = None
-    merge: Optional[int] = None
+    root: uuid.UUID | None = None
+    correlation_id: str | None = None
+    sequence: int | None = None
+    merge: int | None = None
     # (type_url, message) passed to with_command.
-    command: Optional[tuple[str, Message]] = None
+    command: tuple[str, Message] | None = None
     # Type URL set on its own via with_type_url.
-    type_url: Optional[str] = None
+    type_url: str | None = None
     # Encoded payload set on its own via with_payload.
-    payload: Optional[bytes] = None
+    payload: bytes | None = None
 
 
 def _apply(client: CommandHandlerClient, r: _Recipe) -> CommandBuilder:
@@ -94,14 +92,14 @@ def _canned_response() -> CommandResponse:
 @dataclass
 class _World:
     stub: RecordingStub = field(default_factory=RecordingStub)
-    client: Optional[CommandHandlerClient] = None
+    client: CommandHandlerClient | None = None
     recipe: _Recipe = field(default_factory=_Recipe)
-    built: Optional[CommandBook] = None
-    build_error: Optional[Exception] = None
+    built: CommandBook | None = None
+    build_error: Exception | None = None
     built_pair: list[CommandBook] = field(default_factory=list)
     pair_roots: list[uuid.UUID] = field(default_factory=list)
-    executed: Optional[CommandResponse] = None
-    shortcut_root: Optional[uuid.UUID] = None
+    executed: CommandResponse | None = None
+    shortcut_root: uuid.UUID | None = None
 
     def build(self) -> None:
         assert self.client is not None, "a CommandHandlerClient was arranged"

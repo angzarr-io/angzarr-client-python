@@ -9,13 +9,13 @@ from __future__ import annotations
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from . import CONFORMANCE_FEATURES
-
-from angzarr_client.router import CodedError, Router
 from angzarr_client.proto.io.angzarr.v1 import types_pb2
-from ..gen.test.counter import counter_aggregate_angzarr
+from angzarr_client.router import CodedError, Router
+
 from .. import builders
 from ..fixture import CounterAggregate, Observation
+from ..gen.test.counter import counter_aggregate_angzarr
+from . import CONFORMANCE_FEATURES
 
 scenarios(str(CONFORMANCE_FEATURES / "counter.feature"))
 

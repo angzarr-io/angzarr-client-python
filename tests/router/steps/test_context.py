@@ -10,8 +10,11 @@ from __future__ import annotations
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from . import CONFORMANCE_FEATURES
-
+from angzarr_client.proto.io.angzarr.v1 import (
+    command_handler_pb2,
+    process_manager_pb2,
+    types_pb2,
+)
 from angzarr_client.router import (
     AggregateDispatch,
     CodedError,
@@ -24,12 +27,7 @@ from angzarr_client.router import (
     Router,
     pack,
 )
-from angzarr_client.proto.io.angzarr.v1 import (
-    command_handler_pb2,
-    process_manager_pb2,
-    types_pb2,
-)
-from ..gen.test.counter import counter_pb2
+
 from ..builders import (
     FQ_INCREASE_BY,
     FQ_INCREASED,
@@ -40,6 +38,8 @@ from ..builders import (
     root_of,
     type_url,
 )
+from ..gen.test.counter import counter_pb2
+from . import CONFORMANCE_FEATURES
 
 scenarios(str(CONFORMANCE_FEATURES / "context.feature"))
 

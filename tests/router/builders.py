@@ -17,6 +17,7 @@ import uuid
 from google.protobuf import any_pb2, text_format
 
 from angzarr_client.proto.io.angzarr.v1 import types_pb2
+
 from .gen.test.counter import counter_pb2
 
 # The shared conformance fixtures — the same orthogonal envelope skeletons the

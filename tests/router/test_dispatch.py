@@ -6,6 +6,7 @@ CommandContextAux decode with applier execution during rebuild."""
 import pytest
 
 from angzarr_client.router import CodedError
+
 from . import builders
 from .fixture import Observation
 

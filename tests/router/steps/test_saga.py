@@ -8,13 +8,13 @@ from __future__ import annotations
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from . import CONFORMANCE_FEATURES
-
-from angzarr_client.router import CodedError, Router
 from angzarr_client.proto.io.angzarr.v1 import saga_pb2, types_pb2
-from ..gen.test.counter import order_saga_angzarr
+from angzarr_client.router import CodedError, Router
+
 from ..builders import FQ_INCREASED, FQ_RESERVE, assert_deferred, type_url
 from ..fixture import OrderSaga
+from ..gen.test.counter import order_saga_angzarr
+from . import CONFORMANCE_FEATURES
 
 scenarios(str(CONFORMANCE_FEATURES / "saga.feature"))
 

@@ -12,14 +12,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from angzarr_client.router import CommandContext, reject
 from angzarr_client.proto.io.angzarr.v1 import (
     command_handler_pb2,
     process_manager_pb2,
     types_pb2,
 )
-from .gen.test.counter import counter_pb2
+from angzarr_client.router import CommandContext, reject
+
 from .builders import FQ_RESERVE, type_url
+from .gen.test.counter import counter_pb2
 
 
 @dataclass

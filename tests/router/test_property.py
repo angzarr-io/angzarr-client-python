@@ -10,9 +10,10 @@ conformance features remain the cross-language behavior contract."""
 import pytest
 
 from angzarr_client.router import CodedError, Router
-from .gen.test.counter import counter_aggregate_angzarr
+
 from . import builders
 from .fixture import CounterAggregate
+from .gen.test.counter import counter_aggregate_angzarr
 
 _BOUND = 13  # 13 x 13 = 169 (prior, amount) combinations
 

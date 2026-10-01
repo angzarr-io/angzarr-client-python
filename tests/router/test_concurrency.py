@@ -8,9 +8,10 @@ GIL acquisition."""
 import threading
 
 from angzarr_client.router import Router
-from .gen.test.counter import counter_aggregate_angzarr
+
 from . import builders
 from .fixture import CounterAggregate
+from .gen.test.counter import counter_aggregate_angzarr
 
 _THREADS = 8
 _ITERATIONS = 50
@@ -32,9 +33,7 @@ def test_concurrent_dispatches_isolate_sessions():
                 seq = resp.events.pages[0].header.sequence
                 if seq != prior_n:
                     raise AssertionError(f"thread prior={prior_n} saw sequence {seq}")
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 — collected and re-raised on the main thread
+        except Exception as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=worker, args=(n,)) for n in range(_THREADS)]

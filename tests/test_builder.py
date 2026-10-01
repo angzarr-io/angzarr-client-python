@@ -7,16 +7,16 @@ from uuid import uuid4
 import pytest
 from google.protobuf.wrappers_pb2 import StringValue
 
+from angzarr_client._pb import (
+    CommandResponse,
+    EventBook,
+)
 from angzarr_client.builder import (
     CommandBuilder,
     QueryBuilder,
 )
 from angzarr_client.errors import InvalidArgumentError, InvalidTimestampError
 from angzarr_client.helpers import proto_to_uuid
-from angzarr_client._pb import (
-    CommandResponse,
-    EventBook,
-)
 
 
 class TestCommandBuilder:

@@ -9,16 +9,16 @@ from __future__ import annotations
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from . import CONFORMANCE_FEATURES
-
-from angzarr_client.router import CodedError, Router
 from angzarr_client.proto.io.angzarr.v1 import process_manager_pb2, types_pb2
+from angzarr_client.router import CodedError, Router
+
+from ..builders import FQ_INCREASED, FQ_RESERVE, assert_deferred, type_url
+from ..fixture import AUDIT_MARK, AuditProcessManager, OrderProcessManager
 from ..gen.test.counter import (
     audit_process_manager_angzarr,
     order_process_manager_angzarr,
 )
-from ..builders import FQ_INCREASED, FQ_RESERVE, assert_deferred, type_url
-from ..fixture import AUDIT_MARK, AuditProcessManager, OrderProcessManager
+from . import CONFORMANCE_FEATURES
 
 scenarios(str(CONFORMANCE_FEATURES / "process_manager.feature"))
 
