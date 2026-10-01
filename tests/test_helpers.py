@@ -6,6 +6,15 @@ from uuid import UUID as PyUUID
 import pytest
 from google.protobuf.any_pb2 import Any as ProtoAny
 
+from angzarr_client._pb import (
+    UUID,
+    Cover,
+    DomainDivergence,
+    Edition,
+    EventBook,
+    EventPage,
+    PageHeader,
+)
 from angzarr_client.errors import InvalidTimestampError
 from angzarr_client.helpers import (
     CORRELATION_ID_HEADER,
@@ -33,18 +42,6 @@ from angzarr_client.helpers import (
     type_url,
     type_url_matches,
     uuid_to_proto,
-)
-from angzarr_client._pb import (
-    UUID,
-    CommandBook,
-    CommandPage,
-    Cover,
-    DomainDivergence,
-    Edition,
-    EventBook,
-    EventPage,
-    PageHeader,
-    Query,
 )
 
 
@@ -183,6 +180,19 @@ class TestDestinationMap:
 
         assert len(result) == 1
         assert uuid1.bytes.hex() in result
+
+    def test_rootless_entry_does_not_stop_later_entries(self) -> None:
+        """A rootless EventBook ahead of rooted ones is skipped, not terminal."""
+        uuid1 = PyUUID("11111111-1111-1111-1111-111111111111")
+        no_cover = EventBook(next_sequence=1)
+        no_root = EventBook(next_sequence=2)
+        no_root.cover.domain = "player"
+        rooted = EventBook(next_sequence=3)
+        rooted.cover.root.CopyFrom(uuid_to_proto(uuid1))
+
+        result = destination_map([no_cover, no_root, rooted])
+
+        assert result == {uuid1.bytes.hex(): rooted}
 
     def test_works_with_next_sequence_lookup(self) -> None:
         """destination_map integrates with EventBook.next_sequence() for lookups."""
@@ -347,6 +357,14 @@ class TestTimestampHelpers:
         """parse_timestamp raises InvalidTimestampError for invalid input."""
         with pytest.raises(InvalidTimestampError):
             parse_timestamp("not-a-timestamp")
+
+    def test_parse_timestamp_error_carries_parser_message(self) -> None:
+        """The InvalidTimestampError message is the underlying parser error."""
+        with pytest.raises(InvalidTimestampError) as exc:
+            parse_timestamp("not-a-timestamp")
+        cause = exc.value.__cause__
+        assert isinstance(cause, ValueError)
+        assert exc.value.message == str(cause)
 
 
 class TestDecodeEvent:
@@ -518,16 +536,16 @@ class TestAdditionalHelpers:
     # dead-on-arrival helpers; their tests removed in lockstep.
 
     def test_type_matches_none_returns_false(self) -> None:
-        from angzarr_client.helpers import type_matches
         from angzarr_client._pb import Cover
+        from angzarr_client.helpers import type_matches
 
         assert type_matches(None, Cover) is False
 
     def test_type_matches_true(self) -> None:
         from google.protobuf.any_pb2 import Any
 
-        from angzarr_client.helpers import type_matches
         from angzarr_client._pb import Cover
+        from angzarr_client.helpers import type_matches
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="x"))
@@ -536,8 +554,8 @@ class TestAdditionalHelpers:
     def test_try_unpack_returns_message(self) -> None:
         from google.protobuf.any_pb2 import Any
 
-        from angzarr_client.helpers import try_unpack
         from angzarr_client._pb import Cover
+        from angzarr_client.helpers import try_unpack
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="x"))
@@ -547,8 +565,8 @@ class TestAdditionalHelpers:
     def test_try_unpack_returns_none_for_mismatch(self) -> None:
         from google.protobuf.any_pb2 import Any
 
-        from angzarr_client.helpers import try_unpack
         from angzarr_client._pb import Cover, EventBook
+        from angzarr_client.helpers import try_unpack
 
         any_proto = Any()
         any_proto.Pack(EventBook())
@@ -558,19 +576,34 @@ class TestAdditionalHelpers:
         import pytest
         from google.protobuf.any_pb2 import Any
 
-        from angzarr_client.helpers import unpack
         from angzarr_client._pb import Cover, EventBook
+        from angzarr_client.helpers import unpack
 
         any_proto = Any()
         any_proto.Pack(EventBook())
         with pytest.raises(ValueError, match="type mismatch"):
             unpack(any_proto, Cover)
 
+    def test_unpack_mismatch_names_expected_and_actual(self) -> None:
+        from google.protobuf.any_pb2 import Any
+
+        from angzarr_client._pb import Cover, EventBook
+        from angzarr_client.helpers import unpack
+
+        any_proto = Any()
+        any_proto.Pack(EventBook())
+        with pytest.raises(ValueError) as exc:
+            unpack(any_proto, Cover)
+        assert str(exc.value) == (
+            f"type mismatch: expected {Cover.DESCRIPTOR.full_name}, "
+            f"got {any_proto.type_url}"
+        )
+
     def test_unpack_returns_message(self) -> None:
         from google.protobuf.any_pb2 import Any
 
-        from angzarr_client.helpers import unpack
         from angzarr_client._pb import Cover
+        from angzarr_client.helpers import unpack
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="xyz"))
@@ -578,25 +611,24 @@ class TestAdditionalHelpers:
         assert msg.domain == "xyz"
 
     def test_full_type_name(self) -> None:
-        from angzarr_client.helpers import full_type_name
         from angzarr_client._pb import Cover
+        from angzarr_client.helpers import full_type_name
 
         assert full_type_name(Cover) == "io.angzarr.v1.Cover"
 
     def test_full_type_url_for_and_alias(self) -> None:
+        from angzarr_client._pb import Cover
         from angzarr_client.helpers import (
-            TYPE_URL_PREFIX,
             full_type_url,
             full_type_url_for,
         )
-        from angzarr_client._pb import Cover
 
         assert full_type_url_for(Cover) == "/io.angzarr.v1.Cover"
         assert full_type_url is full_type_url_for
 
     def test_decode_event_returns_none_on_unpack_failure(self, monkeypatch) -> None:
-        from angzarr_client.helpers import decode_event
         from angzarr_client._pb import Cover, EventPage, PageHeader
+        from angzarr_client.helpers import decode_event
 
         page = EventPage(header=PageHeader(sequence=1))
         page.event.Pack(Cover(domain="x"))

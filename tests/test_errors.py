@@ -316,3 +316,76 @@ class TestInvalidTimestampError:
         """InvalidTimestampError is a ClientError."""
         err = InvalidTimestampError("test")
         assert isinstance(err, ClientError)
+
+
+class TestConstructorDefaultsAndPassThrough:
+    """Default message/code per error type, and that ``code`` / ``details``
+    given to a subclass reach the base ``ClientError`` fields (details are
+    stringified)."""
+
+    def test_client_error_defaults(self) -> None:
+        err = ClientError("boom")
+        assert err.code == ""
+        assert err.details == {}
+        assert err.args == ("boom",)
+
+    def test_connection_error_defaults(self) -> None:
+        err = ConnectionError()
+        assert err.message == "connection failed"
+        assert str(err) == "connection failed"
+        assert err.code == "CONNECTION_FAILED"
+        assert err.details == {}
+
+    def test_connection_error_passes_code_and_details(self) -> None:
+        err = ConnectionError("refused", code="DIAL_REFUSED", details={"port": 1310})
+        assert err.code == "DIAL_REFUSED"
+        assert err.details == {"port": "1310"}
+
+    def test_transport_error_passes_details(self) -> None:
+        err = TransportError(OSError("x"), details={"attempt": 3})
+        assert err.details == {"attempt": "3"}
+
+    def test_grpc_error_passes_details(self) -> None:
+        err = GRPCError(
+            MockRpcError(grpc.StatusCode.INTERNAL), details={"method": "Handle"}
+        )
+        assert err.details == {"method": "Handle"}
+
+    def test_invalid_argument_error_defaults(self) -> None:
+        err = InvalidArgumentError("missing field")
+        assert err.code == "INVALID_ARGUMENT"
+        assert err.details == {}
+
+    def test_invalid_argument_error_passes_details(self) -> None:
+        err = InvalidArgumentError("missing field", details={"field": "name"})
+        assert err.details == {"field": "name"}
+
+    def test_invalid_timestamp_error_defaults(self) -> None:
+        err = InvalidTimestampError()
+        assert err.message == "invalid timestamp"
+        assert str(err) == "invalid timestamp"
+        assert err.code == "INVALID_TIMESTAMP"
+        assert err.details == {}
+
+    def test_invalid_timestamp_error_passes_code_and_details(self) -> None:
+        err = InvalidTimestampError(
+            "bad", code="TIMESTAMP_OUT_OF_RANGE", details={"value": "9999"}
+        )
+        assert err.code == "TIMESTAMP_OUT_OF_RANGE"
+        assert err.details == {"value": "9999"}
+
+    def test_command_rejected_defaults(self) -> None:
+        from angzarr_client.errors import CommandRejectedError
+
+        err = CommandRejectedError("guard failed")
+        assert err.status_code == "FAILED_PRECONDITION"
+        assert err.is_precondition_failed() is True
+        assert err.code == ""
+        assert err.cover is None
+
+    def test_command_rejected_keeps_cover(self) -> None:
+        from angzarr_client.errors import CommandRejectedError
+
+        cover = object()
+        err = CommandRejectedError("guard failed", cover=cover)
+        assert err.cover is cover

@@ -2,20 +2,33 @@
 
 from uuid import UUID as PyUUID
 
-
+from angzarr_client._pb import (
+    CommandBook as CommandBookProto,
+)
+from angzarr_client._pb import (
+    CommandPage as CommandPageProto,
+)
+from angzarr_client._pb import (
+    CommandResponse as CommandResponseProto,
+)
+from angzarr_client._pb import (
+    Cover as CoverProto,
+)
+from angzarr_client._pb import (
+    EventBook as EventBookProto,
+)
+from angzarr_client._pb import (
+    EventPage as EventPageProto,
+)
+from angzarr_client._pb import (
+    PageHeader,
+)
+from angzarr_client._pb import (
+    Query as QueryProto,
+)
 from angzarr_client.helpers import (
     UNKNOWN_DOMAIN,
     uuid_to_proto,
-)
-from angzarr_client._pb import (
-    CommandBook as CommandBookProto,
-    CommandPage as CommandPageProto,
-    CommandResponse as CommandResponseProto,
-    Cover as CoverProto,
-    EventBook as EventBookProto,
-    EventPage as EventPageProto,
-    PageHeader,
-    Query as QueryProto,
 )
 from angzarr_client.wrappers import (
     CommandBook,
@@ -848,3 +861,38 @@ class TestWrapperAttributeAccess:
         # Direct proto access still works
         assert wrapper.proto().domain == "test"
         assert wrapper.proto().correlation_id == "abc"
+
+
+class TestPageSelectionAndEditionEdges:
+    def test_edition_none_when_present_but_unnamed(self) -> None:
+        from angzarr_client._pb import Edition
+
+        proto = CoverProto(domain="orders", edition=Edition())
+        assert proto.HasField("edition")
+        assert Cover(proto).edition() is None
+
+    def test_last_page_is_final_of_three(self) -> None:
+        proto = EventBookProto()
+        proto.pages.extend(
+            [EventPageProto(header=PageHeader(sequence=s)) for s in (1, 2, 3)]
+        )
+        last = EventBook(proto).last_page()
+        assert last is not None
+        assert last.proto().header.sequence == 3
+
+    def test_first_command_wraps_first_page(self) -> None:
+        proto = CommandBookProto()
+        proto.pages.extend(
+            [CommandPageProto(header=PageHeader(sequence=s)) for s in (4, 5)]
+        )
+        first = CommandBook(proto).first_command()
+        assert first is not None
+        assert first.proto().header.sequence == 4
+
+    def test_command_response_events_wrap_each_page(self) -> None:
+        proto = CommandResponseProto()
+        proto.events.pages.extend(
+            [EventPageProto(header=PageHeader(sequence=s)) for s in (7, 8)]
+        )
+        events = CommandResponse(proto).events()
+        assert [e.proto().header.sequence for e in events] == [7, 8]
