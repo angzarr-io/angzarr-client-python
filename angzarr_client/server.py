@@ -1,4 +1,4 @@
-"""Common server utilities for angzarr Python examples.
+"""gRPC server utilities for angzarr Python component processes.
 
 Async (``grpc.aio``) gRPC server with built-in health checking and a
 readiness supervisor that mirrors the Rust client's
@@ -7,10 +7,8 @@ readiness supervisor that mirrors the Rust client's
 
 Supports both TCP and Unix Domain Socket (UDS) transports.
 
-Audit #68 design call: this module is async-native (replaces the prior
-sync ``grpcio.server`` + daemon-thread supervisor). Public sync entry
-points (``run_*_server``) preserve the blocking shape callers rely on
-by running the asyncio event loop internally.
+The module is async-native; ``run_server`` is the blocking entry point and
+runs the asyncio event loop internally.
 """
 
 from __future__ import annotations
@@ -139,7 +137,7 @@ def create_server(
     Python set ``SERVING`` immediately, which made K8s readiness
     vacuously true.
     """
-    transport_type, address = get_transport_config()
+    _transport_type, address = get_transport_config()
 
     server = grpc.aio.server()
 
@@ -303,9 +301,8 @@ def cleanup_socket(socket_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cross-language parity: ServerConfig + per-kind runner wrappers.
-# Mirror the shapes exposed by `angzarr_client::server` on the Rust side so
-# cross-language docs and examples translate directly.
+# Cross-language parity: ServerConfig mirrors `angzarr_client::server` on the
+# Rust side so cross-language docs and examples translate directly.
 # ---------------------------------------------------------------------------
 
 
@@ -320,7 +317,7 @@ class ServerConfig:
     uds_path: str | None = None
 
     @classmethod
-    def from_env(cls, default_port: int = 50052) -> "ServerConfig":
+    def from_env(cls, default_port: int = 50052) -> ServerConfig:
         base_path = os.environ.get("UDS_BASE_PATH")
         service_name = os.environ.get("SERVICE_NAME")
         domain = os.environ.get("DOMAIN")
@@ -334,120 +331,3 @@ class ServerConfig:
         except ValueError:
             port = default_port
         return cls(port=port, uds_path=None)
-
-
-def _run_kind_server(
-    router,
-    grpc_adapter_cls,
-    add_servicer_fn,
-    pb2_grpc_service_name: str,
-    domain: str,
-    default_port: int,
-) -> None:
-    """Shared plumbing for the per-kind ``run_*_server`` wrappers.
-
-    Audit #74: reads ``router.sync_output_domains()`` (sync subset only)
-    and ``router.has_async_outputs()``. CH / projector / upcaster
-    routers default to ``[]`` and ``False``; saga / PM routers override.
-    """
-    servicer = grpc_adapter_cls(router)
-    sync_outputs: list[str] = []
-    has_async = False
-    if hasattr(router, "sync_output_domains") and callable(router.sync_output_domains):
-        try:
-            sync_outputs = list(router.sync_output_domains())
-        except Exception:  # noqa: BLE001 — best-effort introspection.
-            sync_outputs = []
-    if hasattr(router, "has_async_outputs") and callable(router.has_async_outputs):
-        try:
-            has_async = bool(router.has_async_outputs())
-        except Exception:  # noqa: BLE001
-            has_async = False
-    run_server(
-        add_servicer_fn,
-        servicer,
-        service_name=pb2_grpc_service_name,
-        domain=domain,
-        default_port=str(default_port),
-        sync_output_domains=sync_outputs,
-        has_async_outputs=has_async,
-    )
-
-
-def run_command_handler_server(
-    router, domain: str = "", default_port: int = 50052
-) -> None:
-    """Run a command handler gRPC server."""
-    from .proto.angzarr import command_handler_pb2_grpc
-    from .router.server import CommandHandlerGrpc
-
-    _run_kind_server(
-        router,
-        CommandHandlerGrpc,
-        command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server,
-        "CommandHandlerService",
-        domain,
-        default_port,
-    )
-
-
-def run_saga_server(router, domain: str = "", default_port: int = 50052) -> None:
-    """Run a saga gRPC server."""
-    from .proto.angzarr import saga_pb2_grpc
-    from .router.server import SagaGrpc
-
-    _run_kind_server(
-        router,
-        SagaGrpc,
-        saga_pb2_grpc.add_SagaServiceServicer_to_server,
-        "SagaService",
-        domain,
-        default_port,
-    )
-
-
-def run_process_manager_server(
-    router, domain: str = "", default_port: int = 50052
-) -> None:
-    """Run a process manager gRPC server."""
-    from .proto.angzarr import process_manager_pb2_grpc
-    from .router.server import ProcessManagerGrpc
-
-    _run_kind_server(
-        router,
-        ProcessManagerGrpc,
-        process_manager_pb2_grpc.add_ProcessManagerServiceServicer_to_server,
-        "ProcessManagerService",
-        domain,
-        default_port,
-    )
-
-
-def run_projector_server(router, domain: str = "", default_port: int = 50052) -> None:
-    """Run a projector gRPC server."""
-    from .proto.angzarr import projector_pb2_grpc
-    from .router.server import ProjectorGrpc
-
-    _run_kind_server(
-        router,
-        ProjectorGrpc,
-        projector_pb2_grpc.add_ProjectorServiceServicer_to_server,
-        "ProjectorService",
-        domain,
-        default_port,
-    )
-
-
-def run_upcaster_server(router, domain: str = "", default_port: int = 50052) -> None:
-    """Run an upcaster gRPC server."""
-    from .proto.angzarr import upcaster_pb2_grpc
-    from .router.server import UpcasterGrpc
-
-    _run_kind_server(
-        router,
-        UpcasterGrpc,
-        upcaster_pb2_grpc.add_UpcasterServiceServicer_to_server,
-        "UpcasterService",
-        domain,
-        default_port,
-    )

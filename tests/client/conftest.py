@@ -1,65 +1,42 @@
-"""Shared pytest-bdd fixtures.
+"""pytest configuration for the client-surface and parity feature tiers.
 
-Each scenario gets a fresh ``World`` carrying router-under-build state, the
-built router, captured dispatch output, and side-effect logs. Step defs in
-``steps/*.py`` read and mutate ``world`` via the fixture.
+Scenarios of the shared spec that name the engine surface a client library
+exposes when it hosts components itself (router builders, handler decorators,
+handler response types, gRPC server adapters, compensation helpers) do not
+apply here: Python components are hosted by the shared router
+(``angzarr_client.router``) through wiring generated from this repository's
+codegen templates, and the router's own conformance suite covers that
+behaviour (tests/router). They are reported as skipped, with this reason.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
-
 import pytest
 
+ENGINE_SURFACE = {
+    "C-0090": "Router runtime types: the engine is angzarr_client.router (shared router)",
+    "C-0091": "handler kind declarations: components are declared in proto and generated",
+    "C-0092": "method markers: handler methods come from the generated <Component>Handler",
+    "C-0093": "handler response types: generated wiring returns framework protos",
+    "C-0094": "gRPC server adapters: no engine-specific adapters in the router-binding client",
+    "C-0102": "compensation helpers: rejection handlers return framework protos via generated wiring",
+}
 
-@dataclass
-class World:
-    """Per-scenario test state shared across steps."""
-
-    # Handler instances registered so far.
-    handlers: list[Any] = field(default_factory=list)
-    # Dynamic handler classes keyed by role name ("Order", "Alpha", ...).
-    classes: dict[str, type] = field(default_factory=dict)
-    # Built router (set after `the router is built ...` step).
-    router: Any = None
-    # Dispatch inputs / outputs.
-    prior_events: Any = None
-    response: Any = None
-    dispatch_exc: Exception | None = None
-    # Multi-handler call-order log.
-    call_log: list[str] = field(default_factory=list)
-    # Projector write log.
-    write_log: list[Any] = field(default_factory=list)
-    # Destination sequences observed by saga/PM handlers.
-    dest_seqs: dict[str, int] = field(default_factory=dict)
-    observed_dest: dict[str, int] = field(default_factory=dict)
-    # Observed state fields during dispatch.
-    observed: dict[str, Any] = field(default_factory=dict)
+PENDING = {
+    "C-0336": "angzarr_client exposes no connect-timeout option on connect()",
+    "C-0337": "angzarr_client exposes no keep-alive option on connect()",
+}
 
 
-@pytest.fixture
-def world() -> World:
-    return World()
-
-
-# --------------------------------------------------------------------------
-# Shared step defs usable from any feature file
-# --------------------------------------------------------------------------
-
-from pytest_bdd import parsers, then  # noqa: E402
-
-
-@then("the response contains exactly one command")
-def _then_one_command(world):
-    assert len(world.response.commands) == 1
-
-
-@then("the response contains no commands")
-def _then_no_commands(world):
-    assert len(world.response.commands) == 0
-
-
-@then(parsers.parse('the command targets the "{domain}" domain'))
-def _then_command_targets(world, domain):
-    assert world.response.commands[0].cover.domain == domain
+def pytest_collection_modifyitems(items):
+    for item in items:
+        for tag, reason in ENGINE_SURFACE.items():
+            if item.get_closest_marker(tag) is not None:
+                item.add_marker(
+                    pytest.mark.skip(reason=f"engine surface ({tag}): {reason}")
+                )
+        for tag, reason in PENDING.items():
+            if item.get_closest_marker(tag) is not None:
+                item.add_marker(
+                    pytest.mark.xfail(strict=True, reason=f"pending ({tag}): {reason}")
+                )

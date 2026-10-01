@@ -8,8 +8,7 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from ..helpers import now as _now
-from ..proto.angzarr import (
+from .._pb import (
     UUID,
     CommandBook,
     CommandPage,
@@ -17,6 +16,8 @@ from ..proto.angzarr import (
     EventBook,
     EventPage,
 )
+from ..helpers import TYPE_URL_PREFIX
+from ..helpers import now as _now
 
 
 def make_timestamp() -> Timestamp:
@@ -33,21 +34,15 @@ def make_timestamp() -> Timestamp:
 def pack_event(msg: Message) -> ProtoAny:
     """Pack a protobuf message into an `Any` with the canonical type URL.
 
-    The type URL is derived from the message's descriptor
-    (``msg.DESCRIPTOR.full_name``) prefixed with the standard
-    ``type.googleapis.com/`` — per the `google.protobuf.Any` spec.
-
-    Audit finding #47 (Option C — drop the second arg, derive name from
-    the message): mirrors Rust's ``testing::builders::pack_event<M>(msg)``.
-    Removes the previous ``type_url_prefix`` parameter (which was a
-    typo-prone footgun and diverged in semantics from the Rust 2nd-arg
-    convention).
+    The type URL is ``TYPE_URL_PREFIX`` ("/") + the message's fully-qualified
+    name, the form every angzarr client emits. Mirrors Rust's
+    ``testing::builders::pack_event<M>(msg)``.
 
     Returns:
         ProtoAny containing the packed message.
     """
     event_any = ProtoAny()
-    event_any.Pack(msg)
+    event_any.Pack(msg, type_url_prefix=TYPE_URL_PREFIX)
     return event_any
 
 
@@ -89,8 +84,8 @@ def make_event_page(
 
 def make_event_book(
     cover: Cover,
-    pages: list[EventPage] = None,
-    next_sequence: int = None,
+    pages: list[EventPage] | None = None,
+    next_sequence: int | None = None,
 ) -> EventBook:
     """Create an EventBook.
 
@@ -147,11 +142,11 @@ def make_command_book(
 
 
 __all__ = [
+    "make_command_book",
+    "make_command_page",
+    "make_cover",
+    "make_event_book",
+    "make_event_page",
     "make_timestamp",
     "pack_event",
-    "make_cover",
-    "make_event_page",
-    "make_event_book",
-    "make_command_page",
-    "make_command_book",
 ]

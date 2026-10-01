@@ -14,8 +14,7 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from .errors import InvalidTimestampError
-from .proto.angzarr import (
+from ._pb import (
     UUID,
     CommandBook,
     CommandPage,
@@ -28,6 +27,7 @@ from .proto.angzarr import (
     SequenceRange,
     TemporalQuery,
 )
+from .errors import InvalidTimestampError
 
 # Type variable for generic message type
 T = TypeVar("T", bound=Message)
@@ -38,9 +38,11 @@ WILDCARD_DOMAIN = "*"
 DEFAULT_EDITION = ""
 META_ANGZARR_DOMAIN = "_angzarr"
 PROJECTION_DOMAIN_PREFIX = "_projection"
-PROJECTION_TYPE_URL = "angzarr_client.proto.angzarr.Projection"
+PROJECTION_TYPE_URL = "io.angzarr.v1.Projection"
 CORRELATION_ID_HEADER = "x-correlation-id"
-TYPE_URL_PREFIX = "type.googleapis.com/"
+# Emitted Any type URLs are "/" + the fully-qualified message name; any
+# prefix is accepted on input, the name being the text after the last "/".
+TYPE_URL_PREFIX = "/"
 
 
 # UUID conversion
@@ -141,21 +143,21 @@ def decode_event(page: EventPage, full_type_name: str, msg_class: type[T]) -> T 
     """Decode a page's event payload if its type URL matches the given name.
 
     Runtime-name dispatch — ``full_type_name`` is the fully-qualified
-    proto name (e.g. ``"orders.OrderCreated"``). Compared exactly against
-    ``TYPE_URL_PREFIX + full_type_name``. The class-keyed shortcut is
+    proto name (e.g. ``"orders.OrderCreated"``), compared exactly with the
+    name after the type URL's last ``/`` (any prefix). The class-keyed shortcut is
     ``EventPage(page).decode_typed(msg_class)`` (derives the name from
     ``msg_class.DESCRIPTOR.full_name``); use this free function when the
     type name is a runtime variable.
     """
     if page is None or not page.HasField("event"):
         return None
-    if page.event.type_url != TYPE_URL_PREFIX + full_type_name:
+    if not type_url_matches(page.event.type_url, full_type_name):
         return None
     try:
         msg = msg_class()
         page.event.Unpack(msg)
         return msg
-    except Exception:
+    except Exception:  # noqa: BLE001 — undecodable payload decodes to None
         return None
 
 
@@ -208,8 +210,9 @@ def type_name_from_url(type_url_str: str) -> str:
 
 
 def type_url_matches(type_url_str: str, type_name: str) -> bool:
-    """Check if a type URL matches the given fully-qualified type name."""
-    return type_url_str == TYPE_URL_PREFIX + wire_name(type_name)
+    """Whether a type URL names ``type_name``: the text after its last ``/``
+    (whatever the prefix) equals the fully-qualified name exactly."""
+    return type_name_from_url(type_url_str) == wire_name(type_name)
 
 
 # Alias for Rust API consistency
@@ -234,7 +237,7 @@ def try_unpack(any_proto: ProtoAny, msg_class: type[T]) -> T | None:
         msg = msg_class()
         any_proto.Unpack(msg)
         return msg
-    except Exception:
+    except Exception:  # noqa: BLE001 — undecodable payload decodes to None
         return None
 
 

@@ -7,9 +7,9 @@ particularly useful for Gherkin/BDD scenarios.
 from dataclasses import dataclass, field
 from typing import Any
 
+from .._pb import UUID, Cover, EventBook, EventPage
 from ..errors import CommandRejectedError
 from ..helpers import now
-from ..proto.angzarr import UUID, Cover, EventBook, EventPage
 from .builders import pack_event
 
 

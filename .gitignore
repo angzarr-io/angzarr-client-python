@@ -55,7 +55,17 @@ Thumbs.db
 uv.lock
 
 
-# Generated proto code (regenerated from buf registry during build)
-angzarr_client/proto/**/*_pb2.py
-angzarr_client/proto/**/*_pb2_grpc.py
-angzarr_client/proto/**/google/
+# Generated proto code (`just proto`)
+angzarr_client/proto/io/
+angzarr_client/proto/sererr/
+
+# Router-ffi build (just router-lib) and the vendored library it produces.
+.router-target/
+angzarr_client/router/_lib/
+
+# angzarr CLI installed by `just cli`.
+.tools/
+
+# Code rendered by this repository's templates for tests and checks.
+tests/router/gen/
+.codegen-check/

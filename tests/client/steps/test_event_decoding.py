@@ -32,14 +32,15 @@ from angzarr_client.helpers import (
     try_unpack,
     unpack,
 )
-from angzarr_client.proto.angzarr import (
+from angzarr_client._pb import (
     CommandResponse,
     EventBook,
     EventPage,
 )
-from angzarr_client.proto.angzarr.types_pb2 import PayloadReference
+from angzarr_client.proto.io.angzarr.v1.types_pb2 import PayloadReference
+from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
-scenarios("event_decoding.feature")
+scenarios("parity/client/event_decoding.feature")
 
 
 # Concrete proto message used to stand in for "OrderCreated" / "ItemAdded"
@@ -150,20 +151,13 @@ def _given_event_page_with_offloaded(state: _State) -> None:
 @given(parsers.parse('an event with type_url ending in "{suffix}"'))
 def _given_event_with_suffix(state: _State, suffix: str) -> None:
     # Synthetic type URL that ends with the requested suffix.
-    state.current_event = _make_event_page(
-        type_url=f"type.googleapis.com/myapp.events.{suffix}"
-    )
+    state.current_event = _make_event_page(type_url=f"/myapp.events.{suffix}")
 
 
 @given("events with type_urls:")
-def _given_events_with_type_urls(state: _State) -> None:
+def _given_events_with_type_urls(state: _State, datatable) -> None:
     state.events_list = [
-        _make_event_page(
-            sequence=0, type_url="type.googleapis.com/myapp.events.v1.OrderCreated"
-        ),
-        _make_event_page(
-            sequence=1, type_url="type.googleapis.com/myapp.events.v2.OrderCreated"
-        ),
+        _make_event_page(sequence=i, type_url=row[0]) for i, row in enumerate(datatable)
     ]
 
 
@@ -232,20 +226,46 @@ def _given_mixed_events(state: _State) -> None:
     # same StringValue stand-in but with synthetic type_urls so the
     # filter scenarios can distinguish them.
     state.events_list = [
-        _make_event_page(
-            sequence=0, type_url="type.googleapis.com/orders.OrderCreated"
-        ),
-        _make_event_page(sequence=1, type_url="type.googleapis.com/orders.ItemAdded"),
-        _make_event_page(sequence=2, type_url="type.googleapis.com/orders.ItemAdded"),
-        _make_event_page(
-            sequence=3, type_url="type.googleapis.com/orders.OrderShipped"
-        ),
+        _make_event_page(sequence=0, type_url="/orders.OrderCreated"),
+        _make_event_page(sequence=1, type_url="/orders.ItemAdded"),
+        _make_event_page(sequence=2, type_url="/orders.ItemAdded"),
+        _make_event_page(sequence=3, type_url="/orders.OrderShipped"),
     ]
 
 
 # ---------------------------------------------------------------------------
 # When
 # ---------------------------------------------------------------------------
+
+
+def _message_class(package: str, name: str):
+    """A message class whose fully-qualified name is ``package.name``."""
+    file = descriptor_pb2.FileDescriptorProto(
+        name=f"angzarr_event_decoding_test/{package}/{name}.proto",
+        package=package,
+        syntax="proto3",
+    )
+    file.message_type.add(name=name)
+    pool = descriptor_pool.DescriptorPool()
+    pool.Add(file)
+    return message_factory.GetMessageClass(
+        pool.FindMessageTypeByName(f"{package}.{name}")
+    )
+
+
+@when(parsers.parse('I pack an {name} event from package "{package}"'))
+def _when_pack(state: _State, name: str, package: str) -> None:
+    from angzarr_client.router import pack
+
+    page = EventPage()
+    page.event.CopyFrom(pack(_message_class(package, name)()))
+    state.current_event = page
+
+
+@then(parsers.parse('the event\'s type_url is "{type_url}"'))
+def _then_type_url_is(state: _State, type_url: str) -> None:
+    assert state.current_event is not None
+    assert state.current_event.event.type_url == type_url
 
 
 @when("I decode the event as OrderCreated")

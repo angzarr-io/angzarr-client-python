@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "angzarr-client"
 dynamic = ["version"]
-description = "Python client library for Angzarr gRPC services"
+description = "Angzarr for Python: the router binding (the shared Rust engine over cffi), codegen templates, and the coordinator clients"
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.10"
@@ -23,10 +23,16 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "grpcio>=1.60.0",
-    "grpcio-health-checking>=1.60.0",
-    "googleapis-common-protos>=1.62.0",
-    "protobuf>=5.29.0",
+    # cffi ABI mode (ffi.dlopen) over the router-ffi cdylib.
+    "cffi>=1.16",
+    # grpc/python:v1.76.0 gencode (buf.gen.yaml) checks the runtime is at
+    # least the generating version.
+    "grpcio>=1.76.0",
+    "grpcio-health-checking>=1.76.0",
+    # google.rpc.Status / ErrorInfo and google.api.
+    "googleapis-common-protos>=1.65",
+    # protocolbuffers/python:v35.1 gencode targets the protobuf 7.x runtime.
+    "protobuf>=7.35.1,<8",
     "structlog>=24.0.0",
 ]
 
@@ -42,8 +48,6 @@ dev = [
     "pytest-bdd>=7.0.0",
     "pytest-cov>=4.1.0",
     "mutmut>=2.5.0",
-    "sqlalchemy>=2.0.0",
-    "grpcio-tools>=1.60.0",
     "ruff>=0.4.0",
     "black>=24.0.0",
 ]
@@ -59,16 +63,23 @@ path = "VERSION"
 pattern = "(?P<version>.+)"
 
 [tool.hatch.build]
-# Include generated proto files even though they're not in git
-artifacts = ["angzarr_client/proto/**/*.py"]
+# Generated protos and the vendored router-ffi library are not in git.
+artifacts = [
+    "angzarr_client/proto/**/*.py",
+    "angzarr_client/proto/**/*.pyi",
+    "angzarr_client/router/_lib/*",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["angzarr_client"]
 
 [tool.pytest.ini_options]
-bdd_features_base_dir = "angzarr-project/features/client"
+# Feature paths are relative to the angzarr-project submodule
+# (features/client/…, parity/client/…); the router conformance steps use the
+# angzarr-router submodule's absolute paths.
+bdd_features_base_dir = "angzarr-project"
 testpaths = ["tests"]
-norecursedirs = ["mutants"]
+norecursedirs = ["mutants", "angzarr-project", "angzarr-router"]
 asyncio_mode = "auto"
 filterwarnings = [
     # pytest-bdd converts each Gherkin tag into a pytest mark. Scenario IDs
@@ -85,32 +96,23 @@ filterwarnings = [
 paths_to_mutate = [
     "angzarr_client/builder.py",
     "angzarr_client/client.py",
-    "angzarr_client/compensation.py",
-    "angzarr_client/destinations.py",
     "angzarr_client/errors.py",
-    "angzarr_client/event_packing.py",
     "angzarr_client/helpers.py",
     "angzarr_client/identity.py",
-    "angzarr_client/protoname.py",
     "angzarr_client/retry.py",
-    "angzarr_client/server.py",
     "angzarr_client/validation.py",
     "angzarr_client/wrappers.py",
-    "angzarr_client/router/builder.py",
-    "angzarr_client/router/decorators.py",
-    "angzarr_client/router/dispatch.py",
-    "angzarr_client/router/responses.py",
-    "angzarr_client/router/runtime.py",
-    "angzarr_client/router/server.py",
-    "angzarr_client/router/validation.py",
+    "angzarr_client/router/_dispatch.py",
 ]
-pytest_add_cli_args_test_selection = ["tests/", "--ignore=tests/client"]
+pytest_add_cli_args_test_selection = ["tests/"]
 also_copy = ["angzarr_client/"]
 
 [tool.ruff]
 exclude = [
     "angzarr_client/proto",
     "tests/",
+    "angzarr-router/",
+    ".codegen-check/",
     # Submodule — owned by angzarr-project, contains symlinks
     # (features/example/acceptance/environment.py → tests/example/acceptance/...)
     # that resolve only inside the angzarr-project repo layout, not
@@ -124,5 +126,9 @@ extend-exclude = '''
 (
     angzarr_client/proto
     | \.venv
+    | angzarr-project
+    | angzarr-router
+    | tests/router/gen
+    | \.codegen-check
 )
 '''

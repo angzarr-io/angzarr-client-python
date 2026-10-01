@@ -1,4 +1,14 @@
-"""Angzarr Python client library for gRPC services."""
+"""Angzarr for Python.
+
+- ``angzarr_client.router``: the router binding — the shared Rust engine
+  (angzarr-router) that hosts components; ``angzarr codegen python`` renders
+  this repository's codegen/ templates against it. Import it explicitly: it
+  loads the router-ffi native library, which the clients below do not need.
+- The coordinator clients (``CommandHandlerClient``, ``QueryClient``,
+  ``SpeculativeClient``, ``DomainClient``) and their builders.
+- ``angzarr_client.testing``: test helpers, imported from that module
+  explicitly (they are not part of this top-level surface).
+"""
 
 from importlib.metadata import version as _version
 
@@ -13,17 +23,6 @@ from .client import (
     TransportMode,
     resolve_ch_endpoint,
 )
-from .compensation import (
-    CompensationContext,
-    DelegationOptions,
-    PMRevocationResponse,
-    delegate_to_framework,
-    emit_compensation_events,
-    is_notification,
-    pm_delegate_to_framework,
-    pm_emit_compensation_events,
-)
-from .destinations import Destinations
 from .errors import (
     ClientError,
     CommandRejectedError,
@@ -57,53 +56,11 @@ from .helpers import (
     type_url_matches_exact,
     uuid_to_proto,
 )
-from .identity import (
-    INVENTORY_PRODUCT_NAMESPACE,
-    cart_root,
-    compute_root,
-    customer_root,
-    fulfillment_root,
-    inventory_product_root,
-    inventory_root,
-    order_root,
-    product_root,
-    to_proto_bytes,
-)
+from .identity import compute_root, to_proto_bytes
 from .retry import (
     ExponentialBackoffRetry,
     RetryPolicy,
     default_retry_policy,
-)
-from .router import (
-    BuildError,
-    CommandHandlerRouter,
-    DispatchError,
-    ProcessManagerResponse,
-    ProcessManagerRouter,
-    ProjectorRouter,
-    RejectionHandlerResponse,
-    Router,
-    SagaHandlerResponse,
-    SagaRouter,
-    UpcasterRouter,
-    applies,
-    command_handler,
-    handles,
-    handles_fact,
-    process_manager,
-    projector,
-    rejected,
-    saga,
-    state_factory,
-    upcaster,
-    upcasts,
-)
-from .router.server import (
-    CommandHandlerGrpc,
-    ProcessManagerGrpc,
-    ProjectorGrpc,
-    SagaGrpc,
-    UpcasterGrpc,
 )
 from .server import (
     DEFAULT_BIND_HOST,
@@ -114,27 +71,8 @@ from .server import (
     create_server,
     get_transport_config,
     resolve_bind_address,
-    run_command_handler_server,
-    run_process_manager_server,
-    run_projector_server,
-    run_saga_server,
     run_server,
-    run_upcaster_server,
 )
-from .testing import (
-    DEFAULT_TEST_NAMESPACE,
-    ScenarioContext,
-    make_command_book,
-    make_command_page,
-    make_cover,
-    make_event_book,
-    make_event_page,
-    make_timestamp,
-    uuid_for,
-    uuid_obj_for,
-    uuid_str_for,
-)
-from .testing import pack_event as testing_pack_event
 from .validation import (
     require_exists,
     require_non_negative,
@@ -158,148 +96,95 @@ from .wrappers import (
 )
 
 __all__ = [
-    # Clients
-    "CommandHandlerClient",
-    "QueryClient",
-    "SpeculativeClient",
-    "DomainClient",
-    "TransportMode",
-    "resolve_ch_endpoint",
-    # Router (unified)
-    "Router",
-    "BuildError",
-    "DispatchError",
-    "CommandHandlerRouter",
-    "SagaRouter",
-    "ProcessManagerRouter",
-    "ProjectorRouter",
-    "UpcasterRouter",
-    "SagaHandlerResponse",
-    "ProcessManagerResponse",
-    "RejectionHandlerResponse",
-    "command_handler",
-    "saga",
-    "process_manager",
-    "projector",
-    "upcaster",
-    "handles",
-    "handles_fact",
-    "applies",
-    "rejected",
-    "state_factory",
-    "upcasts",
-    # gRPC server adapters
-    "CommandHandlerGrpc",
-    "SagaGrpc",
-    "ProcessManagerGrpc",
-    "ProjectorGrpc",
-    "UpcasterGrpc",
-    # Errors
-    "ClientError",
-    "ConnectionError",
-    "TransportError",
-    "GRPCError",
-    "InvalidArgumentError",
-    "InvalidTimestampError",
-    "CommandRejectedError",
-    # Constants
-    "UNKNOWN_DOMAIN",
-    "WILDCARD_DOMAIN",
+    "CORRELATION_ID_HEADER",
+    "DEFAULT_BIND_HOST",
     "DEFAULT_EDITION",
+    "ENV_BIND_ADDRESS",
     "META_ANGZARR_DOMAIN",
     "PROJECTION_DOMAIN_PREFIX",
     "PROJECTION_TYPE_URL",
     "TYPE_URL_PREFIX",
-    "CORRELATION_ID_HEADER",
-    # Pure utilities (non-accessor — accessors live on wrapper classes)
-    "correlated_metadata",
-    "destination_map",
-    "implicit_edition",
-    "uuid_to_proto",
-    "proto_to_uuid",
-    "proto_uuid_to_hex",
-    "type_url",
-    "type_name_from_url",
-    "type_url_matches",
-    "type_url_matches_exact",
-    "full_type_url",
-    "full_type_url_for",
-    "now",
-    "parse_timestamp",
+    # Constants
+    "UNKNOWN_DOMAIN",
+    "WILDCARD_DOMAIN",
+    # Errors
+    "ClientError",
+    "CommandBook",
     # Builders
     "CommandBuilder",
+    # Clients
+    "CommandHandlerClient",
+    "CommandPage",
+    "CommandRejectedError",
+    "CommandResponse",
+    "ConnectionError",
+    "Cover",
+    "CoverBearer",
+    # Router binding (resolved on first use)
+    "Destinations",
+    "DomainClient",
+    "EventBook",
+    "EventPage",
+    "ExponentialBackoffRetry",
+    "GRPCError",
+    "InvalidArgumentError",
+    "InvalidTimestampError",
+    "Query",
     "QueryBuilder",
+    "QueryClient",
+    # Retry
+    "RetryPolicy",
+    "ServerConfig",
+    "SpeculativeClient",
+    "TransportError",
+    "TransportMode",
     # Wrappers (user-facing object surface for framework protos)
     "Wrapped",
-    "CoverBearer",
-    "Cover",
-    "EventBook",
-    "CommandBook",
-    "Query",
-    "EventPage",
-    "CommandPage",
-    "CommandResponse",
+    "cleanup_socket",
+    # Identity
+    "compute_root",
     # Server
     "configure_logging",
-    "get_transport_config",
-    "resolve_bind_address",
-    "ENV_BIND_ADDRESS",
-    "DEFAULT_BIND_HOST",
+    # Pure utilities (non-accessor — accessors live on wrapper classes)
+    "correlated_metadata",
     "create_server",
-    "run_server",
-    "run_command_handler_server",
-    "run_saga_server",
-    "run_process_manager_server",
-    "run_projector_server",
-    "run_upcaster_server",
-    "ServerConfig",
-    "cleanup_socket",
-    # Testing helpers (mirror angzarr_client::testing in Rust)
-    "DEFAULT_TEST_NAMESPACE",
-    "ScenarioContext",
-    "make_cover",
-    "make_event_page",
-    "make_event_book",
-    "make_command_page",
-    "make_command_book",
-    "make_timestamp",
-    "testing_pack_event",
-    "uuid_for",
-    "uuid_str_for",
-    "uuid_obj_for",
+    "default_retry_policy",
+    "destination_map",
+    "full_type_url",
+    "full_type_url_for",
+    "get_transport_config",
+    "implicit_edition",
+    "now",
+    "parse_timestamp",
+    "proto_to_uuid",
+    "proto_uuid_to_hex",
     # Validation
     "require_exists",
-    "require_not_exists",
-    "require_positive",
     "require_non_negative",
     "require_not_empty",
     "require_not_empty_str",
+    "require_not_exists",
+    "require_positive",
     "require_status",
     "require_status_not",
-    # Identity
-    "INVENTORY_PRODUCT_NAMESPACE",
-    "compute_root",
-    "inventory_product_root",
-    "customer_root",
-    "product_root",
-    "order_root",
-    "inventory_root",
-    "cart_root",
-    "fulfillment_root",
+    "resolve_bind_address",
+    "resolve_ch_endpoint",
+    "run_server",
     "to_proto_bytes",
-    # Compensation
-    "CompensationContext",
-    "DelegationOptions",
-    "PMRevocationResponse",
-    "delegate_to_framework",
-    "emit_compensation_events",
-    "is_notification",
-    "pm_delegate_to_framework",
-    "pm_emit_compensation_events",
-    # Destinations
-    "Destinations",
-    # Retry
-    "RetryPolicy",
-    "ExponentialBackoffRetry",
-    "default_retry_policy",
+    "type_name_from_url",
+    "type_url",
+    "type_url_matches",
+    "type_url_matches_exact",
+    "uuid_to_proto",
 ]
+
+
+def __getattr__(name: str):
+    """``Destinations`` (what saga and process-manager handlers receive)
+    resolves from the router binding on first use, so importing this package
+    does not load the router-ffi library."""
+    if name == "Destinations":
+        from .router import Destinations
+
+        return Destinations
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

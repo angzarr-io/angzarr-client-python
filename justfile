@@ -1,128 +1,175 @@
-# angzarr-client-python commands
+# angzarr-client-python commands. CI calls these recipes and nothing else.
 
-set shell := ["bash", "-c"]
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+TOP := justfile_directory()
+
+# The angzarr CLI that renders this repository's codegen templates, built from
+# angzarr-cli at this revision into .tools/ (`just cli`). ANGZARR_CLI points at
+# another binary instead (e.g. a local angzarr-cli build).
+CLI_REV := "734b1bbdd4e913f19f8cb87f3f1dd95c06053d99"
+CLI := env_var_or_default("ANGZARR_CLI", TOP / ".tools" / "angzarr")
+
+# The router-ffi cdylib, built from the angzarr-router submodule (the pinned
+# revision) and vendored into the package (`just router-lib`).
+ROUTER_LIB_DIR := TOP / "angzarr_client" / "router" / "_lib"
+ROUTER_TARGET := TOP / ".router-target"
 
 default:
     @just --list
 
-# Generate proto code from submodule
+# Python types for the framework contract and the router ABI
+# (angzarr_client/proto/, gitignored), with imports rerooted under the package.
 proto:
-    buf generate
-    uv run python scripts/generate_protos.py
+    rm -rf {{TOP}}/angzarr_client/proto/io {{TOP}}/angzarr_client/proto/sererr
+    cd {{TOP}} && buf generate --template buf.gen.yaml \
+        --path angzarr-project/proto/io/angzarr/v1 \
+        --path angzarr-project/proto/io/angzarr/status \
+        --path angzarr-project/proto/sererr \
+        --path angzarr-router/proto/io
+    cd {{TOP}} && uv run python scripts/fixup_gen_imports.py angzarr_client/proto \
+        io=angzarr_client.proto.io sererr=angzarr_client.proto.sererr
 
-# Framework-harness cucumber (pytest-bdd; feature files from angzarr-project/features/client/)
-test-client-unit:
-    uv run --extra dev pytest tests/client/ -v
+# Build the router-ffi cdylib from the pinned angzarr-router submodule against
+# this repository's angzarr-project protos, and vendor it into the package.
+router-lib:
+    cd {{TOP}} && ANGZARR_PROJECT_PROTO={{TOP}}/angzarr-project/proto \
+        cargo build --manifest-path angzarr-router/Cargo.toml -p angzarr-router-ffi \
+        --release --target-dir {{ROUTER_TARGET}}
+    mkdir -p {{ROUTER_LIB_DIR}}
+    for lib in libangzarr_router_ffi.so libangzarr_router_ffi.dylib angzarr_router_ffi.dll; do \
+        if [ -f {{ROUTER_TARGET}}/release/$lib ]; then cp {{ROUTER_TARGET}}/release/$lib {{ROUTER_LIB_DIR}}/; fi; \
+    done
+    ls {{ROUTER_LIB_DIR}}
 
-# Plain pytest, excluding the BDD subset
-test-pytest:
-    uv run --extra dev pytest tests/ -v --ignore=tests/client
-
-# Full suite
-test: test-pytest test-client-unit
-
-# Full suite with verbose output (matches Rust's `just test-verbose`)
-test-verbose:
-    uv run --extra dev pytest tests/ -v -s
-
-# Lint only (ruff). `fmt` already runs black --check + ruff check; this is
-# a cross-language alias matching Rust's `just lint` = `cargo clippy -D warnings`.
-lint:
-    uv run ruff check .
-
-# Run tests with coverage
-coverage:
-    uv run --extra dev pytest tests/ --cov=angzarr_client --cov-report=term-missing --cov-report=html
-
-# Build Sphinx HTML docs into docs/_build/html.
-# --keep-going finishes generation even when some xrefs are ambiguous
-# (autoapi emits cross-references for TypeVars like `T` that appear in
-# multiple modules; those warnings are cosmetic in the rendered output).
-docs:
-    uv run --extra docs sphinx-build -b html --keep-going docs docs/_build/html
-
-# Serve the built docs locally
-docs-serve:
-    @echo "Open http://localhost:8000 — Ctrl-C to stop"
-    python3 -m http.server --directory docs/_build/html 8000
-
-# Run mutation testing (80% kill rate threshold)
-mutation-test:
+# Install the angzarr CLI at CLI_REV into .tools/ (skipped when ANGZARR_CLI
+# names another binary).
+cli:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Capture mutmut run output to parse the final progress line
-    uv run --extra dev mutmut run 2>&1 | tee /tmp/mutmut_output.txt || true
-    # Final line format: ⠧ 709/709  🎉 390 🫥 226  ⏰ 2  🤔 0  🙁 91  🔇 0  🧙 0
-    final_line=$(grep '🎉' /tmp/mutmut_output.txt | tail -1)
-    killed=$(echo "$final_line" | sed -n 's/.*🎉 *\([0-9]*\).*/\1/p')
-    survived=$(echo "$final_line" | sed -n 's/.*🙁 *\([0-9]*\).*/\1/p')
-    killed=${killed:-0}
-    survived=${survived:-0}
-    total=$((killed + survived))
-    if [ "$total" -eq 0 ]; then
-        echo "ERROR: No mutants were tested"
-        exit 1
-    fi
-    rate=$((killed * 100 / total))
-    echo "Mutation kill rate: ${rate}% (${killed}/${total}, ${survived} survived)"
-    if [ "$rate" -lt 80 ]; then
-        echo "FAIL: Kill rate ${rate}% is below 80% threshold"
-        exit 1
-    fi
-    echo "PASS: Kill rate meets 80% threshold"
+    if [ -n "${ANGZARR_CLI:-}" ]; then echo "using ANGZARR_CLI=$ANGZARR_CLI"; exit 0; fi
+    if [ -x "{{CLI}}" ] && [ "$(cat {{TOP}}/.tools/angzarr.rev 2>/dev/null)" = "{{CLI_REV}}" ]; then exit 0; fi
+    GOBIN={{TOP}}/.tools GOFLAGS=-mod=mod go install github.com/angzarr-io/angzarr-cli@{{CLI_REV}}
+    mv {{TOP}}/.tools/angzarr-cli {{CLI}}
+    echo "{{CLI_REV}}" > {{TOP}}/.tools/angzarr.rev
 
-# Show mutation testing results
-mutation-test-results:
-    uv run --extra dev mutmut results
+# Render this repository's templates (codegen/) over a proto tree with the CLI:
+# wiring (codegen) and stubs (scaffold) for the given paths, plus their protobuf
+# types, into <out>. Framework imports resolve to angzarr_client.proto; imports
+# of the rendered protos resolve under <package> (the dotted package <out> is
+# imported as).
+render out package +paths: cli
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="{{out}}"
+    mkdir -p "$out"
+    tmpl="$(mktemp --suffix=.gen.yaml)"
+    trap 'rm -f "$tmpl"' EXIT
+    cat > "$tmpl" <<YAML
+    version: v2
+    managed:
+      enabled: true
+      override:
+        - file_option: go_package_prefix
+          value: angzarr.local/gen
+    plugins:
+      - remote: buf.build/protocolbuffers/python:v35.1
+        out: $out
+      - local: ["{{CLI}}", "codegen", "python"]
+        out: $out
+        opt: [paths=source_relative, templates={{TOP}}/codegen]
+        strategy: all
+      - local: ["{{CLI}}", "scaffold", "python"]
+        out: $out
+        opt: [paths=source_relative, out_dir=$out, templates={{TOP}}/codegen]
+        strategy: all
+    YAML
+    args=()
+    for p in {{paths}}; do args+=(--path "$p"); done
+    cd {{TOP}} && buf generate --template "$tmpl" "${args[@]}"
+    framework=(io.angzarr.v1=angzarr_client.proto.io.angzarr.v1 io.angzarr.status=angzarr_client.proto.io.angzarr.status sererr=angzarr_client.proto.sererr)
+    own=()
+    for p in {{paths}}; do
+        mod="$(echo "${p#*/proto/}" | tr / .)"
+        own+=("$mod={{package}}.$mod")
+    done
+    uv run python scripts/fixup_gen_imports.py "$out" "${framework[@]}" "${own[@]}"
 
-# Generate mutation testing HTML report
-mutation-test-html:
-    uv run --extra dev mutmut html
+# The conformance fixture (angzarr-router/conformance/proto) rendered into
+# tests/router/gen: the components the conformance steps register.
+conformance-gen:
+    rm -rf {{TOP}}/tests/router/gen
+    just render {{TOP}}/tests/router/gen tests.router.gen angzarr-router/conformance/proto/test
 
-# Build package
-build: proto
-    uv build
+# Render the angzarr-project example protos with the templates and prove the
+# result loads: every wiring module imports and every scaffold stub declares
+# each method of its <Component>Handler protocol.
+codegen-check:
+    rm -rf {{TOP}}/.codegen-check
+    just render {{TOP}}/.codegen-check/gen gen angzarr-project/proto/io/angzarr/examples
+    cd {{TOP}} && uv run python scripts/check_rendered.py .codegen-check/gen
 
-# Publish to TestPyPI
-publish-test: build
-    uv run --with twine twine upload --repository testpypi dist/*
+# Everything the tests need: protos, the router library, the fixture wiring.
+prepare: proto router-lib conformance-gen
+
+# Unit, binding, conformance and client-feature tests.
+test: prepare
+    cd {{TOP}} && uv run --extra dev pytest tests/ -q
+
+# Full suite with verbose output
+test-verbose: prepare
+    cd {{TOP}} && uv run --extra dev pytest tests/ -v
+
+# Lint (ruff)
+lint:
+    cd {{TOP}} && uv run --extra dev ruff check .
+
+# Run tests with coverage
+coverage: prepare
+    cd {{TOP}} && uv run --extra dev pytest tests/ --cov=angzarr_client --cov-report=term-missing
+
+# Build Sphinx HTML docs into docs/_build/html.
+docs:
+    cd {{TOP}} && uv run --extra docs sphinx-build -b html --keep-going docs docs/_build/html
+
+# Mutation testing (80% kill-rate gate over the evaluable mutants).
+mutation-test: prepare
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd {{TOP}}
+    rm -rf mutants
+    uv run --extra dev mutmut run || true
+    uv run --extra dev mutmut export-cicd-stats
+    read -r total killed no_tests < <(python3 -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['total'], d['killed'], d['no_tests'])")
+    evaluated=$((total - no_tests))
+    if [ "$evaluated" -eq 0 ]; then echo "ERROR: no evaluable mutants"; exit 1; fi
+    rate=$((killed * 100 / evaluated))
+    echo "Kill rate: ${rate}% (${killed}/${evaluated} evaluable; ${no_tests} untested)"
+    if [ "$rate" -lt 80 ]; then echo "FAIL: kill rate below 80%"; exit 1; fi
+
+# Build the package (wheel ships the generated protos and the router library).
+build: prepare
+    cd {{TOP}} && uv build
 
 # Publish to PyPI
 publish: build
-    uv run --with twine twine upload dist/*
+    cd {{TOP}} && uv run --with twine twine upload dist/*
 
-# Clean build artifacts
+# Remove build outputs and caches (generated protos, router build, rendered code).
 clean:
-    rm -rf dist/ build/ *.egg-info/ htmlcov/ .mutmut-cache .pytest_cache __pycache__
+    cd {{TOP}} && rm -rf dist/ build/ *.egg-info/ htmlcov/ mutants/ .pytest_cache \
+        .router-target .codegen-check tests/router/gen angzarr_client/router/_lib \
+        angzarr_client/proto/io angzarr_client/proto/sererr
 
-# Check formatting
+# Check formatting (ruff + black)
 fmt:
-    uv run ruff check . --exclude angzarr-project
-    uv run black --check .
+    cd {{TOP}} && uv run --extra dev ruff check .
+    cd {{TOP}} && uv run --extra dev black --check .
 
 # Auto-format code
 fmt-fix:
-    uv run ruff check --fix . --exclude angzarr-project
-    uv run black .
+    cd {{TOP}} && uv run --extra dev ruff check --fix .
+    cd {{TOP}} && uv run --extra dev black .
 
-# =============================================================================
-# Submodule management
-# =============================================================================
-# The angzarr-project submodule is kept chmod a-w so accidental edits (Claude,
-# editors, scripts) fail loudly. Use `bump-angzarr-project` to update — it
-# unlocks, pulls the tracking branch, stages the new pointer, then relocks.
-
-# Lock submodules read-only (filesystem enforcement).
-submodules-lock:
-    chmod -R a-w angzarr-project
-
-# Unlock submodules for manual edits. Remember to `submodules-lock` after.
-submodules-unlock:
-    chmod -R u+w angzarr-project
-
-# Bump angzarr-project to latest on its tracking branch.
-bump-angzarr-project:
-    chmod -R u+w angzarr-project
-    git submodule update --remote --merge angzarr-project
-    git add angzarr-project
-    chmod -R a-w angzarr-project
+# The CI entry point: format, lint, tests, and the rendered-code check.
+ci: fmt test codegen-check

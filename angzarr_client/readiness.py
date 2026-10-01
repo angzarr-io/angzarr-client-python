@@ -28,7 +28,6 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from typing import Union
 
 DEFAULT_PROBE_INTERVAL = 30.0
 """Default cadence for re-evaluating output-domain probes (seconds)."""
@@ -109,7 +108,7 @@ class TransportProbe(Probe):
         self._signal = signal
 
     @classmethod
-    def new(cls) -> tuple["TransportProbe", TransportSignal]:
+    def new(cls) -> tuple[TransportProbe, TransportSignal]:
         signal = TransportSignal()
         return cls(signal), signal
 
@@ -131,7 +130,7 @@ class _UdsEndpoint:
     path: str
 
 
-_Endpoint = Union[_TcpEndpoint, _UdsEndpoint]
+_Endpoint = _TcpEndpoint | _UdsEndpoint
 
 
 def _parse_endpoint(raw: str) -> _Endpoint:
@@ -194,7 +193,7 @@ class OutputDomainProbe(Probe):
         self._endpoint = endpoint
 
     @classmethod
-    def for_domain(cls, domain: str) -> "OutputDomainProbe":
+    def for_domain(cls, domain: str) -> OutputDomainProbe:
         from .client import resolve_ch_endpoint
 
         raw = resolve_ch_endpoint(domain)
@@ -225,7 +224,7 @@ class BusProbe(Probe):
         self._endpoint = endpoint
 
     @classmethod
-    def from_env(cls) -> "BusProbe | None":
+    def from_env(cls) -> BusProbe | None:
         raw = os.environ.get(ENV_BUS_ENDPOINT)
         if not raw:
             return None

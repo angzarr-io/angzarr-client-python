@@ -7,7 +7,7 @@ from angzarr_client.helpers import (
     UNKNOWN_DOMAIN,
     uuid_to_proto,
 )
-from angzarr_client.proto.angzarr import (
+from angzarr_client._pb import (
     CommandBook as CommandBookProto,
     CommandPage as CommandPageProto,
     CommandResponse as CommandResponseProto,
@@ -508,7 +508,7 @@ class TestCommandBookWAdditional:
         assert CommandBook(CommandBookProto()).first_command() is None
 
     def test_merge_strategy_default_when_no_pages(self) -> None:
-        from angzarr_client.proto.angzarr import MergeStrategy
+        from angzarr_client._pb import MergeStrategy
 
         assert (
             CommandBook(CommandBookProto()).merge_strategy()
@@ -516,7 +516,7 @@ class TestCommandBookWAdditional:
         )
 
     def test_merge_strategy_from_first_page(self) -> None:
-        from angzarr_client.proto.angzarr import MergeStrategy
+        from angzarr_client._pb import MergeStrategy
 
         proto = CommandBookProto()
         page = proto.pages.add()
@@ -713,7 +713,7 @@ class TestEventPageWAdditional:
         proto = EventPageProto(header=PageHeader(sequence=1))
         proto.event.Pack(CoverProto(domain="x"))
         url = EventPage(proto).type_url()
-        assert url is not None and url.endswith("angzarr_client.proto.angzarr.Cover")
+        assert url is not None and url.endswith("/io.angzarr.v1.Cover")
 
     def test_type_url_none_when_no_event(self) -> None:
         assert (
@@ -781,7 +781,7 @@ class TestCommandPageWAdditional:
         proto.header.sequence = 1
         proto.command.Pack(CoverProto(domain="x"))
         url = CommandPage(proto).type_url()
-        assert url is not None and url.endswith("angzarr_client.proto.angzarr.Cover")
+        assert url is not None and url.endswith("/io.angzarr.v1.Cover")
 
     def test_type_url_none_when_no_command(self) -> None:
         proto = CommandPageProto()
@@ -800,12 +800,34 @@ class TestCommandPageWAdditional:
         assert CommandPage(proto).payload() is None
 
     def test_merge_strategy_default(self) -> None:
-        from angzarr_client.proto.angzarr import MergeStrategy
+        from angzarr_client._pb import MergeStrategy
 
         assert (
             CommandPage(CommandPageProto()).merge_strategy()
             == MergeStrategy.MERGE_COMMUTATIVE
         )
+
+    def test_merge_strategy_explicit_value_is_kept(self) -> None:
+        from angzarr_client._pb import MergeStrategy
+
+        proto = CommandPageProto(merge_strategy=MergeStrategy.MERGE_STRICT)
+        assert CommandPage(proto).merge_strategy() == MergeStrategy.MERGE_STRICT
+
+    def test_merge_strategy_unknown_value_is_commutative(self) -> None:
+        from angzarr_client._pb import MergeStrategy
+
+        proto = CommandPageProto()
+        proto.ParseFromString(bytes([0x10, 0x63]))  # field 2 (merge_strategy) = 99
+        assert proto.merge_strategy == 99
+        assert CommandPage(proto).merge_strategy() == MergeStrategy.MERGE_COMMUTATIVE
+
+    def test_book_merge_strategy_is_the_first_pages_effective_value(self) -> None:
+        from angzarr_client._pb import MergeStrategy
+
+        book = CommandBookProto()
+        book.pages.add()  # unset
+        book.pages.add(merge_strategy=MergeStrategy.MERGE_STRICT)
+        assert CommandBook(book).merge_strategy() == MergeStrategy.MERGE_COMMUTATIVE
 
 
 class TestWrapperAttributeAccess:

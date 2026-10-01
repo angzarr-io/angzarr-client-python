@@ -20,9 +20,9 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.builder import QueryBuilder
 from angzarr_client.errors import InvalidTimestampError
-from angzarr_client.proto.angzarr import EventBook, Query
+from angzarr_client._pb import EventBook, Query
 
-scenarios("query_builder.feature")
+scenarios("parity/client/query_builder.feature")
 
 
 # ---------------------------------------------------------------------------

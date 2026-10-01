@@ -70,6 +70,6 @@ def uuid_obj_for(name: str, namespace: UUID = DEFAULT_TEST_NAMESPACE) -> UUID:
 __all__ = [
     "DEFAULT_TEST_NAMESPACE",
     "uuid_for",
-    "uuid_str_for",
     "uuid_obj_for",
+    "uuid_str_for",
 ]

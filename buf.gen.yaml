@@ -1,9 +1,21 @@
+# Python types for the framework contract and the router ABI, generated into
+# angzarr_client/proto/ (gitignored; `just proto`). scripts/fixup_gen_imports.py
+# then reroots the plugin's path imports (`from io.angzarr.v1 import …`, which
+# the stdlib `io` module shadows) under `angzarr_client.proto.`.
+#
+# google.* are not generated: google.protobuf is the protobuf runtime and
+# google.rpc / google.api come from googleapis-common-protos (excluded at the
+# `buf generate` call).
+#
+# Managed mode is off: every file option stays as the .proto declares it, so
+# the serialized descriptors are the contract's own bytes
+# (tests/router/test_framework_pool_coexistence.py).
 version: v2
-inputs:
-  - directory: angzarr-project/proto
 plugins:
-  # Pin to v28.3 which generates protobuf 5.x compatible code
-  - remote: buf.build/protocolbuffers/python:v28.3
-    out: .
-  - remote: buf.build/grpc/python:v1.68.1
-    out: .
+  # protobuf 7.x gencode (pyproject pins the matching runtime).
+  - remote: buf.build/protocolbuffers/python:v35.1
+    out: angzarr_client/proto
+  - remote: buf.build/protocolbuffers/pyi:v35.1
+    out: angzarr_client/proto
+  - remote: buf.build/grpc/python:v1.76.0
+    out: angzarr_client/proto

@@ -1,570 +1,465 @@
 """Step defs for features/client/speculative_client.feature.
 
-Calls real `angzarr_client.client.SpeculativeClient` via the
-`from_stubs(...)` injection seam (P1.12.e). Four `RecordingStub`
-instances back the four speculative service methods (command_handler,
-projector, saga, process_manager). The stubs serve canned responses;
-real client construction + per-method error wrapping runs end-to-end.
+Drives a real :class:`SpeculativeClient` against the test backend
+(``_fakes.TestBackend``) and checks real state with a real
+:class:`QueryClient`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any
 
-import grpc
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.client import SpeculativeClient
-from angzarr_client.errors import GRPCError
-from angzarr_client.proto.angzarr import (
+from angzarr_client._pb import (
+    CommandBook,
     CommandResponse,
+    Cover,
     EventBook,
-    EventPage,
-    ProcessManagerHandleResponse,
-    Projection,
-    SagaResponse,
+    ProcessManagerHandleRequest,
+    SagaHandleRequest,
     SpeculateCommandHandlerRequest,
     SpeculatePmRequest,
     SpeculateProjectorRequest,
     SpeculateSagaRequest,
+    TemporalQuery,
+)
+from angzarr_client.client import QueryClient, SpeculativeClient
+from angzarr_client.errors import ClientError, GRPCError
+from angzarr_client.helpers import proto_to_uuid
+
+from ._fakes import (
+    GenericEvent,
+    TestBackend,
+    command_any,
+    cover,
+    event_any,
+    event_data,
+    page_seq,
+    root_for,
+    route_endpoints,
 )
 
-from ._fakes import RecordingStub, StubRpcError
-
-scenarios("speculative_client.feature")
-
-
-# ---------------------------------------------------------------------------
-# In-memory aggregate store
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _StoredAggregate:
-    events: list[EventPage] = field(default_factory=list)
-    state_label: str = ""
-
-
-def _event_page(seq: int, type_url_suffix: str = "Event") -> EventPage:
-    page = EventPage()
-    page.header.sequence = seq
-    page.event.type_url = f"type.googleapis.com/{type_url_suffix}"
-    return page
-
-
-# ---------------------------------------------------------------------------
-# World
-# ---------------------------------------------------------------------------
+scenarios("features/client/speculative_client.feature")
 
 
 @dataclass
 class _World:
-    cmd_stub: RecordingStub = field(default_factory=RecordingStub)
-    projector_stub: RecordingStub = field(default_factory=RecordingStub)
-    saga_stub: RecordingStub = field(default_factory=RecordingStub)
-    pm_stub: RecordingStub = field(default_factory=RecordingStub)
-    client: Optional[SpeculativeClient] = None
+    backend: TestBackend = field(default_factory=TestBackend)
+    client: SpeculativeClient | None = None
+    cover: Cover | None = None
+    events: EventBook | None = None
+    stored_before: int = 0
+    command: Any = None
+    commands_ab: list[CommandResponse] = field(default_factory=list)
+    projection: Any = None
+    saga: Any = None
+    pm: Any = None
+    real: EventBook | None = None
+    error: ClientError | None = None
 
-    aggregates: dict[str, _StoredAggregate] = field(default_factory=dict)
-    saga_origin: Optional[str] = None
-    has_correlation_id: bool = False
-    last_command_resp: Optional[CommandResponse] = None
-    last_projection: Optional[Projection] = None
-    last_saga_resp: Optional[SagaResponse] = None
-    last_pm_resp: Optional[ProcessManagerHandleResponse] = None
-    last_error: Optional[Exception] = None
-    spec_a_resp: Optional[CommandResponse] = None
-    spec_b_resp: Optional[CommandResponse] = None
-    real_event_count: int = 0
-    rejection_reason: Optional[str] = None
-    aggregate_state_label: str = ""
+    def command_book(self, name: str, data: str, count: int = 1) -> CommandBook:
+        book = CommandBook()
+        book.cover.CopyFrom(self.cover)
+        page = book.pages.add()
+        page.header.sequence = 0
+        page.command.CopyFrom(command_any(name, data, count))
+        return book
+
+    def speculate(self, book: CommandBook, as_of: int | None = None):
+        req = SpeculateCommandHandlerRequest(command=book)
+        if as_of is not None:
+            req.point_in_time.CopyFrom(TemporalQuery(as_of_sequence=as_of))
+        return _capture(lambda: self.client.command_handler(req))
+
+    def command_ok(self) -> CommandResponse:
+        assert isinstance(self.command, CommandResponse), f"failed: {self.command!r}"
+        return self.command
+
+    def command_err(self) -> ClientError:
+        assert isinstance(self.command, ClientError), f"succeeded: {self.command!r}"
+        return self.command
+
+    def emitted_seqs(self) -> list[int]:
+        return [page_seq(p) for p in self.command_ok().events.pages]
+
+    def query_real(self, c: Cover) -> EventBook:
+        qc = QueryClient.connect(self.backend.endpoint)
+        return qc.query(c.domain, proto_to_uuid(c.root)).get_event_book()
+
+
+def _capture(fn):
+    try:
+        return fn()
+    except ClientError as e:
+        return e
+
+
+def _ok(result):
+    assert not isinstance(result, ClientError), f"failed: {result!r}"
+    assert result is not None
+    return result
+
+
+def _event_book(c: Cover, n: int) -> EventBook:
+    book = EventBook(next_sequence=n)
+    book.cover.CopyFrom(c)
+    for i in range(n):
+        page = book.pages.add()
+        page.header.sequence = i
+        page.event.CopyFrom(event_any("OrderCreated", f"e{i}"))
+    return book
 
 
 @pytest.fixture
-def state() -> _World:
-    return _World()
-
-
-def _ensure_client(state: _World) -> SpeculativeClient:
-    if state.client is None:
-        state.client = SpeculativeClient.from_stubs(
-            command_handler_stub=state.cmd_stub,
-            saga_stub=state.saga_stub,
-            projector_stub=state.projector_stub,
-            pm_stub=state.pm_stub,
-        )
-    return state.client
+def state(monkeypatch) -> _World:
+    world = _World()
+    route_endpoints(monkeypatch, world.backend)
+    return world
 
 
 # ---------------------------------------------------------------------------
-# Background
+# Arrangement
 # ---------------------------------------------------------------------------
 
 
-@given("a SpeculativeClient connected to the test backend")
-def _given_speculative_client(state: _World) -> None:
-    _ensure_client(state)
+@given("a what-if execution surface available")
+def _given_surface(state: _World) -> None:
+    state.client = SpeculativeClient.connect(state.backend.endpoint)
 
 
-# ---------------------------------------------------------------------------
-# Given: aggregates / events / setup
-# ---------------------------------------------------------------------------
+@given(parsers.parse('an aggregate "{domain}" with root "{root}" has {n:d} events'))
+def _given_n_events(state: _World, domain: str, root: str, n: int) -> None:
+    c = cover(domain, root)
+    state.backend.seed(c, "ItemAdded", n)
+    state.stored_before = state.backend.total_events()
+    state.cover = c
 
 
-@given(parsers.parse('an aggregate "{domain}" with root "{root}" has {count:d} events'))
-def _given_aggregate_with_events(
-    state: _World, domain: str, root: str, count: int
-) -> None:
-    state.aggregates[f"{domain}:{root}"] = _StoredAggregate(
-        events=[_event_page(i) for i in range(count)]
+@given(
+    parsers.parse(
+        'a speculative aggregate "{domain}" with root "{root}" has {n:d} events'
     )
-    state.real_event_count = count
+)
+def _given_spec_aggregate(state: _World, domain: str, root: str, n: int) -> None:
+    _given_n_events(state, domain, root, n)
 
 
 @given(
     parsers.parse('an aggregate "{domain}" with root "{root}" in state "{agg_state}"')
 )
-def _given_aggregate_in_state(
-    state: _World, domain: str, root: str, agg_state: str
-) -> None:
-    state.aggregates[f"{domain}:{root}"] = _StoredAggregate(
-        events=[_event_page(0, "StateChanged")], state_label=agg_state
-    )
-    state.aggregate_state_label = agg_state
+def _given_in_state(state: _World, domain: str, root: str, agg_state: str) -> None:
+    assert agg_state == "shipped", "only the shipped state is scripted"
+    c = cover(domain, root)
+    state.backend.seed(c, "OrderCreated", 1)
+    state.backend.seed(c, "OrderShipped", 1)
+    state.stored_before = state.backend.total_events()
+    state.cover = c
 
 
 @given(parsers.parse('an aggregate "{domain}" with root "{root}"'))
 def _given_aggregate(state: _World, domain: str, root: str) -> None:
-    state.aggregates[f"{domain}:{root}"] = _StoredAggregate()
+    state.cover = cover(domain, root)
+    state.stored_before = state.backend.total_events()
 
 
 @given(parsers.parse('events for "{domain}" root "{root}"'))
 def _given_events_for(state: _World, domain: str, root: str) -> None:
-    state.aggregates[f"{domain}:{root}"] = _StoredAggregate(events=[_event_page(0)])
+    state.events = _event_book(cover(domain, root, correlation="corr-1"), 3)
+    state.stored_before = state.backend.total_events()
 
 
-@given(parsers.parse('{count:d} events for "{domain}" root "{root}"'))
-def _given_n_events_for(state: _World, count: int, domain: str, root: str) -> None:
-    state.aggregates[f"{domain}:{root}"] = _StoredAggregate(
-        events=[_event_page(i) for i in range(count)]
-    )
+@given(parsers.parse('{n:d} events for "{domain}" root "{root}"'))
+def _given_n_events_for(state: _World, n: int, domain: str, root: str) -> None:
+    state.events = _event_book(cover(domain, root, correlation="corr-1"), n)
+    state.stored_before = state.backend.total_events()
 
 
-@given('events with saga origin from "inventory" aggregate')
-def _given_events_with_saga_origin(state: _World) -> None:
-    state.saga_origin = "inventory"
+@given(parsers.parse('events with saga origin from "{domain}" aggregate'))
+def _given_saga_origin(state: _World, domain: str) -> None:
+    c = cover(domain, "origin-root", correlation="corr-1")
+    state.cover = c
+    state.events = _event_book(c, 2)
 
 
 @given("correlated events from multiple domains")
-def _given_correlated_events(state: _World) -> None:
-    state.has_correlation_id = True
+def _given_correlated(state: _World) -> None:
+    book = _event_book(cover("orders", "wf-order", correlation="workflow-9"), 1)
+    page = book.pages.add()
+    page.header.sequence = 1
+    page.event.CopyFrom(event_any("StockReserved", "inventory"))
+    state.events = book
+    state.stored_before = state.backend.total_events()
 
 
 @given("events without correlation ID")
-def _given_events_without_correlation(state: _World) -> None:
-    state.has_correlation_id = False
-
-
-@given(
-    parsers.parse(
-        'a speculative aggregate "{domain}" with root "{root}" has {count:d} events'
-    )
-)
-def _given_speculative_aggregate(
-    state: _World, domain: str, root: str, count: int
-) -> None:
-    state.aggregates[f"{domain}:{root}"] = _StoredAggregate(
-        events=[_event_page(i) for i in range(count)]
-    )
-    state.real_event_count = count
+def _given_uncorrelated(state: _World) -> None:
+    state.events = _event_book(cover("orders", "wf-order"), 1)
 
 
 @given("the speculative service is unavailable")
-def _given_service_unavailable(state: _World) -> None:
-    err = StubRpcError(grpc.StatusCode.UNAVAILABLE, "service unavailable")
-    state.cmd_stub.errors["HandleSyncSpeculative"] = err
-    state.projector_stub.errors["HandleSpeculative"] = err
-    state.saga_stub.errors["ExecuteSpeculative"] = err
-    state.pm_stub.errors["HandleSpeculative"] = err
+def _given_unavailable(state: _World) -> None:
+    state.client = SpeculativeClient.connect("unreachable.invalid:1310")
 
 
 # ---------------------------------------------------------------------------
-# When — command speculation
+# Actions
 # ---------------------------------------------------------------------------
-
-
-def _make_command_response(events: list[EventPage]) -> CommandResponse:
-    resp = CommandResponse()
-    book = EventBook()
-    for e in events:
-        book.pages.append(e)
-    resp.events.CopyFrom(book)
-    return resp
-
-
-def _do_command_spec(state: _World, response: CommandResponse) -> None:
-    state.cmd_stub.responses["HandleSyncSpeculative"] = response
-    client = _ensure_client(state)
-    request = SpeculateCommandHandlerRequest()
-    try:
-        state.last_command_resp = client.command_handler(request)
-    except Exception as e:  # noqa: BLE001
-        state.last_error = e
 
 
 @when(
     parsers.parse('I speculatively execute a command against "{domain}" root "{root}"')
 )
-def _when_speculative_execute_against(state: _World, domain: str, root: str) -> None:
-    _do_command_spec(
-        state,
-        _make_command_response([_event_page(0, "SpeculativeEvent")]),
-    )
+def _when_spec_against(state: _World, domain: str, root: str) -> None:
+    assert state.cover.domain == domain
+    assert state.cover.root.value == root_for(root).bytes
+    state.command = state.speculate(state.command_book("AddItem", "what-if"))
 
 
 @when(parsers.parse("I speculatively execute a command as of sequence {seq:d}"))
-def _when_speculative_as_of_sequence(state: _World, seq: int) -> None:
-    _do_command_spec(
-        state,
-        _make_command_response([_event_page(0, "SpeculativeEvent")]),
+def _when_spec_as_of(state: _World, seq: int) -> None:
+    state.command = state.speculate(
+        state.command_book("AddItem", "historical"), as_of=seq
     )
 
 
-@when(parsers.parse('I speculatively execute a "{cmd_type}" command'))
-def _when_speculative_execute_command(state: _World, cmd_type: str) -> None:
-    """Mock plays the coordinator: rejection-on-shipped is a server-side
-    business rule. The request goes through real client code regardless;
-    the stub returns a CommandResponse carrying a rejection notification."""
-    if cmd_type == "CancelOrder" and state.aggregate_state_label == "shipped":
-        # Encode rejection as an "events" book containing a notification
-        # event with the rejection reason embedded. The test reads
-        # `state.rejection_reason` rather than the proto, since the
-        # cucumber's intent is "the rejection reason was returned" —
-        # the wire format here is auxiliary.
-        state.rejection_reason = "cannot cancel shipped order"
-        resp = CommandResponse()  # empty events
-        _do_command_spec(state, resp)
-    else:
-        _do_command_spec(
-            state,
-            _make_command_response([_event_page(0, f"{cmd_type}Executed")]),
-        )
+@when(parsers.parse('I speculatively execute a "{name}" command'))
+def _when_spec_named(state: _World, name: str) -> None:
+    state.command = state.speculate(state.command_book(name, "what-if"))
 
 
 @when("I speculatively execute a command with invalid payload")
-def _when_speculative_invalid_payload(state: _World) -> None:
-    state.cmd_stub.errors["HandleSyncSpeculative"] = StubRpcError(
-        grpc.StatusCode.INVALID_ARGUMENT, "validation error"
-    )
-    client = _ensure_client(state)
-    try:
-        state.last_command_resp = client.command_handler(
-            SpeculateCommandHandlerRequest()
-        )
-    except Exception as e:  # noqa: BLE001
-        state.last_error = e
+def _when_spec_invalid(state: _World) -> None:
+    book = state.command_book("AddItem", "")
+    book.pages[0].command.value = b"\x0a\x05ab"
+    state.command = state.speculate(book)
 
 
 @when("I speculatively execute a command")
-def _when_speculative_execute_simple(state: _World) -> None:
-    _do_command_spec(
-        state,
-        _make_command_response([_event_page(0, "SpeculativeEvent")]),
-    )
+def _when_spec_plain(state: _World) -> None:
+    state.command = state.speculate(state.command_book("AddItem", "what-if"))
 
 
-# ---------------------------------------------------------------------------
-# When — projector / saga / PM
-# ---------------------------------------------------------------------------
+@when(parsers.parse("I speculatively execute a command producing {n:d} events"))
+def _when_spec_n(state: _World, n: int) -> None:
+    state.command = state.speculate(state.command_book("AddItem", "speculative", n))
 
 
-@when(
-    parsers.parse(
-        'I speculatively execute projector "{projector}" against those events'
-    )
-)
-def _when_speculative_projector_against(state: _World, projector: str) -> None:
-    proj = Projection()
-    proj.projector = projector
-    state.projector_stub.responses["HandleSpeculative"] = proj
-    client = _ensure_client(state)
-    try:
-        state.last_projection = client.projector(SpeculateProjectorRequest())
-    except Exception as e:  # noqa: BLE001
-        state.last_error = e
-
-
-@when(parsers.parse('I speculatively execute projector "{projector}"'))
-def _when_speculative_projector(state: _World, projector: str) -> None:
-    _when_speculative_projector_against(state, projector)
-
-
-@when(parsers.parse('I speculatively execute saga "{saga}"'))
-def _when_speculative_saga(state: _World, saga: str) -> None:
-    resp = SagaResponse()
-    # SagaResponse.commands is a repeated field; populate with placeholder
-    # CommandBooks so the cucumber's "contains commands" assertion holds.
-    from angzarr_client.proto.angzarr import CommandBook
-
-    resp.commands.append(CommandBook())
-    resp.commands.append(CommandBook())
-    state.saga_stub.responses["ExecuteSpeculative"] = resp
-    client = _ensure_client(state)
-    try:
-        state.last_saga_resp = client.saga(SpeculateSagaRequest())
-    except Exception as e:  # noqa: BLE001
-        state.last_error = e
-
-
-@when(parsers.parse('I speculatively execute process manager "{pm}"'))
-def _when_speculative_pm(state: _World, pm: str) -> None:
-    if not state.has_correlation_id:
-        # PM-without-correlation is the cucumber's "Speculative PM
-        # requires correlation ID" scenario — server returns INVALID_ARGUMENT
-        # citing the missing field.
-        state.pm_stub.errors["HandleSpeculative"] = StubRpcError(
-            grpc.StatusCode.INVALID_ARGUMENT, "missing correlation_id"
-        )
-    else:
-        resp = ProcessManagerHandleResponse()
-        from angzarr_client.proto.angzarr import CommandBook
-
-        resp.commands.append(CommandBook())
-        state.pm_stub.responses["HandleSpeculative"] = resp
-
-    client = _ensure_client(state)
-    try:
-        state.last_pm_resp = client.process_manager(SpeculatePmRequest())
-    except Exception as e:  # noqa: BLE001
-        state.last_error = e
-
-
-@when("I speculatively execute a command producing 2 events")
-def _when_speculative_multi_event(state: _World) -> None:
-    _do_command_spec(
-        state,
-        _make_command_response([_event_page(0, "Event1"), _event_page(1, "Event2")]),
-    )
+@when(parsers.parse("I speculatively execute command {label}"))
+def _when_spec_ab(state: _World, label: str) -> None:
+    state.commands_ab.append(_ok(state.speculate(state.command_book("AddItem", label))))
 
 
 @when(parsers.parse('I verify the real events for "{domain}" root "{root}"'))
-def _when_verify_real_events(state: _World, domain: str, root: str) -> None:
-    # Real events are unaffected by speculation; the in-memory store
-    # is unchanged because the stub never persists.
-    pass
+def _when_verify_real(state: _World, domain: str, root: str) -> None:
+    state.real = state.query_real(cover(domain, root))
 
 
-@when("I speculatively execute command A")
-def _when_speculative_command_a(state: _World) -> None:
-    state.cmd_stub.responses["HandleSyncSpeculative"] = _make_command_response(
-        [_event_page(0, "EventA")]
-    )
-    client = _ensure_client(state)
-    try:
-        state.spec_a_resp = client.command_handler(SpeculateCommandHandlerRequest())
-    except Exception as e:  # noqa: BLE001
-        state.last_error = e
+@when(parsers.parse('I speculatively execute projector "{name}" against those events'))
+def _when_spec_projector_against(state: _World, name: str) -> None:
+    req = SpeculateProjectorRequest(events=state.events)
+    state.projection = _capture(lambda: state.client.projector(req))
 
 
-@when("I speculatively execute command B")
-def _when_speculative_command_b(state: _World) -> None:
-    state.cmd_stub.responses["HandleSyncSpeculative"] = _make_command_response(
-        [_event_page(0, "EventB")]
-    )
-    client = _ensure_client(state)
-    try:
-        state.spec_b_resp = client.command_handler(SpeculateCommandHandlerRequest())
-    except Exception as e:  # noqa: BLE001
-        state.last_error = e
+@when(parsers.parse('I speculatively execute projector "{name}"'))
+def _when_spec_projector(state: _World, name: str) -> None:
+    _when_spec_projector_against(state, name)
+
+
+@when(parsers.parse('I speculatively execute saga "{name}"'))
+def _when_spec_saga(state: _World, name: str) -> None:
+    req = SpeculateSagaRequest(request=SagaHandleRequest(source=state.events))
+    state.saga = _capture(lambda: state.client.saga(req))
+
+
+@when(parsers.parse('I speculatively execute process manager "{name}"'))
+def _when_spec_pm(state: _World, name: str) -> None:
+    req = SpeculatePmRequest(request=ProcessManagerHandleRequest(trigger=state.events))
+    state.pm = _capture(lambda: state.client.process_manager(req))
 
 
 @when("I attempt speculative execution")
-def _when_attempt_speculative(state: _World) -> None:
-    client = _ensure_client(state)
-    try:
-        state.last_command_resp = client.command_handler(
-            SpeculateCommandHandlerRequest()
-        )
-    except Exception as e:  # noqa: BLE001
-        state.last_error = e
+def _when_attempt(state: _World) -> None:
+    result = _capture(
+        lambda: state.client.command_handler(SpeculateCommandHandlerRequest())
+    )
+    state.error = result if isinstance(result, ClientError) else None
 
 
 @when("I attempt speculative execution with missing parameters")
-def _when_attempt_missing_params(state: _World) -> None:
-    state.cmd_stub.errors["HandleSyncSpeculative"] = StubRpcError(
-        grpc.StatusCode.INVALID_ARGUMENT, "missing parameters"
-    )
-    _when_attempt_speculative(state)
+def _when_attempt_missing(state: _World) -> None:
+    _when_attempt(state)
 
 
 # ---------------------------------------------------------------------------
-# Then
+# Outcomes
 # ---------------------------------------------------------------------------
 
 
 @then("the response should contain the projected events")
-def _then_response_contains_events(state: _World) -> None:
-    assert state.last_command_resp is not None
-    assert len(state.last_command_resp.events.pages) > 0
+def _then_projected(state: _World) -> None:
+    assert state.emitted_seqs() == [3]
 
 
 @then("the events should NOT be persisted")
-def _then_events_not_persisted(state: _World) -> None:
-    """Speculation never persists by definition (no real-store mutation
-    happens since the stub serves canned responses without touching
-    state.aggregates)."""
-    pass
+def _then_not_persisted(state: _World) -> None:
+    assert len(state.query_real(state.cover).pages) == 3
 
 
 @then("the command should execute against the historical state")
-def _then_execute_against_historical(state: _World) -> None:
-    pass
+def _then_historical(state: _World) -> None:
+    assert state.emitted_seqs() == [6], "must continue from sequence 5, not 9"
 
 
 @then(parsers.parse("the response should reflect state at sequence {seq:d}"))
-def _then_response_reflects_state(state: _World, seq: int) -> None:
-    assert state.last_command_resp is not None
+def _then_reflect_state(state: _World, seq: int) -> None:
+    assert state.command_ok().events.next_sequence == seq + 2
 
 
 @then("the response should indicate rejection")
-def _then_response_rejection(state: _World) -> None:
-    assert state.rejection_reason is not None
+def _then_rejection(state: _World) -> None:
+    err = state.command_err()
+    assert err.is_precondition_failed(), f"expected FAILED_PRECONDITION, got {err!r}"
 
 
 @then(parsers.parse('the rejection reason should be "{reason}"'))
-def _then_rejection_reason(state: _World, reason: str) -> None:
-    assert state.rejection_reason is not None
-    assert reason in state.rejection_reason
+def _then_reason(state: _World, reason: str) -> None:
+    err = state.command_err()
+    assert isinstance(err, GRPCError)
+    assert err.grpc_details == reason
 
 
 @then("the operation should fail with validation error")
-def _then_fail_validation(state: _World) -> None:
-    assert state.last_error is not None
-    assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.grpc_code == grpc.StatusCode.INVALID_ARGUMENT
+def _then_validation(state: _World) -> None:
+    err = state.command_err()
+    assert err.is_invalid_argument(), f"expected INVALID_ARGUMENT, got {err!r}"
 
 
 @then("no events should be produced")
-def _then_no_events_produced(state: _World) -> None:
-    assert (
-        state.last_command_resp is None
-        or len(state.last_command_resp.events.pages) == 0
-    )
+def _then_none_produced(state: _World) -> None:
+    state.command_err()
+    assert state.backend.total_events() == state.stored_before
 
 
-@then("an edition should be created for the speculation")
-def _then_edition_created(state: _World) -> None:
-    """Server-side concept; not observable from the client. The test
-    only verifies that the speculative call succeeded."""
-    assert state.last_command_resp is not None or state.last_error is None
-
-
-@then("the edition should be discarded after execution")
-def _then_edition_discarded(state: _World) -> None:
-    """Same as above — speculation by contract doesn't persist."""
-    pass
+@then("the projected execution leaves no trace")
+def _then_no_trace(state: _World) -> None:
+    assert state.emitted_seqs() == [5]
+    assert len(state.backend.stored_pages(state.cover)) == 5
+    assert state.backend.total_events() == state.stored_before
+    assert "HandleCommand" not in state.backend.rpc_names()
 
 
 @then("the response should contain the projection")
-def _then_response_contains_projection(state: _World) -> None:
-    assert state.last_projection is not None
+def _then_projection(state: _World) -> None:
+    p = _ok(state.projection)
+    assert p.projector == "order-summary"
+    assert p.HasField("projection")
+    assert p.cover == state.events.cover
 
 
 @then("no external systems should be updated")
-def _then_no_external_updates(state: _World) -> None:
-    pass
+def _then_no_external(state: _World) -> None:
+    assert state.backend.projector_runs == []
+    assert state.backend.total_events() == state.stored_before
 
 
-@then(parsers.parse("the projector should process all {count:d} events in order"))
-def _then_projector_processes_all(state: _World, count: int) -> None:
-    pass
+@then(parsers.parse("the projector should process all {n:d} events in order"))
+def _then_projector_order(state: _World, n: int) -> None:
+    p = _ok(state.projection)
+    seen = GenericEvent.FromString(p.projection.value).data
+    assert seen == ",".join(str(i) for i in range(n))
 
 
 @then("the final projection state should be returned")
-def _then_final_projection_state(state: _World) -> None:
-    assert state.last_projection is not None
+def _then_final_state(state: _World) -> None:
+    p = _ok(state.projection)
+    assert p.sequence == page_seq(state.events.pages[-1])
 
 
 @then("the response should contain the commands the saga would emit")
-def _then_response_contains_commands(state: _World) -> None:
-    assert state.last_saga_resp is not None
-    assert len(state.last_saga_resp.commands) > 0
+def _then_saga_commands(state: _World) -> None:
+    r = _ok(state.saga)
+    assert len(r.commands) == len(state.events.pages)
+    assert all(c.cover.domain == "inventory" for c in r.commands)
 
 
 @then("the commands should NOT be sent to the target domain")
-def _then_commands_not_sent(state: _World) -> None:
-    pass
+def _then_saga_not_sent(state: _World) -> None:
+    assert state.backend.total_events() == state.stored_before
+    assert "HandleCommand" not in state.backend.rpc_names()
 
 
 @then("the response should preserve the saga origin chain")
-def _then_preserve_saga_origin(state: _World) -> None:
-    assert state.saga_origin is not None
+def _then_origin(state: _World) -> None:
+    r = _ok(state.saga)
+    assert len(r.commands) > 0
+    for i, c in enumerate(r.commands):
+        header = c.pages[0].header
+        assert header.WhichOneof("sequence_type") == "angzarr_deferred"
+        assert header.angzarr_deferred.source == state.cover
+        assert header.angzarr_deferred.source_seq == i
 
 
 @then("the response should contain the PM's command decisions")
-def _then_response_contains_pm_commands(state: _World) -> None:
-    assert state.last_pm_resp is not None
-    assert len(state.last_pm_resp.commands) > 0
+def _then_pm_commands(state: _World) -> None:
+    r = _ok(state.pm)
+    assert len(r.commands) == len(state.events.pages)
+    assert all(c.cover.domain == "shipping" for c in r.commands)
 
 
 @then("the commands should NOT be executed")
-def _then_commands_not_executed(state: _World) -> None:
-    pass
+def _then_pm_not_executed(state: _World) -> None:
+    assert state.backend.total_events() == state.stored_before
+    assert "HandleCommand" not in state.backend.rpc_names()
 
 
 @then("the speculative PM operation should fail")
-def _then_pm_operation_fails(state: _World) -> None:
-    assert state.last_error is not None
+def _then_pm_fails(state: _World) -> None:
+    assert isinstance(state.pm, ClientError), f"pm succeeded: {state.pm!r}"
+    assert state.pm.is_invalid_argument(), state.pm
 
 
 @then("the error should indicate missing correlation ID")
-def _then_error_missing_correlation(state: _World) -> None:
-    # Audit #59: server-side detail surfaces via `.grpc_details` for
-    # GRPCError; `str()` returns the static message ("grpc error").
-    assert state.last_error is not None
-    assert isinstance(state.last_error, GRPCError)
-    assert "correlation" in state.last_error.grpc_details
+def _then_missing_correlation(state: _World) -> None:
+    assert isinstance(state.pm, GRPCError)
+    assert "correlation_id" in state.pm.grpc_details, state.pm.grpc_details
 
 
-@then(parsers.parse("I should receive only {count:d} events"))
-def _then_receive_only_n_events(state: _World, count: int) -> None:
-    """Real events count is the count we pre-loaded; speculation
-    doesn't mutate the in-memory store. The cucumber asserts the
-    pre-loaded count."""
-    assert state.real_event_count == count
+@then(parsers.parse("I should receive only {n:d} events"))
+def _then_only_n(state: _World, n: int) -> None:
+    assert state.real is not None
+    assert len(state.real.pages) == n
 
 
 @then("the speculative events should not be present")
-def _then_speculative_not_present(state: _World) -> None:
-    pass
+def _then_spec_absent(state: _World) -> None:
+    speculative = [event_data(p) for p in state.command_ok().events.pages]
+    assert len(speculative) == 2
+    real = [event_data(p) for p in state.real.pages]
+    assert not set(real) & set(speculative), real
 
 
 @then("each speculation should start from the same base state")
-def _then_same_base_state(state: _World) -> None:
-    assert state.spec_a_resp is not None
-    assert state.spec_b_resp is not None
+def _then_same_base(state: _World) -> None:
+    assert [page_seq(r.events.pages[0]) for r in state.commands_ab] == [3, 3]
 
 
 @then("results should be independent")
-def _then_results_independent(state: _World) -> None:
-    assert state.spec_a_resp is not None
-    assert state.spec_b_resp is not None
-    a_type = state.spec_a_resp.events.pages[0].event.type_url
-    b_type = state.spec_b_resp.events.pages[0].event.type_url
-    assert a_type != b_type
+def _then_independent(state: _World) -> None:
+    data = [[event_data(p) for p in r.events.pages] for r in state.commands_ab]
+    assert data == [["A"], ["B"]]
+    assert state.backend.total_events() == state.stored_before
 
 
 @then("the speculative operation should fail with connection error")
-def _then_fail_connection(state: _World) -> None:
-    assert state.last_error is not None
-    assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.is_connection_error()
+def _then_connection_error(state: _World) -> None:
+    assert state.error is not None, "operation succeeded"
+    assert state.error.is_connection_error(), state.error
 
 
 @then("the speculative operation should fail with invalid argument error")
-def _then_fail_invalid_argument(state: _World) -> None:
-    assert state.last_error is not None
-    assert isinstance(state.last_error, GRPCError)
-    assert state.last_error.grpc_code == grpc.StatusCode.INVALID_ARGUMENT
+def _then_invalid_argument(state: _World) -> None:
+    assert state.error is not None, "operation succeeded"
+    assert state.error.is_invalid_argument(), state.error

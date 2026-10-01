@@ -1,9 +1,8 @@
-"""Step defs for features/client/parity.feature.
+"""Step defs for parity/client/parity.feature.
 
 Verifies the canonical cross-language public surface is exposed from
-angzarr_client's public root or a canonical subpackage. Each scenario names
-the symbols it requires; this file resolves them by walking a short list
-of canonical import paths and asserting presence.
+angzarr_client's public root (and the testing helpers from
+angzarr_client.testing only).
 """
 
 from __future__ import annotations
@@ -13,17 +12,15 @@ from typing import Any
 
 from pytest_bdd import given, parsers, scenarios, then
 
-scenarios("parity.feature")
+scenarios("parity/client/parity.feature")
 
 
-_SEARCH_PATHS = (
-    "angzarr_client",
-    "angzarr_client.retry",
-    "angzarr_client.testing",
-    "angzarr_client.testing.builders",
-    "angzarr_client.testing.uuid",
-    "angzarr_client.testing.context",
-)
+_SEARCH_PATHS = ("angzarr_client",)
+
+_TESTING_MODULE = "angzarr_client.testing"
+
+# Every name the testing scenario requires from the testing module.
+_TESTING_HELPERS: set[str] = set()
 
 _ERROR_CLASSES = (
     "ClientError",
@@ -78,6 +75,28 @@ def _then_method_marker_exported(name: str) -> None:
 @then(parsers.parse('the "{name}" constant is exported'))
 def _then_constant_exported(name: str) -> None:
     _assert_exported(name)
+
+
+@then(parsers.parse('the "{name}" constant is exported with value "{value}"'))
+def _then_constant_value(name: str, value: str) -> None:
+    _assert_exported(name)
+    assert _resolve(name)[1] == value
+
+
+@then(parsers.parse('the "{name}" symbol is exported from the testing module'))
+@then(parsers.parse('the "{name}" constant is exported from the testing module'))
+def _then_testing_export(name: str) -> None:
+    testing = importlib.import_module(_TESTING_MODULE)
+    assert hasattr(testing, name), f'"{name}" is not exported from {_TESTING_MODULE}'
+    _TESTING_HELPERS.add(name)
+
+
+@then("none of the testing helpers is exported from the client's root")
+def _then_testing_gated() -> None:
+    root = importlib.import_module("angzarr_client")
+    assert _TESTING_HELPERS, "no testing helpers were named before this step"
+    leaked = sorted(n for n in _TESTING_HELPERS if hasattr(root, n))
+    assert not leaked, f"testing helpers exported from angzarr_client: {leaked}"
 
 
 @then(parsers.parse('the client exposes the "{predicate}" error predicate'))

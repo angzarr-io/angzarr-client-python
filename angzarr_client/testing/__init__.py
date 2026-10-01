@@ -49,17 +49,17 @@ from .uuid import (
 __all__ = [
     # UUID helpers
     "DEFAULT_TEST_NAMESPACE",
-    "uuid_for",
-    "uuid_str_for",
-    "uuid_obj_for",
+    # Context
+    "ScenarioContext",
+    "make_command_book",
+    "make_command_page",
+    "make_cover",
+    "make_event_book",
+    "make_event_page",
     # Proto builders
     "make_timestamp",
     "pack_event",
-    "make_cover",
-    "make_event_page",
-    "make_event_book",
-    "make_command_page",
-    "make_command_book",
-    # Context
-    "ScenarioContext",
+    "uuid_for",
+    "uuid_obj_for",
+    "uuid_str_for",
 ]

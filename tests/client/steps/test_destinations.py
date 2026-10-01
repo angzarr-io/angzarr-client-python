@@ -1,9 +1,8 @@
-"""Step defs for features/client/destinations.feature.
+"""Step defs for parity/client/destinations.feature, run against the router
+binding's Destinations (what saga and process-manager handlers receive).
 
-Pins the canonical query surface on Destinations across languages:
-``has_domain(domain) -> bool`` and ``domains -> list[str]``. The Rust
-sibling at ``client-rust/main/tests/steps/destinations.rs`` exercises
-the same scenarios against the same canonical names.
+Pins the canonical query surface across languages: ``has_domain(domain) ->
+bool`` and ``domains`` (declaration order).
 """
 
 from __future__ import annotations
@@ -14,9 +13,9 @@ from typing import Optional
 import pytest
 from pytest_bdd import given, parsers, scenarios, then
 
-from angzarr_client.destinations import Destinations
+from angzarr_client.router import Destinations
 
-scenarios("destinations.feature")
+scenarios("parity/client/destinations.feature")
 
 
 @dataclass
@@ -29,34 +28,16 @@ def state() -> _State:
     return _State()
 
 
-def _parse_sequence_map(spec: str) -> dict[str, int]:
-    """Parse `"a" to 1 and "b" to 2 and ...` into a {name: seq} dict."""
-    parts = spec.split(" and ")
-    out: dict[str, int] = {}
-    for part in parts:
-        name_str, seq_str = part.split(" to ")
-        out[name_str.strip().strip('"')] = int(seq_str)
-    return out
+def _domain_list(spec: str) -> list[str]:
+    """Parse `"a"`, `"a" and "b"` or `"a", "b" and "c"` into names, in order."""
+    return [part.strip().strip('"') for part in spec.replace(" and ", ", ").split(",")]
 
 
-@given(parsers.re(r"a Destinations built from sequences mapping (?P<spec>.+)"))
+@given(
+    parsers.re(r"a Destinations for a component declaring output domains? (?P<spec>.+)")
+)
 def given_destinations(state: _State, spec: str) -> None:
-    state.destinations = Destinations(_parse_sequence_map(spec))
-
-
-@given(parsers.re(r"a Destinations built from an ordered sequence list (?P<spec>.+)"))
-def given_destinations_ordered(state: _State, spec: str) -> None:
-    """Build from an explicitly-ordered list like `"zulu" then "alpha" then "mike"`.
-
-    Uses an insertion-order-preserving dict so the iteration order at
-    `Destinations.domains` matches the spec literally. Each named
-    destination gets sequence 0; the order is what's under test.
-    """
-    names = [s.strip().strip('"') for s in spec.split(" then ")]
-    ordered: dict[str, int] = {}
-    for name in names:
-        ordered[name] = 0
-    state.destinations = Destinations(ordered)
+    state.destinations = Destinations(_domain_list(spec))
 
 
 @then(parsers.re(r'has_domain "(?P<domain>[^"]*)" returns (?P<expected>true|false)'))
