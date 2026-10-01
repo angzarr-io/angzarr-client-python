@@ -182,7 +182,7 @@ def _fake_server_handle(address: str = "[::]:9999"):
 
 
 class TestCreateServer:
-    def test_tcp_default_builds_server(self, monkeypatch) -> None:
+    async def test_tcp_default_builds_server(self, monkeypatch) -> None:
         add_servicer = MagicMock()
         servicer = object()
         handle = srv.create_server(
@@ -205,7 +205,7 @@ class TestCreateServer:
             == health_pb2.HealthCheckResponse.NOT_SERVING
         )
 
-    def test_uds_builds_server(self, monkeypatch, tmp_path) -> None:
+    async def test_uds_builds_server(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setenv("TRANSPORT_TYPE", "uds")
         monkeypatch.setenv("UDS_BASE_PATH", str(tmp_path))
         add_servicer = MagicMock()
@@ -213,7 +213,7 @@ class TestCreateServer:
         handle = srv.create_server(add_servicer_func=add_servicer, servicer=servicer)
         assert handle.address.startswith("unix:")
 
-    def test_no_service_name_skips_named_health(self, monkeypatch) -> None:
+    async def test_no_service_name_skips_named_health(self, monkeypatch) -> None:
         add_servicer = MagicMock()
         handle = srv.create_server(
             add_servicer_func=add_servicer,
