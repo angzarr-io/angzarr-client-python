@@ -11,12 +11,12 @@ from importlib.metadata import version as _pkg_version
 
 project = "angzarr-client"
 author = "Benjamin Abbitt"
-copyright = "2026, Benjamin Abbitt"  # noqa: A001 (sphinx convention)
+copyright = "2026, Benjamin Abbitt"
 
 # Single source of truth; matches pyproject.toml dynamic version (VERSION file).
 try:
     release = _pkg_version("angzarr-client")
-except Exception:
+except Exception:  # noqa: BLE001 — docs build without an installed package
     release = "0.0.0"
 version = release
 

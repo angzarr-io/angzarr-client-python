@@ -97,3 +97,28 @@ class TestDefaultRetryPolicy:
         assert p.max_delay == 5.0
         assert p.max_attempts == 10
         assert p.jitter is True
+
+
+class TestExponentialBackoffDefaults:
+    def test_constructor_defaults(self) -> None:
+        p = ExponentialBackoffRetry()
+        assert p.min_delay == 0.1
+        assert p.max_delay == 5.0
+        assert p.max_attempts == 10
+        assert p.jitter is True
+        assert p.on_retry is None
+
+    def test_default_attempt_budget_is_ten(self, monkeypatch) -> None:
+        sleeps: list[float] = []
+        monkeypatch.setattr("time.sleep", sleeps.append)
+        calls = {"n": 0}
+
+        def op():
+            calls["n"] += 1
+            raise RuntimeError("down")
+
+        with pytest.raises(RuntimeError, match="down"):
+            ExponentialBackoffRetry(jitter=False).execute(op)
+        assert calls["n"] == 10
+        # 0.1 doubling per attempt, capped at the 5.0 default ceiling.
+        assert sleeps == pytest.approx([0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 5.0, 5.0, 5.0])

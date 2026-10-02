@@ -6,10 +6,7 @@ from uuid import uuid4
 from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.message import Message
 
-from .client import CommandHandlerClient, QueryClient
-from .errors import InvalidArgumentError
-from .helpers import implicit_edition, parse_timestamp, uuid_to_proto
-from .proto.angzarr import (
+from ._pb import (
     CommandBook,
     CommandPage,
     CommandRequest,
@@ -24,6 +21,10 @@ from .proto.angzarr import (
     SyncMode,
     TemporalQuery,
 )
+from .client import CommandHandlerClient, QueryClient
+from .error_codes import codes, messages
+from .errors import InvalidArgumentError
+from .helpers import implicit_edition, parse_timestamp, uuid_to_proto
 
 
 class CommandBuilder:
@@ -47,7 +48,6 @@ class CommandBuilder:
         self._root = root
         self._correlation_id: str | None = None
         self._sequence: int = 0
-        self._sequence_set: bool = False
         self._merge_strategy: MergeStrategy = MergeStrategy.MERGE_COMMUTATIVE
         self._type_url: str | None = None
         self._payload: bytes | None = None
@@ -58,9 +58,11 @@ class CommandBuilder:
         return self
 
     def with_sequence(self, seq: int) -> "CommandBuilder":
-        """Set the expected sequence number for optimistic locking."""
+        """Set the expected sequence number for optimistic locking.
+
+        Defaults to 0 (a new aggregate) when not called.
+        """
         self._sequence = seq
-        self._sequence_set = True
         return self
 
     def with_merge_strategy(self, strategy: MergeStrategy) -> "CommandBuilder":
@@ -78,14 +80,35 @@ class CommandBuilder:
         self._payload = message.SerializeToString()
         return self
 
+    def with_type_url(self, type_url: str) -> "CommandBuilder":
+        """Set the command type URL on its own; pair with :meth:`with_payload`."""
+        self._type_url = type_url
+        return self
+
+    def with_payload(self, payload: bytes) -> "CommandBuilder":
+        """Set the already-encoded command payload; pair with :meth:`with_type_url`."""
+        self._payload = payload
+        return self
+
     def build(self) -> CommandBook:
-        """Build the CommandBook without executing."""
+        """Build the CommandBook without executing.
+
+        Requires a type URL and payload (:meth:`with_command`, or
+        :meth:`with_type_url` plus :meth:`with_payload`); otherwise raises
+        :class:`InvalidArgumentError` with code ``COMMAND_TYPE_URL_MISSING``
+        / ``COMMAND_PAYLOAD_MISSING``. The sequence defaults to 0 and the
+        correlation ID to a fresh UUID v4.
+        """
         if not self._type_url:
-            raise InvalidArgumentError("command type_url not set")
+            raise InvalidArgumentError(
+                messages.COMMAND_TYPE_URL_MISSING,
+                code=codes.COMMAND_TYPE_URL_MISSING,
+            )
         if self._payload is None:
-            raise InvalidArgumentError("command payload not set")
-        if not self._sequence_set:
-            raise InvalidArgumentError("sequence not set (call with_sequence)")
+            raise InvalidArgumentError(
+                messages.COMMAND_PAYLOAD_MISSING,
+                code=codes.COMMAND_PAYLOAD_MISSING,
+            )
 
         correlation_id = self._correlation_id or str(uuid4())
 

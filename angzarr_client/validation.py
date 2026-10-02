@@ -13,7 +13,7 @@ fields for observability.
 import logging
 from collections.abc import Sequence
 from decimal import Decimal
-from typing import Any, Union
+from typing import Any
 
 from .error_codes import codes, keys, messages
 from .errors import CommandRejectedError
@@ -25,7 +25,7 @@ _LOG = logging.getLogger(__name__)
 # orderable numeric type — Python's nearest analog is the union of
 # the standard numeric tower (`int | float | Decimal`). P3.1 / audit
 # finding #14.
-_Numeric = Union[int, float, Decimal]
+_Numeric = int | float | Decimal
 
 
 def _log_rejection(field: str, predicate: str, status_code: str, message: str) -> None:

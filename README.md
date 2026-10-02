@@ -1,269 +1,153 @@
-> **⚠️ Notice:** This repository was recently extracted from the [angzarr monorepo](https://github.com/angzarr-io/angzarr) and has not yet been validated as a standalone project. Expect rough edges. See the [Angzarr documentation](https://angzarr.io/) for more information.
+# angzarr-client (Python)
 
----
-title: Python SDK
-sidebar_label: Python
----
+The home of [Angzarr](https://angzarr.io) for Python:
 
-# angzarr-client
+- **`angzarr_client.router`** — the router binding. Components (aggregates,
+  sagas, process managers, projectors) are hosted by the shared Rust router
+  ([angzarr-router](https://github.com/angzarr-io/angzarr-router)'s
+  `router-ffi` cdylib), loaded in-process through cffi. Dispatch, state
+  rebuild, rejection and compensation routing run in the router; Python holds
+  the business handlers.
+- **`codegen/`** — the templates `angzarr codegen python` / `angzarr scaffold
+  python` render from your proto component declarations: a typed
+  `<Component>Handler` protocol plus the dispatch wiring (regenerated), and a
+  handler stub (written once).
+- **Coordinator clients** — `CommandHandlerClient`, `QueryClient`,
+  `SpeculativeClient`, `DomainClient` and the `CommandBuilder` /
+  `QueryBuilder` fluent builders, for code that talks to a running
+  coordinator.
+- **`ComponentHost`** — a generic gRPC host for the registered components:
+  the coordinator-facing framework services, health/readiness, transport
+  from the environment, and a hook for the application's own services.
+- **`angzarr_client.testing`** — test helpers (`make_cover`,
+  `make_event_book`, `uuid_for`, `ScenarioContext`, …), imported from that
+  module explicitly.
 
-Python client library for the Angzarr CQRS/ES framework.
+## Installing
 
-:::tip Unified Documentation
-For cross-language API reference with side-by-side comparisons, see the [SDK Documentation](/sdks).
-:::
-
-## Installation
+Linux x86_64 only. Wheels are tagged `manylinux_2_<N>_x86_64` and carry the
+generated framework protos and the router-ffi library. Installing from git
+builds the wheel, which needs a Rust toolchain (`cargo`) on `PATH`:
 
 ```bash
-pip install angzarr-client
+pip install "angzarr-client @ git+https://github.com/angzarr-io/angzarr-client-python@<commit>"
 ```
 
-## Quick Start
+## Generating a component
+
+Declare components in proto with the `(io.angzarr.v1.component)`,
+`(io.angzarr.v1.command)` and `(io.angzarr.v1.event)` options (see
+angzarr-project's `options.proto`), then render this repository's templates
+with the [angzarr CLI](https://github.com/angzarr-io/angzarr-cli):
+
+```yaml
+# buf.gen.yaml
+version: v2
+managed:
+  enabled: true          # the CLI needs a go_package on every file
+plugins:
+  - remote: buf.build/protocolbuffers/python:v35.1
+    out: gen
+  - local: ["angzarr", "codegen", "python"]
+    out: gen
+    opt:
+      - paths=source_relative
+      - templates=github.com/angzarr-io/angzarr-client-python@<commit>
+    strategy: all
+  - local: ["angzarr", "scaffold", "python"]
+    out: src
+    opt:
+      - paths=source_relative
+      - out_dir=src
+      - templates=github.com/angzarr-io/angzarr-client-python@<commit>
+    strategy: all
+```
+
+The wiring imports the router binding as `angzarr_client.router` and the
+framework protos from `angzarr_client.proto`; the template parameters
+`param.runtime_module=` and `param.framework_package=` override either
+(`codegen/manifest.yaml`). The template contract is angzarr-cli's
+`docs/templates.md`.
+
+Implement the stub and host it:
+
+```python
+from angzarr_client import ComponentHost, configure_logging
+from myapp.gen.my.v1.thing_aggregate_angzarr import new_thing_aggregate_dispatch
+from myapp.thing_aggregate_angzarr_handler import ThingAggregate
+
+configure_logging()
+host = ComponentHost()
+host.add_aggregate(new_thing_aggregate_dispatch(ThingAggregate()))
+# An application's own gRPC service, served and health-reported alongside:
+# host.add_service(add_MyQueryServiceServicer_to_server, MyQueryServicer(), "my.v1.MyQueryService")
+host.run()   # binds the transport the environment selects; stops on SIGTERM / SIGINT
+```
+
+`add_saga`, `add_process_manager`, `add_projector` and `add_upcaster` serve the
+other kinds. The transport comes from the environment: `TRANSPORT_TYPE=tcp`
+(default; `ANGZARR_BIND_ADDRESS`, else `[::]:$PORT`) or `TRANSPORT_TYPE=uds`
+(`$UDS_BASE_PATH/$SERVICE_NAME[-<qualifier>].sock`, removed on shutdown).
+Health reports `NOT_SERVING` until the server listens and the readiness probes
+pass, and again once shutdown begins; in-flight calls then finish within the
+grace period. A coded failure from a handler travels as its gRPC status, with
+a `google.rpc.Status` / `ErrorInfo` (reason = the error code) in
+`grpc-status-details-bin`; the coordinator hands that code to compensation
+handlers as `RejectionNotification.code` (branch on it, never on
+`rejection_reason`, which is the human-readable message).
+
+`ProjectorService.HandleSpeculative` folds the book speculatively: projector
+handlers see `ctx.speculative` (`current_page().speculative` in the finisher)
+and must then leave durable and external state (read models, stores,
+outgoing messages) untouched — the projection is returned, not applied.
+
+## Coordinator clients
 
 ```python
 from angzarr_client import DomainClient
-from uuid import uuid4
 
 client = DomainClient.connect("localhost:1310")
-
-# Build and execute a command
-order_id = uuid4()
 response = (
     client.command_handler
-    .command("order", order_id)
-    .with_command("type.googleapis.com/examples.CreateOrder", create_order_msg)
+    .command("my-domain", root)
+    .with_command("/my.v1.DoSomething", do_something)
     .execute()
 )
-
-# Query events
-events = client.query.query("order", order_id).get_event_book()
+events = client.query.query("my-domain", root).get_event_book()
 ```
 
-## Handler Kinds
-
-Handler classes are declared with class decorators. No base class is required — the decorator stamps metadata the router reads at build time.
-
-| Kind | Decorator | Purpose |
-|------|-----------|---------|
-| Command handler | `@command_handler(domain, state)` | Validate commands, emit events |
-| Saga | `@saga(name, source, target)` | Translate source-domain events into target-domain commands |
-| Process manager | `@process_manager(name, pm_domain, sources, targets, state)` | Stateful multi-domain orchestrator |
-| Projector | `@projector(name, domains)` | Side-effect fan-out over event books |
-| Upcaster | `@upcaster(name, domain)` | Transform legacy event versions in place |
-
-Method markers inside the class:
-
-| Marker | Applies to | Role |
-|--------|-----------|------|
-| `@handles(MessageType)` | Any kind | Register a handler for an incoming message |
-| `@applies(EventType)` | command_handler, process_manager | Mutate state during replay |
-| `@rejected(domain, command)` | command_handler, saga, process_manager | Receive a rejection notification and emit compensation |
-| `@state_factory` | command_handler, process_manager | Override `state()` default for initial state |
-| `@upcasts(from, to)` | upcaster | Transform one event type into another |
-
-### Command-handler example
-
-```python
-from dataclasses import dataclass
-from angzarr_client import command_handler, handles, applies
-from angzarr_client.errors import CommandRejectedError
-
-@dataclass
-class PlayerState:
-    player_id: str = ""
-    bankroll: int = 0
-
-@command_handler(domain="player", state=PlayerState)
-class Player:
-    def __init__(self, db_pool):
-        self.db_pool = db_pool
-
-    @applies(PlayerRegistered)
-    def apply_registered(self, state: PlayerState, evt: PlayerRegistered) -> None:
-        state.player_id = evt.player_id
-
-    @handles(RegisterPlayer)
-    def register(self, cmd: RegisterPlayer, state: PlayerState, seq: int) -> EventBook:
-        if state.player_id:
-            raise CommandRejectedError.precondition_failed("player already exists")
-        # build and return the event book
-        ...
-```
-
-## Router
-
-One builder, one entry point:
-
-```python
-from angzarr_client import Router
-from angzarr_client.router import CommandHandlerGrpc
-from angzarr_client import run_server
-from angzarr_client.proto.angzarr import command_handler_pb2_grpc
-
-built = (
-    Router("agg-player")
-    .with_handler(Player, lambda: Player(db_pool))
-    .with_handler(Hand, lambda: Hand(rng))
-    .build()
-)
-
-# Wrap the runtime router in the matching gRPC adapter, then serve it.
-servicer = CommandHandlerGrpc(built)
-run_server(
-    command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server,
-    servicer,
-    service_name="CommandHandler",
-    domain="player",
-)
-```
-
-The factory callable runs once per dispatch, so each request gets a fresh handler instance. Close over shared deps (`lambda: Player(db_pool)`) or hand in a pool-checkout callable.
-
-`Router.build()` returns a `CommandHandlerRouter / SagaRouter / ProcessManagerRouter / ProjectorRouter / UpcasterRouter` based on the kinds present. Mixing kinds in one router raises `BuildError("cannot mix ...")`.
-
-## Clients
-
-| Client | Purpose |
-|--------|---------|
-| `CommandHandlerClient` | Send commands to a coordinator |
-| `QueryClient` | Fetch event books |
-| `SpeculativeClient` | Dry-run commands without persisting |
-| `DomainClient` | Bundle of all three, scoped to a domain |
-
-All four carry a `connect(endpoint, retry=None)` classmethod, a `from_channel(channel)` for caller-managed channels, and a `from_env(env_var, default)` helper.
-
-## Error handling
-
-```python
-from angzarr_client.errors import ClientError, GRPCError, ConnectionError
-
-try:
-    response = client.command_handler.handle(cmd)
-except GRPCError as e:
-    if e.is_precondition_failed():
-        # Sequence mismatch (optimistic locking)
-        ...
-    elif e.is_not_found():
-        # Aggregate missing
-        ...
-    elif e.is_invalid_argument():
-        # Bad input
-        ...
-except ConnectionError:
-    # Transport failure
-    ...
-```
-
-`ClientError` is the base exception. `GRPCError / ConnectionError / TransportError / InvalidArgumentError / InvalidTimestampError / CommandRejectedError` inherit from it. All instances expose `is_not_found() / is_precondition_failed() / is_invalid_argument() / is_connection_error()` predicates. `CommandRejectedError` adds named factory methods — `precondition_failed(msg)`, `invalid_argument(msg)`, `not_found(msg)`.
-
-## Retry
-
-```python
-from angzarr_client import ExponentialBackoffRetry
-
-policy = ExponentialBackoffRetry(
-    max_attempts=5,
-    max_delay=2.0,
-    on_retry=lambda i, e: print(f"retry {i}: {e}"),
-)
-
-result = policy.execute(lambda: try_something())
-```
-
-Defaults match the cross-language spec: 10 attempts, 100 ms → 5 s with jitter. `RetryPolicy` is an alias for `ExponentialBackoffRetry`.
-
-## Coming from Rust?
-
-Everything maps. The shape differs; the names and semantics don't.
-
-| Concept | Rust | Python |
-|---------|------|--------|
-| Kind declaration | `#[command_handler(domain = "p", state = PlayerState)]` attribute macro on `impl` | `@command_handler(domain="p", state=PlayerState)` class decorator |
-| Method marker | `#[handles(Cmd)]` | `@handles(Cmd)` |
-| Router | `Router::new("x").with_handler::<H, _>(factory)` (type inferred) | `Router("x").with_handler(cls, factory)` (cls passed explicitly) |
-| Factory | `\|\| Player::new(db.clone())` | `lambda: Player(db)` |
-| Handler state | Struct instance from factory closure | Class instance |
-| Cover/book/page accessors | Extension trait methods: `cover.domain()`, `book.next_sequence()` (via `CoverExt` / `EventBookExt`) | Wrapper methods: handlers receive `Cover` / `EventBook` wrappers from the framework — `cover.domain()`, `book.next_sequence()` directly. The raw proto is reachable via `wrapper.proto()` (the `Wrapped` interface). |
-| Error surface | `thiserror` enum `ClientError { Connection, Transport, Grpc, InvalidArgument, InvalidTimestamp }` with `is_*` predicate methods | Exception hierarchy: `ClientError → GRPCError / ConnectionError / …` |
-| Rejection factories | `CommandRejectedError::precondition_failed(msg)` | `CommandRejectedError.precondition_failed(msg)` |
-| Retry | `ExponentialBackoffRetry::default().with_max_attempts(5)` | `ExponentialBackoffRetry(max_attempts=5)` |
-| Retry callback | `.with_on_retry(\|i, e\| ...)` | `on_retry=lambda i, e: ...` |
-| Compensation options | `delegate_to_framework(reason)` **or** `delegate_to_framework_with_options(reason, emit, send_to_dead_letter, escalate, abort)` (two-function idiom) | `delegate_to_framework(reason, send_to_dead_letter=True)` (kwargs) |
-| Type-URL match | `type_url_matches(url, name)` (primary) — `type_url_matches_exact` is Python-compat alias | `type_url_matches(url, name)` (primary) |
-| Destinations query | `destinations.has_domain(d)` (canonical) — `has_sequence` is a `#[deprecated]` alias | `destinations.has_domain(d)` |
-| Destinations iteration | `destinations.domains()` — insertion-preserving via `IndexMap` | `destinations.domains` — insertion-preserving via `dict` |
-| `CommandBuilder.execute` | `async fn execute() -> Result<CommandResponse>` — `with_sync_mode(SyncMode)` for non-default modes | `def execute(sync_mode=SyncMode.SYNC_MODE_ASYNC) -> CommandResponse` (sync) |
-| `decode_event` | `decode_event(event, full_type_name)` — exact match (not suffix) | `decode_event(page, full_type_name, msg_class)` — exact match |
-| Validation primitives | `require_positive<T: PartialOrd>(value, msg)` — generic | `require_positive(value: int|float|Decimal, msg)` |
-
-## Things that intentionally differ (not bugs)
-
-These are language-natural patterns that the audit flagged for
-documentation rather than convergence (per audit P3.3 and P4):
-
-- **Async vs sync `execute()`** — Rust is async (tonic-only); Python is
-  sync (gRPC sync stub). Use Rust's `.await` or Python's blocking call.
-- **Per-RPC timeout** — Python `handle_command(request, timeout=...)`
-  passes timeout to the gRPC call; Rust uses tonic's request-level
-  metadata mechanism. Set on the call site, not on the builder.
-- **`unpack` / `try_unpack` style** — Rust returns `Result<T, …>` /
-  `Option<T>`; Python raises `ValueError` / returns `None`. Same
-  semantics, idiomatic per language.
-
-## Saga / PM design philosophy
-
-**Sagas and PMs are coordinators, not decision makers.**
-
-| Output | When to use |
-|--------|-------------|
-| Commands (preferred) | Normal flow — the target aggregate validates and decides |
-| Facts | Inject external data the target aggregate can't derive |
-
-Key principles:
-
-1. **Don't rebuild destination state** — use `Destinations` for sequences only.
-2. **Let aggregates decide** — business logic in aggregates, not coordinators.
-3. **Prefer commands with sync mode** — use `SyncMode.SIMPLE` for immediate feedback.
-4. **Use facts sparingly** — only for external data injection.
-
-## Speculative execution
-
-Test commands without persisting to the event store.
-
-```python
-from angzarr_client import SpeculativeClient
-from angzarr_client.proto.angzarr import SpeculateCommandHandlerRequest
-
-client = SpeculativeClient.connect("localhost:1310")
-request = SpeculateCommandHandlerRequest(
-    command=command_book,
-    events=prior_events,
-)
-response = client.command_handler(request)
-```
-
-## License
-
-BSD-3-Clause
+Type URLs are `"/"` + the message's fully-qualified name (`TYPE_URL_PREFIX`);
+any prefix is accepted on input, matching by the name after the last `/`.
+`compute_root(domain, key)` derives an aggregate root as
+`uuid5(NAMESPACE_OID, f"{domain}:{key}")`.
 
 ## Development
 
-Install git hooks (requires [lefthook](https://github.com/evilmartians/lefthook)):
+Submodules: `angzarr-project` (the spec: protos and feature files) and
+`angzarr-router` (the router at a pinned revision: the cdylib source, its ABI
+protos and the conformance suite). Initialise both without `--recursive`.
 
-```bash
-lefthook install
-```
+| recipe | does |
+|---|---|
+| `just proto` | generate the framework + ABI protos into `angzarr_client/proto/` (grpcio-tools) |
+| `just router-lib` | build the router-ffi cdylib from `angzarr-router/` (cargo) and vendor it into `angzarr_client/router/_lib/` |
+| `just build` | sdist + manylinux wheel (the wheel build runs both of the above; `scripts/native_build.py`), then install the wheel in a clean environment and check it loads |
+| `just cli` | install the angzarr CLI at the pinned `CLI_REV` into `.tools/` (`ANGZARR_CLI=<binary>` uses another build) |
+| `just conformance-gen` | render the router's conformance fixture with `codegen/` into `tests/router/gen/` |
+| `just test` | all of the above, then unit, binding, router-conformance and client-feature tests |
+| `just codegen-check` | render angzarr-project's example protos with `codegen/` and check every component imports, its stub implements its protocol, and it registers on the router |
+| `just ci` | format check + lint + `test` + `codegen-check` (what CI runs) |
+| `just clean` | remove generated protos, the router build, rendered code |
 
-This configures a pre-commit hook that auto-formats code before each commit.
+Tests:
 
-### Recipes
+- `tests/router/` — the binding's unit tests and angzarr-router's
+  `conformance/features`, run against the binding with handlers implementing
+  the generated protocols (`tests/router/fixture.py`).
+- `tests/client/` — angzarr-project's `features/client` client-surface tier and
+  `parity/client` against the coordinator clients and a test backend.
+- `tests/test_*.py` — unit tests.
 
-```bash
-just -l              # list recipes
-just build           # build the package
-just test            # run pytest + BDD
-just fmt             # ruff + black check
-just fmt-fix         # auto-format
-just mutation-test   # mutmut (80% kill-rate threshold)
-```
+## License
+
+AGPL-3.0 — see [LICENSE](LICENSE).

@@ -1,0 +1,8 @@
+# The proto inputs, read in place from the submodules: the framework contract
+# (angzarr-project), the router's ABI protos and its conformance fixture
+# (angzarr-router).
+version: v2
+modules:
+  - path: angzarr-project/proto
+  - path: angzarr-router/proto
+  - path: angzarr-router/conformance/proto

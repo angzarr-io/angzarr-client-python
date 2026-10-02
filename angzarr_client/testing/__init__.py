@@ -16,17 +16,17 @@ Example usage:
         pack_event,
     )
 
-    def test_player_registration():
+    def test_handler_sees_prior_events():
         ctx = ScenarioContext()
-        ctx.domain = "player"
-        ctx.root = uuid_for("player-alice")
+        ctx.domain = "my-domain"
+        ctx.root = uuid_for("entity-1")
 
         # Build event book with prior events
         book = ctx.event_book()
 
         # Execute command and verify
         result = handler.handle(cmd, book)
-        assert result.player_id == "player_alice@test.com"
+        assert result.entity_id == "entity-1"
 """
 
 from .builders import (
@@ -49,17 +49,17 @@ from .uuid import (
 __all__ = [
     # UUID helpers
     "DEFAULT_TEST_NAMESPACE",
-    "uuid_for",
-    "uuid_str_for",
-    "uuid_obj_for",
+    # Context
+    "ScenarioContext",
+    "make_command_book",
+    "make_command_page",
+    "make_cover",
+    "make_event_book",
+    "make_event_page",
     # Proto builders
     "make_timestamp",
     "pack_event",
-    "make_cover",
-    "make_event_page",
-    "make_event_book",
-    "make_command_page",
-    "make_command_book",
-    # Context
-    "ScenarioContext",
+    "uuid_for",
+    "uuid_obj_for",
+    "uuid_str_for",
 ]

@@ -7,16 +7,16 @@ from uuid import uuid4
 import pytest
 from google.protobuf.wrappers_pb2 import StringValue
 
+from angzarr_client._pb import (
+    CommandResponse,
+    EventBook,
+)
 from angzarr_client.builder import (
     CommandBuilder,
     QueryBuilder,
 )
 from angzarr_client.errors import InvalidArgumentError, InvalidTimestampError
 from angzarr_client.helpers import proto_to_uuid
-from angzarr_client.proto.angzarr import (
-    CommandResponse,
-    EventBook,
-)
 
 
 class TestCommandBuilder:
@@ -36,7 +36,7 @@ class TestCommandBuilder:
 
         builder = CommandBuilder(client, "orders", root)
         builder.with_sequence(0)
-        builder.with_command("type.googleapis.com/test.CreateOrder", msg)
+        builder.with_command("/test.CreateOrder", msg)
         book = builder.build()
 
         assert book.cover.domain == "orders"
@@ -59,7 +59,7 @@ class TestCommandBuilder:
 
         builder = CommandBuilder(client, "orders", uuid4())
         builder.with_sequence(0)
-        builder.with_command("type.googleapis.com/test.CreateOrder", msg)
+        builder.with_command("/test.CreateOrder", msg)
         book = builder.build()
 
         assert book.cover.domain == "orders"
@@ -98,16 +98,17 @@ class TestCommandBuilder:
         )
         assert a.cover.root.value != b.cover.root.value
 
-    def test_build_missing_sequence_raises(self) -> None:
-        """Build without with_sequence() should raise."""
+    def test_build_without_sequence_defaults_to_zero(self) -> None:
+        """Build without with_sequence() uses sequence 0."""
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
         builder = CommandBuilder(client, "orders", uuid4())
-        builder.with_command("type.googleapis.com/test.CreateOrder", msg)
+        builder.with_command("/test.CreateOrder", msg)
+        book = builder.build()
 
-        with pytest.raises(InvalidArgumentError):
-            builder.build()
+        assert book.pages[0].header.WhichOneof("sequence_type") == "sequence"
+        assert book.pages[0].header.sequence == 0
 
     def test_build_sequence_zero_valid(self) -> None:
         """with_sequence(0) is valid for new aggregates."""
@@ -116,7 +117,7 @@ class TestCommandBuilder:
 
         builder = CommandBuilder(client, "orders", uuid4())
         builder.with_sequence(0)
-        builder.with_command("type.googleapis.com/test.CreateOrder", msg)
+        builder.with_command("/test.CreateOrder", msg)
         book = builder.build()
 
         assert book.pages[0].header.sequence == 0
@@ -158,16 +159,32 @@ class TestCommandBuilder:
         with pytest.raises(InvalidArgumentError) as exc_info:
             builder.build()
         assert "type_url" in str(exc_info.value)
+        assert exc_info.value.code == "COMMAND_TYPE_URL_MISSING"
 
     def test_build_without_payload_raises(self) -> None:
         """Build with type_url but no payload raises."""
         client = self._mock_aggregate_client()
         builder = CommandBuilder(client, "orders", uuid4())
-        builder._type_url = "type/Cmd"
+        builder.with_type_url("/test.Cmd")
 
         with pytest.raises(InvalidArgumentError) as exc_info:
             builder.build()
         assert "payload" in str(exc_info.value)
+        assert exc_info.value.code == "COMMAND_PAYLOAD_MISSING"
+
+    def test_build_with_type_url_and_payload(self) -> None:
+        """with_type_url + with_payload carry the pre-encoded command."""
+        client = self._mock_aggregate_client()
+        payload = StringValue(value="raw").SerializeToString()
+        book = (
+            CommandBuilder(client, "orders", uuid4())
+            .with_type_url("/google.protobuf.StringValue")
+            .with_payload(payload)
+            .build()
+        )
+
+        assert book.pages[0].command.type_url == "/google.protobuf.StringValue"
+        assert book.pages[0].command.value == payload
 
     def test_execute_calls_handle_command(self) -> None:
         """Execute builds and calls client.handle_command."""
@@ -358,7 +375,7 @@ class TestQueryBuilder:
 
     def test_get_pages(self) -> None:
         """get_pages extracts pages from book."""
-        from angzarr_client.proto.angzarr import PageHeader
+        from angzarr_client._pb import PageHeader
 
         client = self._mock_query_client()
         book = EventBook()

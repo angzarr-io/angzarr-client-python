@@ -79,3 +79,8 @@ MIXED_HANDLER_KINDS = (
 
 # Saga / PM destinations
 MISSING_DESTINATION_SEQUENCE = "no sequence for destination domain"
+
+# Component host
+HANDLER_PANICKED = "handler panicked during dispatch"
+HANDLER_DOES_NOT_SUPPORT_REPLAY = "handler does not support replay"
+NO_COMPONENTS_REGISTERED = "the host has no components registered"

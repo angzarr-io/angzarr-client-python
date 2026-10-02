@@ -80,9 +80,9 @@ class TestRequirePositive:
 
         require_positive(Decimal("0.01"), "amount")
         with pytest.raises(CommandRejectedError):
-            require_positive(Decimal("0"), "amount")
+            require_positive(Decimal(0), "amount")
         with pytest.raises(CommandRejectedError):
-            require_positive(Decimal("-1"), "amount")
+            require_positive(Decimal(-1), "amount")
 
 
 class TestRequireNonNegative:
@@ -102,7 +102,7 @@ class TestRequireNonNegative:
 
         require_non_negative(0.0, "balance")
         require_non_negative(0.5, "balance")
-        require_non_negative(Decimal("0"), "balance")
+        require_non_negative(Decimal(0), "balance")
         with pytest.raises(CommandRejectedError) as exc:
             require_non_negative(-0.001, "balance")
         assert exc.value.code == codes.VALUE_NOT_NON_NEGATIVE
@@ -161,9 +161,11 @@ class TestStructuredLogging:
     with `field`, `predicate`, and `status_code` fields."""
 
     def test_require_positive_logs_structured_fields(self, caplog):
-        with caplog.at_level(logging.INFO, logger="angzarr_client.validation"):
-            with pytest.raises(CommandRejectedError):
-                require_positive(0, "amount")
+        with (
+            caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
+            pytest.raises(CommandRejectedError),
+        ):
+            require_positive(0, "amount")
 
         records = [r for r in caplog.records if r.name == "angzarr_client.validation"]
         assert len(records) == 1
@@ -174,9 +176,11 @@ class TestStructuredLogging:
         assert messages.VALUE_NOT_POSITIVE in rec.getMessage()
 
     def test_require_non_negative_logs_structured_fields(self, caplog):
-        with caplog.at_level(logging.INFO, logger="angzarr_client.validation"):
-            with pytest.raises(CommandRejectedError):
-                require_non_negative(-1, "balance")
+        with (
+            caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
+            pytest.raises(CommandRejectedError),
+        ):
+            require_non_negative(-1, "balance")
 
         records = [r for r in caplog.records if r.name == "angzarr_client.validation"]
         assert len(records) == 1
@@ -185,9 +189,11 @@ class TestStructuredLogging:
         assert records[0].status_code == "INVALID_ARGUMENT"
 
     def test_require_not_empty_logs_structured_fields(self, caplog):
-        with caplog.at_level(logging.INFO, logger="angzarr_client.validation"):
-            with pytest.raises(CommandRejectedError):
-                require_not_empty([], "items")
+        with (
+            caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
+            pytest.raises(CommandRejectedError),
+        ):
+            require_not_empty([], "items")
 
         records = [r for r in caplog.records if r.name == "angzarr_client.validation"]
         assert len(records) == 1
@@ -196,9 +202,11 @@ class TestStructuredLogging:
         assert records[0].status_code == "INVALID_ARGUMENT"
 
     def test_require_exists_logs_not_found(self, caplog):
-        with caplog.at_level(logging.INFO, logger="angzarr_client.validation"):
-            with pytest.raises(CommandRejectedError):
-                require_exists(False, "entity")
+        with (
+            caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
+            pytest.raises(CommandRejectedError),
+        ):
+            require_exists(False, "entity")
 
         records = [r for r in caplog.records if r.name == "angzarr_client.validation"]
         assert len(records) == 1
@@ -213,3 +221,138 @@ class TestStructuredLogging:
 
         records = [r for r in caplog.records if r.name == "angzarr_client.validation"]
         assert records == []
+
+
+_REJECTIONS = [
+    # (call, code, message, status_code, details, log_field, log_predicate)
+    (
+        lambda: require_exists(False, "player lookup"),
+        codes.ENTITY_NOT_FOUND,
+        messages.ENTITY_NOT_FOUND,
+        "NOT_FOUND",
+        {keys.CONTEXT: "player lookup"},
+        "<entity>",
+        "exists",
+    ),
+    (
+        lambda: require_not_exists(True, "player create"),
+        codes.ENTITY_ALREADY_EXISTS,
+        messages.ENTITY_ALREADY_EXISTS,
+        "FAILED_PRECONDITION",
+        {keys.CONTEXT: "player create"},
+        "<entity>",
+        "not_exists",
+    ),
+    (
+        lambda: require_positive(0, "amount"),
+        codes.VALUE_NOT_POSITIVE,
+        messages.VALUE_NOT_POSITIVE,
+        "INVALID_ARGUMENT",
+        {keys.FIELD: "amount"},
+        "amount",
+        "positive",
+    ),
+    (
+        lambda: require_non_negative(-1, "balance"),
+        codes.VALUE_NOT_NON_NEGATIVE,
+        messages.VALUE_NOT_NON_NEGATIVE,
+        "INVALID_ARGUMENT",
+        {keys.FIELD: "balance"},
+        "balance",
+        "non_negative",
+    ),
+    (
+        lambda: require_not_empty([], "items"),
+        codes.COLLECTION_EMPTY,
+        messages.COLLECTION_EMPTY,
+        "INVALID_ARGUMENT",
+        {keys.FIELD: "items"},
+        "items",
+        "not_empty",
+    ),
+    (
+        lambda: require_not_empty_str("", "name"),
+        codes.VALUE_EMPTY,
+        messages.VALUE_EMPTY,
+        "INVALID_ARGUMENT",
+        {keys.FIELD: "name"},
+        "name",
+        "not_empty_str",
+    ),
+    (
+        lambda: require_status("pending", "active", "must be active"),
+        codes.STATUS_MISMATCH,
+        messages.STATUS_MISMATCH,
+        "FAILED_PRECONDITION",
+        {keys.CONTEXT: "must be active"},
+        "status",
+        "status_eq",
+    ),
+    (
+        lambda: require_status_not("closed", "closed", "already closed"),
+        codes.STATUS_FORBIDDEN,
+        messages.STATUS_FORBIDDEN,
+        "FAILED_PRECONDITION",
+        {keys.CONTEXT: "already closed"},
+        "status",
+        "status_not",
+    ),
+]
+
+_REJECTION_IDS = [
+    "exists",
+    "not_exists",
+    "positive",
+    "non_negative",
+    "not_empty",
+    "not_empty_str",
+    "status",
+    "status_not",
+]
+
+
+class TestRejectionContract:
+    """Every validator rejects with a fixed code, static message, gRPC-style
+    status code and structured details, and emits exactly one info record
+    carrying the same field / predicate / status_code."""
+
+    @pytest.mark.parametrize(
+        "call,code,message,status_code,details,_field,_predicate",
+        _REJECTIONS,
+        ids=_REJECTION_IDS,
+    )
+    def test_raised_error(
+        self, call, code, message, status_code, details, _field, _predicate
+    ):
+        with pytest.raises(CommandRejectedError) as exc:
+            call()
+        err = exc.value
+        assert err.code == code
+        assert err.message == message
+        assert str(err) == message
+        assert err.status_code == status_code
+        assert err.details == details
+        assert err.cover is None
+
+    @pytest.mark.parametrize(
+        "call,_code,message,status_code,_details,field,predicate",
+        _REJECTIONS,
+        ids=_REJECTION_IDS,
+    )
+    def test_structured_log_record(
+        self, caplog, call, _code, message, status_code, _details, field, predicate
+    ):
+        with (
+            caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
+            pytest.raises(CommandRejectedError),
+        ):
+            call()
+
+        records = [r for r in caplog.records if r.name == "angzarr_client.validation"]
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.levelno == logging.INFO
+        assert rec.getMessage() == f"validation rejection: {message}"
+        assert rec.field == field
+        assert rec.predicate == predicate
+        assert rec.status_code == status_code
