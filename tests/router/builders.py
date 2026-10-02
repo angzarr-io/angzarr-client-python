@@ -144,13 +144,14 @@ def increase_command_with_linkage(n: int):
     return cc
 
 
-def rejection_command(fq_command: str):
-    """Wrap a rejection Notification for ``fq_command`` into a
+def rejection_command(fq_command: str, code: str = "", reason: str = ""):
+    """Wrap a rejection Notification for ``fq_command`` (with the rejecting
+    handler's ``code`` and human-readable ``reason``) into a
     ContextualCommand, routed through the same dispatch entry — the core
     detects the notification type and takes the compensation path. Built by
     field; the envelope nests Notification -> RejectionNotification -> the
     rejected book."""
-    rejection = types_pb2.RejectionNotification()
+    rejection = types_pb2.RejectionNotification(code=code, rejection_reason=reason)
     rejection.rejected_command.cover.domain = "counter"
     page = rejection.rejected_command.pages.add()
     page.command.type_url = type_url(fq_command)

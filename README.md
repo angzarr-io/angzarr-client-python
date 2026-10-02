@@ -92,7 +92,14 @@ Health reports `NOT_SERVING` until the server listens and the readiness probes
 pass, and again once shutdown begins; in-flight calls then finish within the
 grace period. A coded failure from a handler travels as its gRPC status, with
 a `google.rpc.Status` / `ErrorInfo` (reason = the error code) in
-`grpc-status-details-bin`.
+`grpc-status-details-bin`; the coordinator hands that code to compensation
+handlers as `RejectionNotification.code` (branch on it, never on
+`rejection_reason`, which is the human-readable message).
+
+`ProjectorService.HandleSpeculative` folds the book speculatively: projector
+handlers see `ctx.speculative` (`current_page().speculative` in the finisher)
+and must then leave durable and external state (read models, stores,
+outgoing messages) untouched — the projection is returned, not applied.
 
 ## Coordinator clients
 
