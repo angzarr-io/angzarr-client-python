@@ -51,6 +51,7 @@ _RESPONSES = {
     "dispatch_saga": saga_pb2.SagaResponse,
     "dispatch_process_manager": process_manager_pb2.ProcessManagerHandleResponse,
     "dispatch_projector": types_pb2.Projection,
+    "dispatch_projector_speculative": types_pb2.Projection,
 }
 
 
@@ -96,7 +97,9 @@ class _ScriptedRouter:
     def dispatch_process_manager(self, request):
         return self._run("dispatch_process_manager", request)
 
-    def dispatch_projector(self, request):
+    def dispatch_projector(self, request, *, speculative: bool = False):
+        if speculative:
+            return self._run("dispatch_projector_speculative", request)
         return self._run("dispatch_projector", request)
 
 
@@ -456,6 +459,21 @@ def test_every_rpc_reports_a_coded_router_failure_as_its_status(hosts, call):
     assert err.value.details() == "scripted failure"
     info = _error_info(err.value)
     assert (info.reason, dict(info.metadata)) == ("SCRIPTED_FAILURE", {"k": "v"})
+
+
+def test_handle_speculative_dispatches_speculatively_and_handle_live(hosts):
+    router = _ScriptedRouter(_empty_response)
+    host = ComponentHost(router)
+    _register("projector", host)
+    stub = projector_pb2_grpc.ProjectorServiceStub(hosts(host))
+    book = types_pb2.EventBook()
+    book.cover.domain = "source"
+    stub.HandleSpeculative(book, timeout=5)
+    stub.Handle(book, timeout=5)
+    assert [(kind, args[0].cover.domain) for kind, args in router.calls] == [
+        ("dispatch_projector_speculative", "source"),
+        ("dispatch_projector", "source"),
+    ]
 
 
 def test_replay_names_the_one_aggregates_domain(hosts):
