@@ -428,9 +428,9 @@ class ComponentHost:
         return self._stopped.wait(timeout)
 
     def run(self, address: str | None = None, grace: float = 5.0) -> None:
-        """Start, serve until SIGTERM or SIGINT, then stop."""
-        self.start(address)
-        self._log.info("server_started", services=self.services, address=self.address)
+        """Start, serve until SIGTERM or SIGINT, then stop. The handlers are
+        installed before the server starts, so a signal during startup stops
+        the host gracefully; the previous handlers are restored on return."""
         stopping = threading.Event()
 
         def _request_stop(signum, frame):
@@ -441,6 +441,10 @@ class ComponentHost:
             for sig in (signal.SIGTERM, signal.SIGINT)
         }
         try:
+            self.start(address)
+            self._log.info(
+                "server_started", services=self.services, address=self.address
+            )
             # Python runs signal handlers on the main thread, but the kernel
             # may deliver the signal to another thread; a timed wait returns
             # to the interpreter regularly so the handler still runs.
@@ -449,8 +453,10 @@ class ComponentHost:
         finally:
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
+            started = bool(self.address)
             self.stop(grace)
-            self._log.info("server_shutdown", services=self.services)
+            if started:
+                self._log.info("server_shutdown", services=self.services)
 
     def __enter__(self) -> Self:
         return self

@@ -52,6 +52,7 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-bdd>=7.0.0",
     "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.3",
     "mutmut>=2.5.0",
     "ruff>=0.4.0",
     "black>=24.0.0",
@@ -109,6 +110,11 @@ bdd_features_base_dir = "angzarr-project"
 testpaths = ["tests"]
 norecursedirs = ["mutants", "angzarr-project", "angzarr-router"]
 asyncio_mode = "auto"
+# A hung test fails the run instead of stalling it: after the timeout every
+# thread's stack is dumped and the process exits (the thread method also
+# fires while the main thread is blocked in a C-level wait).
+timeout = 120
+timeout_method = "thread"
 filterwarnings = [
     # pytest-bdd converts each Gherkin tag into a pytest mark. Scenario IDs
     # (@C-NNNN, @EU-NNNN, @EA-NNNN) collide with PytestUnknownMarkWarning.

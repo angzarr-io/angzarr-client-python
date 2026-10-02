@@ -733,7 +733,8 @@ def _run_in_main_thread(host: ComponentHost, script, **run_kwargs) -> None:
                 channel.close()
         except BaseException as exc:  # noqa: BLE001 — reported below
             failures.append(exc)
-            os.kill(os.getpid(), signal.SIGTERM)
+            if not host.wait(timeout=0):
+                os.kill(os.getpid(), signal.SIGTERM)
 
     driver = threading.Thread(target=drive, daemon=True)
     driver.start()
@@ -761,8 +762,13 @@ def test_run_logs_start_and_shutdown_and_restores_signal_handlers():
         finally:
             gate.release.set()
 
-    threading.Timer(3.0, gate.release.set).start()
-    _run_in_main_thread(host, script, grace=0)
+    release_fallback = threading.Timer(3.0, gate.release.set)
+    release_fallback.start()
+    try:
+        _run_in_main_thread(host, script, grace=0)
+    finally:
+        release_fallback.cancel()
+        release_fallback.join(5)
     # grace=0 reaches stop(): the in-flight call is cut off, not awaited.
     assert outcome["code"] == grpc.StatusCode.UNAVAILABLE
     address = logger.records[0][2]["address"]
@@ -801,13 +807,49 @@ def test_run_stops_on_a_signal_delivered_to_another_thread():
     host = _counter_host()
     main = threading.main_thread().ident
     delivered: dict = {}
+    # Fallback so a missed wakeup fails the test instead of hanging it;
+    # cancelled once run() returns so it never signals a later test.
+    fallback = threading.Timer(5.0, signal.pthread_kill, args=(main, signal.SIGTERM))
 
     def script(channel):
         delivered["at"] = time.monotonic()
         signal.pthread_kill(threading.get_ident(), signal.SIGTERM)
-        # Fallback so a missed wakeup fails the test instead of hanging it.
-        threading.Timer(5.0, signal.pthread_kill, args=(main, signal.SIGTERM)).start()
+        fallback.start()
 
-    _run_in_main_thread(host, script)
+    try:
+        _run_in_main_thread(host, script)
+    finally:
+        fallback.cancel()
+        if fallback.is_alive():
+            fallback.join(5)
     assert time.monotonic() - delivered["at"] < 3.0
     assert host.wait(timeout=0)
+
+
+def test_run_honours_a_signal_that_arrives_while_the_host_is_starting():
+    # The handlers are installed before the server starts: a SIGTERM during
+    # startup stops the host gracefully instead of hitting the default
+    # disposition (process termination) or being lost.
+    host = _counter_host()
+    started = host.start
+
+    def start_then_signal(address=None):
+        bound = started(address)
+        os.kill(os.getpid(), signal.SIGTERM)
+        return bound
+
+    host.start = start_then_signal
+    host.run("127.0.0.1:0", grace=0)
+    assert host.wait(timeout=0)
+    assert host.health_status("") == _NOT_SERVING
+
+
+def test_run_with_a_failing_start_raises_and_restores_the_signal_handlers():
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+    logger = _RecordingLogger()
+    host = ComponentHost(logger=logger)
+    with pytest.raises(ConfigurationError):
+        host.run("127.0.0.1:0")
+    assert {sig: signal.getsignal(sig) for sig in previous} == previous
+    assert host.wait(timeout=0)
+    assert logger.records == []

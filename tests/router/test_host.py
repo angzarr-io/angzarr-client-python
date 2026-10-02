@@ -481,10 +481,19 @@ def test_start_uses_the_environment_transport(monkeypatch, tmp_path):
 
 def test_run_serves_until_sigterm():
     host = _counter_host()
-    timer = threading.Timer(0.5, os.kill, args=(os.getpid(), signal.SIGTERM))
     previous = signal.getsignal(signal.SIGTERM)
-    timer.start()
+
+    def signal_once_serving():
+        for _ in range(500):
+            if host.address:
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+            threading.Event().wait(0.01)
+
+    sender = threading.Thread(target=signal_once_serving, daemon=True)
+    sender.start()
     host.run("127.0.0.1:0", grace=0)
+    sender.join(5)
     assert host.wait(timeout=0)
     assert host.health_status("") == _NOT_SERVING
     assert signal.getsignal(signal.SIGTERM) is previous
