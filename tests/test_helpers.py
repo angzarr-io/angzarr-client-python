@@ -6,6 +6,15 @@ from uuid import UUID as PyUUID
 import pytest
 from google.protobuf.any_pb2 import Any as ProtoAny
 
+from angzarr_client._pb import (
+    UUID,
+    Cover,
+    DomainDivergence,
+    Edition,
+    EventBook,
+    EventPage,
+    PageHeader,
+)
 from angzarr_client.errors import InvalidTimestampError
 from angzarr_client.helpers import (
     CORRELATION_ID_HEADER,
@@ -34,18 +43,6 @@ from angzarr_client.helpers import (
     type_url_matches,
     uuid_to_proto,
 )
-from angzarr_client.proto.angzarr import (
-    UUID,
-    CommandBook,
-    CommandPage,
-    Cover,
-    DomainDivergence,
-    Edition,
-    EventBook,
-    EventPage,
-    PageHeader,
-    Query,
-)
 
 
 class TestConstants:
@@ -70,7 +67,7 @@ class TestConstants:
         assert CORRELATION_ID_HEADER == "x-correlation-id"
 
     def test_type_url_prefix(self) -> None:
-        assert TYPE_URL_PREFIX == "type.googleapis.com/"
+        assert TYPE_URL_PREFIX == "/"
 
 
 # Cover/EventBook/CommandBook/Query field accessors live on the wrapper
@@ -184,6 +181,19 @@ class TestDestinationMap:
         assert len(result) == 1
         assert uuid1.bytes.hex() in result
 
+    def test_rootless_entry_does_not_stop_later_entries(self) -> None:
+        """A rootless EventBook ahead of rooted ones is skipped, not terminal."""
+        uuid1 = PyUUID("11111111-1111-1111-1111-111111111111")
+        no_cover = EventBook(next_sequence=1)
+        no_root = EventBook(next_sequence=2)
+        no_root.cover.domain = "player"
+        rooted = EventBook(next_sequence=3)
+        rooted.cover.root.CopyFrom(uuid_to_proto(uuid1))
+
+        result = destination_map([no_cover, no_root, rooted])
+
+        assert result == {uuid1.bytes.hex(): rooted}
+
     def test_works_with_next_sequence_lookup(self) -> None:
         """destination_map integrates with EventBook.next_sequence() for lookups."""
         from angzarr_client import EventBook as EventBookW
@@ -215,14 +225,14 @@ class TestEventsFromResponse:
 
     def test_returns_empty_for_no_events_field(self) -> None:
         """Returns empty list when events field not set."""
-        from angzarr_client.proto.angzarr import CommandResponse
+        from angzarr_client._pb import CommandResponse
 
         resp = CommandResponse()
         assert events_from_response(resp) == []
 
     def test_returns_pages_when_present(self) -> None:
         """Returns event pages when present."""
-        from angzarr_client.proto.angzarr import CommandResponse
+        from angzarr_client._pb import CommandResponse
 
         resp = CommandResponse()
         page1 = resp.events.pages.add()
@@ -241,17 +251,13 @@ class TestTypeUrlHelpers:
 
         Audit finding #32 (Option A): single-arg signature matching Rust."""
         result = type_url("com.example.MyMessage")
-        assert result == "type.googleapis.com/com.example.MyMessage"
+        assert result == "/com.example.MyMessage"
 
-    def test_type_url_preserves_angzarr_proto_prefix(self) -> None:
-        """Python's actual proto packages are ``angzarr_client.proto.*``,
-        so Python wire URLs include that prefix verbatim. ``wire_name``
-        is a no-op in Python; ``type_url`` echoes the input unchanged
-        through the prefix."""
-        result = type_url("angzarr_client.proto.examples.OrderCreated")
-        assert (
-            result == "type.googleapis.com/angzarr_client.proto.examples.OrderCreated"
-        )
+    def test_type_url_is_slash_plus_the_proto_full_name(self) -> None:
+        """The framework protos carry their proto package (io.angzarr.v1)
+        on the wire; ``type_url`` is "/" + that full name."""
+        result = type_url("io.angzarr.v1.Cover")
+        assert result == "/io.angzarr.v1.Cover"
 
     def test_wire_name_is_identity_in_python(self) -> None:
         """``wire_name`` is identity in Python — Python's protoc emits
@@ -261,10 +267,7 @@ class TestTypeUrlHelpers:
         from angzarr_client.helpers import wire_name
 
         assert wire_name("examples.OrderCreated") == "examples.OrderCreated"
-        assert (
-            wire_name("angzarr_client.proto.examples.OrderCreated")
-            == "angzarr_client.proto.examples.OrderCreated"
-        )
+        assert wire_name("io.angzarr.v1.Cover") == "io.angzarr.v1.Cover"
 
     def test_type_name_from_url_fully_qualified(self) -> None:
         """type_name_from_url extracts fully qualified name after last slash."""
@@ -301,16 +304,20 @@ class TestTypeUrlHelpers:
             is False
         )
 
-    def test_type_url_matches_with_full_python_proto_prefix(self) -> None:
-        """Python wire URLs include the ``angzarr_client.proto.*`` prefix
-        because Python protoc honors the proto package declaration.
-        ``type_url_matches`` accepts the corresponding ``type_name`` form."""
+    def test_type_url_matches_any_prefix_by_name(self) -> None:
+        """Any prefix names the message after its last "/"."""
+        for url in (
+            "/examples.OrderCreated",
+            "type.googleapis.com/examples.OrderCreated",
+            "example.com/types/examples.OrderCreated",
+            "examples.OrderCreated",
+        ):
+            assert type_url_matches(url, "examples.OrderCreated") is True
+
+    def test_type_url_matches_distinguishes_versions(self) -> None:
         assert (
-            type_url_matches(
-                "type.googleapis.com/angzarr_client.proto.examples.OrderCreated",
-                "angzarr_client.proto.examples.OrderCreated",
-            )
-            is True
+            type_url_matches("/examples.v2.OrderCreated", "examples.v1.OrderCreated")
+            is False
         )
 
     def test_type_url_matches_post_normalize_is_exact(self) -> None:
@@ -351,26 +358,34 @@ class TestTimestampHelpers:
         with pytest.raises(InvalidTimestampError):
             parse_timestamp("not-a-timestamp")
 
+    def test_parse_timestamp_error_carries_parser_message(self) -> None:
+        """The InvalidTimestampError message is the underlying parser error."""
+        with pytest.raises(InvalidTimestampError) as exc:
+            parse_timestamp("not-a-timestamp")
+        cause = exc.value.__cause__
+        assert isinstance(cause, ValueError)
+        assert exc.value.message == str(cause)
+
 
 class TestDecodeEvent:
     """Tests for decode_event function."""
 
     def test_returns_none_for_none_page(self) -> None:
         """Returns None for None page."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client._pb import Cover
 
         assert decode_event(None, "Cover", Cover) is None
 
     def test_returns_none_for_no_event_field(self) -> None:
         """Returns None when event field not set."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client._pb import Cover
 
         page = EventPage(header=PageHeader(sequence=1))
         assert decode_event(page, "Cover", Cover) is None
 
     def test_returns_none_for_type_mismatch(self) -> None:
         """Returns None when type URL doesn't match."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client._pb import Cover
 
         page = EventPage(header=PageHeader(sequence=1))
         page.event.type_url = "type.googleapis.com/some.OtherType"
@@ -379,7 +394,7 @@ class TestDecodeEvent:
 
     def test_returns_decoded_message(self) -> None:
         """Returns decoded message when type matches."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client._pb import Cover
 
         # Create a cover and pack it
         cover = Cover(domain="test", correlation_id="abc")
@@ -387,14 +402,14 @@ class TestDecodeEvent:
         page.event.Pack(cover)
 
         # Use full type name for exact matching
-        result = decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover)
+        result = decode_event(page, "io.angzarr.v1.Cover", Cover)
         assert result is not None
         assert result.domain == "test"
         assert result.correlation_id == "abc"
 
     def test_returns_none_for_decode_failure(self) -> None:
         """Returns None when decoding fails."""
-        from angzarr_client.proto.angzarr import Cover
+        from angzarr_client._pb import Cover
 
         # Create page with matching type URL but invalid data
         page = EventPage(header=PageHeader(sequence=1))
@@ -521,16 +536,16 @@ class TestAdditionalHelpers:
     # dead-on-arrival helpers; their tests removed in lockstep.
 
     def test_type_matches_none_returns_false(self) -> None:
+        from angzarr_client._pb import Cover
         from angzarr_client.helpers import type_matches
-        from angzarr_client.proto.angzarr import Cover
 
         assert type_matches(None, Cover) is False
 
     def test_type_matches_true(self) -> None:
         from google.protobuf.any_pb2 import Any
 
+        from angzarr_client._pb import Cover
         from angzarr_client.helpers import type_matches
-        from angzarr_client.proto.angzarr import Cover
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="x"))
@@ -539,8 +554,8 @@ class TestAdditionalHelpers:
     def test_try_unpack_returns_message(self) -> None:
         from google.protobuf.any_pb2 import Any
 
+        from angzarr_client._pb import Cover
         from angzarr_client.helpers import try_unpack
-        from angzarr_client.proto.angzarr import Cover
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="x"))
@@ -550,8 +565,8 @@ class TestAdditionalHelpers:
     def test_try_unpack_returns_none_for_mismatch(self) -> None:
         from google.protobuf.any_pb2 import Any
 
+        from angzarr_client._pb import Cover, EventBook
         from angzarr_client.helpers import try_unpack
-        from angzarr_client.proto.angzarr import Cover, EventBook
 
         any_proto = Any()
         any_proto.Pack(EventBook())
@@ -561,19 +576,34 @@ class TestAdditionalHelpers:
         import pytest
         from google.protobuf.any_pb2 import Any
 
+        from angzarr_client._pb import Cover, EventBook
         from angzarr_client.helpers import unpack
-        from angzarr_client.proto.angzarr import Cover, EventBook
 
         any_proto = Any()
         any_proto.Pack(EventBook())
         with pytest.raises(ValueError, match="type mismatch"):
             unpack(any_proto, Cover)
 
+    def test_unpack_mismatch_names_expected_and_actual(self) -> None:
+        from google.protobuf.any_pb2 import Any
+
+        from angzarr_client._pb import Cover, EventBook
+        from angzarr_client.helpers import unpack
+
+        any_proto = Any()
+        any_proto.Pack(EventBook())
+        with pytest.raises(ValueError) as exc:
+            unpack(any_proto, Cover)
+        assert str(exc.value) == (
+            f"type mismatch: expected {Cover.DESCRIPTOR.full_name}, "
+            f"got {any_proto.type_url}"
+        )
+
     def test_unpack_returns_message(self) -> None:
         from google.protobuf.any_pb2 import Any
 
+        from angzarr_client._pb import Cover
         from angzarr_client.helpers import unpack
-        from angzarr_client.proto.angzarr import Cover
 
         any_proto = Any()
         any_proto.Pack(Cover(domain="xyz"))
@@ -581,28 +611,24 @@ class TestAdditionalHelpers:
         assert msg.domain == "xyz"
 
     def test_full_type_name(self) -> None:
+        from angzarr_client._pb import Cover
         from angzarr_client.helpers import full_type_name
-        from angzarr_client.proto.angzarr import Cover
 
-        assert full_type_name(Cover) == "angzarr_client.proto.angzarr.Cover"
+        assert full_type_name(Cover) == "io.angzarr.v1.Cover"
 
     def test_full_type_url_for_and_alias(self) -> None:
+        from angzarr_client._pb import Cover
         from angzarr_client.helpers import (
-            TYPE_URL_PREFIX,
             full_type_url,
             full_type_url_for,
         )
-        from angzarr_client.proto.angzarr import Cover
 
-        assert (
-            full_type_url_for(Cover)
-            == f"{TYPE_URL_PREFIX}angzarr_client.proto.angzarr.Cover"
-        )
+        assert full_type_url_for(Cover) == "/io.angzarr.v1.Cover"
         assert full_type_url is full_type_url_for
 
     def test_decode_event_returns_none_on_unpack_failure(self, monkeypatch) -> None:
+        from angzarr_client._pb import Cover, EventPage, PageHeader
         from angzarr_client.helpers import decode_event
-        from angzarr_client.proto.angzarr import Cover, EventPage, PageHeader
 
         page = EventPage(header=PageHeader(sequence=1))
         page.event.Pack(Cover(domain="x"))
@@ -612,7 +638,7 @@ class TestAdditionalHelpers:
 
         # Patch Unpack on the Any to force the except branch
         monkeypatch.setattr(type(page.event), "Unpack", boom)
-        assert decode_event(page, "angzarr_client.proto.angzarr.Cover", Cover) is None
+        assert decode_event(page, "io.angzarr.v1.Cover", Cover) is None
 
 
 # Audit #86 reverted 2026-04-29: edition propagation moved to
@@ -629,7 +655,7 @@ class TestIdempotencyKey:
 
     def test_returns_composite_key_with_all_fields(self) -> None:
         from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.angzarr.types_pb2 import (
+        from angzarr_client.proto.io.angzarr.v1.types_pb2 import (
             AngzarrDeferredSequence,
         )
 
@@ -645,7 +671,7 @@ class TestIdempotencyKey:
 
     def test_returns_none_when_source_missing(self) -> None:
         from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.angzarr.types_pb2 import (
+        from angzarr_client.proto.io.angzarr.v1.types_pb2 import (
             AngzarrDeferredSequence,
         )
 
@@ -660,7 +686,7 @@ class TestIdempotencyKey:
 
     def test_empty_edition_name_yields_empty_first_part(self) -> None:
         from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.angzarr.types_pb2 import (
+        from angzarr_client.proto.io.angzarr.v1.types_pb2 import (
             AngzarrDeferredSequence,
         )
 
@@ -671,7 +697,7 @@ class TestIdempotencyKey:
 
     def test_empty_root_yields_empty_root_segment(self) -> None:
         from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.angzarr.types_pb2 import (
+        from angzarr_client.proto.io.angzarr.v1.types_pb2 import (
             AngzarrDeferredSequence,
         )
 

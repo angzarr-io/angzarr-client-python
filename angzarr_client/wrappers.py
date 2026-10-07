@@ -23,24 +23,38 @@ from abc import ABC, abstractmethod
 from typing import TypeVar
 from uuid import UUID as PyUUID
 
-from .proto.angzarr import (
+from ._pb import (
     CommandBook as _CommandBookProto,
+)
+from ._pb import (
     CommandPage as _CommandPageProto,
+)
+from ._pb import (
     CommandResponse as _CommandResponseProto,
+)
+from ._pb import (
     Cover as _CoverProto,
+)
+from ._pb import (
     EventBook as _EventBookProto,
+)
+from ._pb import (
     EventPage as _EventPageProto,
+)
+from ._pb import (
     MergeStrategy,
     PageHeader,
+)
+from ._pb import (
     Query as _QueryProto,
 )
+from .helpers import type_url_matches
 
 T = TypeVar("T")
 
 # Canonical domain identifiers — user code reaches for these via
 # ``from angzarr_client import UNKNOWN_DOMAIN`` etc.
 UNKNOWN_DOMAIN = "unknown"
-TYPE_URL_PREFIX = "type.googleapis.com/"
 
 
 class Wrapped(ABC):
@@ -224,10 +238,11 @@ class CommandBook(CoverBearer):
         return page.header.sequence
 
     def merge_strategy(self) -> MergeStrategy:
-        """Merge strategy of the first page; defaults to commutative."""
+        """Effective merge strategy of the first page; commutative when there
+        are no pages."""
         if not self._proto.pages:
             return MergeStrategy.MERGE_COMMUTATIVE
-        return self._proto.pages[0].merge_strategy
+        return CommandPage(self._proto.pages[0]).merge_strategy()
 
 
 class Query(CoverBearer):
@@ -291,20 +306,22 @@ class EventPage(Wrapped):
         return self._proto.event.value
 
     def decode_typed(self, msg_class: type[T]) -> T | None:
-        """Decode the event payload into ``msg_class``, exact-match on type URL.
+        """Decode the event payload into ``msg_class`` when the type URL names
+        it (the full name after the last ``/``, any prefix).
 
         Returns None on missing event, type mismatch, or decode failure.
         """
         if not self._proto.HasField("event"):
             return None
-        expected = TYPE_URL_PREFIX + msg_class.DESCRIPTOR.full_name
-        if self._proto.event.type_url != expected:
+        if not type_url_matches(
+            self._proto.event.type_url, msg_class.DESCRIPTOR.full_name
+        ):
             return None
         try:
             msg = msg_class()
             self._proto.event.Unpack(msg)
             return msg
-        except Exception:
+        except Exception:  # noqa: BLE001 — undecodable payload decodes to None
             return None
 
 
@@ -349,8 +366,15 @@ class CommandPage(Wrapped):
         return self._proto.command.value
 
     def merge_strategy(self) -> MergeStrategy:
-        """Per-page merge strategy."""
-        return self._proto.merge_strategy
+        """Effective per-page merge strategy: an unset (MERGE_UNSPECIFIED) or
+        unknown value is the documented default, commutative."""
+        value = self._proto.merge_strategy
+        if (
+            value == MergeStrategy.MERGE_UNSPECIFIED
+            or value not in MergeStrategy.values()
+        ):
+            return MergeStrategy.MERGE_COMMUTATIVE
+        return value
 
 
 class CommandResponse(Wrapped):

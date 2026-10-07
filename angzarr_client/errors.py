@@ -222,7 +222,7 @@ class CommandRejectedError(ClientError):
         code: str,
         message: str,
         details: Mapping[str, Any] | None = None,
-    ) -> "CommandRejectedError":
+    ) -> CommandRejectedError:
         """Create a FAILED_PRECONDITION error for guard failures.
 
         Args:
@@ -245,7 +245,7 @@ class CommandRejectedError(ClientError):
         code: str,
         message: str,
         details: Mapping[str, Any] | None = None,
-    ) -> "CommandRejectedError":
+    ) -> CommandRejectedError:
         """Create an INVALID_ARGUMENT error for input validation failures."""
         return CommandRejectedError(
             message=message,
@@ -259,7 +259,7 @@ class CommandRejectedError(ClientError):
         code: str,
         message: str,
         details: Mapping[str, Any] | None = None,
-    ) -> "CommandRejectedError":
+    ) -> CommandRejectedError:
         """Create a NOT_FOUND error for missing-aggregate failures."""
         return CommandRejectedError(
             message=message,

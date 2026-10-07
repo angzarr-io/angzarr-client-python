@@ -1,0 +1,37 @@
+# Contracts on third-party imports, checked by import-linter (`just archlint`).
+#
+# The generated protos under angzarr_client/proto/io and /sererr are implicit
+# namespace packages, which the import graph does not descend into; with
+# external packages enabled, imports of them would surface as imports of the
+# package root. These contracts therefore check direct imports only; the
+# internal layering that keeps indirect paths clean is in .importlinter.
+
+[importlinter]
+root_packages =
+    angzarr_client
+    tests
+include_external_packages = True
+
+[importlinter:contract:router-transport-free]
+name = Router binding is transport-free (no gRPC, no logging framework)
+type = forbidden
+allow_indirect_imports = True
+source_modules =
+    angzarr_client.router
+forbidden_modules =
+    grpc
+    grpc_health
+    structlog
+
+[importlinter:contract:runtime-free-of-tooling]
+name = Package imports no codegen/build tooling or test framework
+type = forbidden
+allow_indirect_imports = True
+source_modules =
+    angzarr_client
+forbidden_modules =
+    grpc_tools
+    hatchling
+    mutmut
+    pytest
+    pytest_bdd

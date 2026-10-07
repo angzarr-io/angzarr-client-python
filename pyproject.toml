@@ -1,11 +1,15 @@
 [build-system]
-requires = ["hatchling"]
+# grpcio-tools generates the framework protos (protoc + gRPC plugin, protobuf
+# 7.x gencode) and serves prost-build's protoc while cargo builds the
+# router-ffi library (hatch_build.py, scripts/native_build.py). Building a
+# wheel needs cargo on PATH and Linux x86_64.
+requires = ["hatchling", "grpcio-tools>=1.84,<1.85"]
 build-backend = "hatchling.build"
 
 [project]
 name = "angzarr-client"
 dynamic = ["version"]
-description = "Python client library for Angzarr gRPC services"
+description = "Angzarr for Python: the router binding (the shared Rust engine over cffi), codegen templates, and the coordinator clients"
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.10"
@@ -23,10 +27,16 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "grpcio>=1.60.0",
-    "grpcio-health-checking>=1.60.0",
-    "googleapis-common-protos>=1.62.0",
-    "protobuf>=5.29.0",
+    # cffi ABI mode (ffi.dlopen) over the router-ffi cdylib.
+    "cffi>=1.16",
+    # grpc/python:v1.76.0 gencode (buf.gen.yaml) checks the runtime is at
+    # least the generating version.
+    "grpcio>=1.76.0",
+    "grpcio-health-checking>=1.76.0",
+    # google.rpc.Status / ErrorInfo and google.api.
+    "googleapis-common-protos>=1.65",
+    # protocolbuffers/python:v35.1 gencode targets the protobuf 7.x runtime.
+    "protobuf>=7.35.1,<8",
     "structlog>=24.0.0",
 ]
 
@@ -37,15 +47,16 @@ Documentation = "https://angzarr.io/docs"
 
 [project.optional-dependencies]
 dev = [
+    "grpcio-tools>=1.84,<1.85",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-bdd>=7.0.0",
     "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.3",
     "mutmut>=2.5.0",
-    "sqlalchemy>=2.0.0",
-    "grpcio-tools>=1.60.0",
     "ruff>=0.4.0",
     "black>=24.0.0",
+    "import-linter==2.15",
 ]
 docs = [
     "sphinx>=8.0.0",
@@ -59,17 +70,52 @@ path = "VERSION"
 pattern = "(?P<version>.+)"
 
 [tool.hatch.build]
-# Include generated proto files even though they're not in git
-artifacts = ["angzarr_client/proto/**/*.py"]
+# Generated protos and the router-ffi library are built into the wheel, not
+# kept in git.
+artifacts = [
+    "angzarr_client/proto/**/*.py",
+    "angzarr_client/proto/**/*.pyi",
+    "angzarr_client/router/_lib/*",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["angzarr_client"]
 
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+# Everything a wheel build needs: the package, the build hook and scripts,
+# the spec protos and the router sources at their pinned revisions.
+include = [
+    "angzarr_client/**/*.py",
+    "codegen/",
+    "hatch_build.py",
+    "scripts/",
+    "VERSION",
+    "README.md",
+    "LICENSE",
+    "angzarr-project/proto/",
+    "angzarr-router/Cargo.toml",
+    "angzarr-router/Cargo.lock",
+    "angzarr-router/crates/",
+    "angzarr-router/proto/",
+]
+exclude = ["angzarr_client/proto/io", "angzarr_client/proto/sererr"]
+
 [tool.pytest.ini_options]
-bdd_features_base_dir = "angzarr-project/features/client"
+# Feature paths are relative to the angzarr-project submodule
+# (features/client/…, parity/client/…); the router conformance steps use the
+# angzarr-router submodule's absolute paths.
+bdd_features_base_dir = "angzarr-project"
 testpaths = ["tests"]
-norecursedirs = ["mutants"]
+norecursedirs = ["mutants", "angzarr-project", "angzarr-router"]
 asyncio_mode = "auto"
+# A hung test fails the run instead of stalling it: after the timeout every
+# thread's stack is dumped and the process exits (the thread method also
+# fires while the main thread is blocked in a C-level wait).
+timeout = 120
+timeout_method = "thread"
 filterwarnings = [
     # pytest-bdd converts each Gherkin tag into a pytest mark. Scenario IDs
     # (@C-NNNN, @EU-NNNN, @EA-NNNN) collide with PytestUnknownMarkWarning.
@@ -82,35 +128,31 @@ filterwarnings = [
 ]
 
 [tool.mutmut]
-paths_to_mutate = [
+source_paths = [
     "angzarr_client/builder.py",
     "angzarr_client/client.py",
-    "angzarr_client/compensation.py",
-    "angzarr_client/destinations.py",
     "angzarr_client/errors.py",
-    "angzarr_client/event_packing.py",
     "angzarr_client/helpers.py",
+    "angzarr_client/host.py",
     "angzarr_client/identity.py",
-    "angzarr_client/protoname.py",
     "angzarr_client/retry.py",
     "angzarr_client/server.py",
     "angzarr_client/validation.py",
     "angzarr_client/wrappers.py",
-    "angzarr_client/router/builder.py",
-    "angzarr_client/router/decorators.py",
-    "angzarr_client/router/dispatch.py",
-    "angzarr_client/router/responses.py",
-    "angzarr_client/router/runtime.py",
-    "angzarr_client/router/server.py",
-    "angzarr_client/router/validation.py",
+    "angzarr_client/router/_dispatch.py",
 ]
-pytest_add_cli_args_test_selection = ["tests/", "--ignore=tests/client"]
-also_copy = ["angzarr_client/"]
+pytest_add_cli_args_test_selection = ["tests/"]
+# mutmut runs the suite from a copy under mutants/: the tests read the spec
+# features (angzarr-project), the router conformance suite (angzarr-router)
+# and scripts/ in place.
+also_copy = ["angzarr_client/", "angzarr-project/", "angzarr-router/", "scripts/", "codegen/"]
 
 [tool.ruff]
 exclude = [
     "angzarr_client/proto",
     "tests/",
+    "angzarr-router/",
+    ".codegen-check/",
     # Submodule — owned by angzarr-project, contains symlinks
     # (features/example/acceptance/environment.py → tests/example/acceptance/...)
     # that resolve only inside the angzarr-project repo layout, not
@@ -124,5 +166,9 @@ extend-exclude = '''
 (
     angzarr_client/proto
     | \.venv
+    | angzarr-project
+    | angzarr-router
+    | tests/router/gen
+    | \.codegen-check
 )
 '''

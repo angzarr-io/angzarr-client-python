@@ -18,33 +18,16 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   build:
     name: Build docs
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/${{ github.repository }}:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-      options: --user root
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
 
-      - name: Install just
-        uses: extractions/setup-just@v2
-
-      - name: Generate protos
-        run: just proto
-
-      - name: Install dependencies (runtime + docs)
-        run: uv sync --extra docs
+      - uses: ./.github/actions/setup
 
       - name: Build Sphinx HTML
         run: just docs

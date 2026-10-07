@@ -18,4 +18,4 @@ them at the call site.
 
 from . import codes, keys, messages
 
-__all__ = ["codes", "messages", "keys"]
+__all__ = ["codes", "keys", "messages"]

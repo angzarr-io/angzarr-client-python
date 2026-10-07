@@ -4,7 +4,8 @@ import math
 import random
 import time
 from abc import ABC, abstractmethod
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 T = TypeVar("T")
 
@@ -44,7 +45,7 @@ class ExponentialBackoffRetry(RetryPolicy):
         for attempt in range(self.max_attempts):
             try:
                 return operation()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — any failure is retried
                 last_err = e
                 if attempt < self.max_attempts - 1:
                     if self.on_retry is not None:
