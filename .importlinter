@@ -1,0 +1,113 @@
+# Architecture contracts for angzarr_client, checked by import-linter
+# (`just archlint`; pre-commit and CI run it). Contracts on third-party
+# imports live in .importlinter-external.
+#
+# Shape of the package:
+#   router/           the router binding: cffi over the router-ffi cdylib plus
+#                     the dispatch tables. Bottom layer; transport-free.
+#   host              ComponentHost: serves registered components over gRPC,
+#                     on top of the router, readiness and server config.
+#   client, builder,  coordinator clients (gRPC stubs + fluent builders) and
+#   retry, ...        the shared helpers/errors they use.
+#   testing/          scenario kit for consumers' tests; no runtime module
+#                     depends on it.
+#   proto/            generated framework types (any layer may use them).
+# Codegen templates (codegen/) and build tooling (scripts/, grpcio-tools) are
+# outside the runtime: nothing in the package imports them. The tests package
+# (including the rendered conformance fixture tests/router/gen) is the only
+# business-shaped code here, and the package never imports it.
+
+[importlinter]
+root_packages =
+    angzarr_client
+    tests
+
+[importlinter:contract:layers]
+name = Host over clients and readiness, router binding at the bottom
+type = layers
+layers =
+    angzarr_client.host
+    angzarr_client.readiness | angzarr_client.server
+    angzarr_client.builder : angzarr_client.client
+    angzarr_client.router
+
+[importlinter:contract:router-bottom]
+name = Router binding depends only on the generated protos
+type = forbidden
+source_modules =
+    angzarr_client.router
+forbidden_modules =
+    angzarr_client._pb
+    angzarr_client.builder
+    angzarr_client.client
+    angzarr_client.error_codes
+    angzarr_client.errors
+    angzarr_client.helpers
+    angzarr_client.host
+    angzarr_client.identity
+    angzarr_client.readiness
+    angzarr_client.retry
+    angzarr_client.server
+    angzarr_client.testing
+    angzarr_client.validation
+    angzarr_client.wrappers
+
+[importlinter:contract:clients-unhosted]
+name = Coordinator clients do not depend on hosting
+type = forbidden
+source_modules =
+    angzarr_client._pb
+    angzarr_client.builder
+    angzarr_client.client
+    angzarr_client.error_codes
+    angzarr_client.errors
+    angzarr_client.helpers
+    angzarr_client.identity
+    angzarr_client.retry
+    angzarr_client.validation
+    angzarr_client.wrappers
+forbidden_modules =
+    angzarr_client.host
+    angzarr_client.readiness
+    angzarr_client.router
+    angzarr_client.server
+
+[importlinter:contract:testing-kit-unused-at-runtime]
+name = Runtime modules never import the testing kit
+type = forbidden
+source_modules =
+    angzarr_client._pb
+    angzarr_client.builder
+    angzarr_client.client
+    angzarr_client.error_codes
+    angzarr_client.errors
+    angzarr_client.helpers
+    angzarr_client.host
+    angzarr_client.identity
+    angzarr_client.proto
+    angzarr_client.readiness
+    angzarr_client.retry
+    angzarr_client.router
+    angzarr_client.server
+    angzarr_client.validation
+    angzarr_client.wrappers
+forbidden_modules =
+    angzarr_client.testing
+
+[importlinter:contract:package-root-no-testing-kit]
+name = Package root does not re-export the testing kit
+type = forbidden
+as_packages = False
+source_modules =
+    angzarr_client
+forbidden_modules =
+    angzarr_client.testing
+    angzarr_client.testing.**
+
+[importlinter:contract:runtime-free-of-tests]
+name = Package never imports the tests package or its rendered fixture code
+type = forbidden
+source_modules =
+    angzarr_client
+forbidden_modules =
+    tests

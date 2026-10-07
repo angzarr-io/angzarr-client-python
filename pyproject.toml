@@ -56,6 +56,7 @@ dev = [
     "mutmut>=2.5.0",
     "ruff>=0.4.0",
     "black>=24.0.0",
+    "import-linter==2.15",
 ]
 docs = [
     "sphinx>=8.0.0",

@@ -4,6 +4,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 TOP := justfile_directory()
 
+# Shared hooks from the spec submodule (scan-secrets, submodule guards).
+import? 'angzarr-project/submodule.just'
+
 # The angzarr CLI that renders this repository's codegen templates, built from
 # angzarr-cli at this revision into .tools/ (`just cli`). ANGZARR_CLI points at
 # another binary instead (e.g. a local angzarr-cli build).
@@ -108,6 +111,13 @@ test-verbose: prepare
 lint:
     cd {{TOP}} && uv run --extra dev ruff check .
 
+# Architecture lint: the import contracts in .importlinter (package layering)
+# and .importlinter-external (third-party imports), via import-linter. The
+# graph is rebuilt every run: the mtime-keyed cache goes stale across checkouts.
+archlint: proto
+    cd {{TOP}} && uv run --extra dev lint-imports --no-cache --config .importlinter
+    cd {{TOP}} && uv run --extra dev lint-imports --no-cache --config .importlinter-external
+
 # Run tests with coverage
 coverage: prepare
     cd {{TOP}} && uv run --extra dev pytest tests/ --cov=angzarr_client --cov-report=term-missing
@@ -159,5 +169,6 @@ fmt-fix:
     cd {{TOP}} && uv run --extra dev ruff check --fix .
     cd {{TOP}} && uv run --extra dev black .
 
-# The CI entry point: format, lint, tests, and the rendered-code check.
-ci: fmt test codegen-check
+# The CI entry point: format, lint, architecture lint, tests, and the
+# rendered-code check.
+ci: fmt archlint test codegen-check

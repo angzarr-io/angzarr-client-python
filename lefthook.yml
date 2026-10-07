@@ -10,6 +10,11 @@ pre-commit:
     fmt:
       run: just fmt-fix
       stage_fixed: true
+    archlint:
+      glob: "{*.py,pyproject.toml,.importlinter,.importlinter-external}"
+      run: just archlint
+    scan-secrets:
+      run: just scan-secrets
     test:
       run: just test
 
