@@ -7,7 +7,10 @@ hand-built ones) and, optionally, its own gRPC services; the host exposes
 the coordinator-facing framework services for the kinds registered:
 
 - ``CommandHandlerService`` (aggregates): Handle (commands and the
-  rejection / undo notification envelopes), HandleFact, Replay;
+  rejection / undo notification envelopes), HandleFact, Replay; with a
+  routine snapshot interval (``ANGZARR_SNAPSHOT_EVERY``), Handle returns the
+  aggregate's state as a snapshot whenever the stream crosses a multiple of
+  it;
 - ``SagaService`` / ``ProcessManagerService``: Handle;
 - ``ProjectorService``: Handle, and HandleSpeculative dispatched with
   ``speculative=True``: projector handlers see ``PageContext.speculative``
@@ -92,6 +95,8 @@ PROJECTOR_SERVICE = projector_pb2.DESCRIPTOR.services_by_name[
     "ProjectorService"
 ].full_name
 UPCASTER_SERVICE = upcaster_pb2.DESCRIPTOR.services_by_name["UpcasterService"].full_name
+#: The routine snapshot interval a deployment gives an aggregate component.
+SNAPSHOT_EVERY_ENV = "ANGZARR_SNAPSHOT_EVERY"
 
 #: The framework services a host can serve; anything else it serves is an
 #: application service registered with :meth:`ComponentHost.add_service`.
@@ -172,14 +177,90 @@ class _Dispatcher:
             await context.abort(grpc.StatusCode.INTERNAL, messages.HANDLER_PANICKED)
 
 
+def snapshot_interval(explicit: int | None = None) -> int | None:
+    """The routine snapshot interval: ``explicit``, else ``ANGZARR_SNAPSHOT_EVERY``,
+    else none. An interval must be a positive number of events."""
+    if explicit is not None:
+        if isinstance(explicit, bool) or not isinstance(explicit, int) or explicit < 1:
+            raise ConfigurationError(
+                f"snapshot_every must be a positive number of events, got {explicit!r}"
+            )
+        return explicit
+    raw = os.environ.get(SNAPSHOT_EVERY_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value < 1:
+        raise ConfigurationError(
+            f"{SNAPSHOT_EVERY_ENV} must be a positive number of events, got {raw!r}"
+        )
+    return value
+
+
+def _stream_length(prior) -> int:
+    """How many events the aggregate's stream holds before the command."""
+    if prior.next_sequence:
+        return prior.next_sequence
+    if prior.pages:
+        return prior.pages[-1].header.sequence + 1
+    if prior.HasField("snapshot"):
+        return prior.snapshot.sequence + 1
+    return 0
+
+
+def _attach_routine_snapshot(router, domain: str, prior, response, every: int) -> None:
+    """Attach the aggregate's state after the new events as a routine
+    (RETENTION_DEFAULT) snapshot when they carry the stream across a multiple
+    of ``every``. A snapshot the handler returned itself is kept as is."""
+    if response.WhichOneof("result") != "events":
+        return
+    book = response.events
+    if not book.pages or book.HasField("snapshot"):
+        return
+    before = _stream_length(prior)
+    if (before + len(book.pages)) // every == before // every:
+        return
+    replay = command_handler_pb2.ReplayRequest()
+    if prior.HasField("snapshot"):
+        replay.base_snapshot.CopyFrom(prior.snapshot)
+    replay.events.extend(prior.pages)
+    for offset, page in enumerate(book.pages):
+        added = replay.events.add()
+        added.CopyFrom(page)
+        added.header.sequence = before + offset
+    book.snapshot.state.CopyFrom(router.dispatch_replay(domain, replay).state)
+
+
 class _CommandHandlerServicer(command_handler_pb2_grpc.CommandHandlerServiceServicer):
-    def __init__(self, router, domains: list[str], dispatcher: _Dispatcher) -> None:
+    def __init__(
+        self,
+        router,
+        domains: list[str],
+        dispatcher: _Dispatcher,
+        snapshot_every: int | None = None,
+    ) -> None:
         self._router = router
         self._domains = domains
         self._dispatcher = dispatcher
+        self._snapshot_every = snapshot_every
+
+    def _handle(self, request):
+        response = self._router.dispatch(request)
+        if self._snapshot_every is not None and len(self._domains) == 1:
+            _attach_routine_snapshot(
+                self._router,
+                self._domains[0],
+                request.events,
+                response,
+                self._snapshot_every,
+            )
+        return response
 
     async def Handle(self, request, context):
-        return await self._dispatcher.call(context, self._router.dispatch, request)
+        return await self._dispatcher.call(context, self._handle, request)
 
     async def HandleFact(self, request, context):
         return await self._dispatcher.call(context, self._router.dispatch_fact, request)
@@ -286,7 +367,9 @@ class ComponentHost:
     must be reachable before the host reports SERVING
     (:class:`readiness.OutputDomainProbe`); when sagas or process managers
     are registered and ``ANGZARR_BUS_ENDPOINT`` is set, the bus must be
-    reachable too.
+    reachable too. ``snapshot_every`` (default ``ANGZARR_SNAPSHOT_EVERY``)
+    asks for a routine snapshot of a single hosted aggregate whenever a
+    command's events carry its stream across a multiple of that many events.
     """
 
     def __init__(
@@ -295,8 +378,10 @@ class ComponentHost:
         *,
         max_workers: int = 16,
         sync_output_domains: list[str] | None = None,
+        snapshot_every: int | None = None,
         logger=None,
     ) -> None:
+        self._snapshot_every = snapshot_interval(snapshot_every)
         if router is None:
             from .router import Router
 
@@ -490,7 +575,10 @@ class ComponentHost:
         if COMMAND_HANDLER_SERVICE in self._kinds:
             command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server(
                 _CommandHandlerServicer(
-                    router, list(self._aggregate_domains), dispatcher
+                    router,
+                    list(self._aggregate_domains),
+                    dispatcher,
+                    self._snapshot_every,
                 ),
                 server,
             )

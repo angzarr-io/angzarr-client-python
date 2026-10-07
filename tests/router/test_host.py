@@ -20,6 +20,7 @@ from angzarr_client.host import (
     PROJECTOR_SERVICE,
     SAGA_SERVICE,
     UPCASTER_SERVICE,
+    _attach_routine_snapshot,
     grpc_status_code,
 )
 from angzarr_client.proto.io.angzarr.v1 import (
@@ -191,6 +192,154 @@ def test_replay_with_several_aggregates_is_unsupported(started):
     info = _error_info(err.value)
     assert info.reason == codes.HANDLER_DOES_NOT_SUPPORT_REPLAY
     assert info.metadata["domains"] == "counter,other"
+
+
+# --- routine snapshots (snapshot_every) ---------------------------------------
+#
+# A deployment asks for a routine snapshot every N events
+# (ANGZARR_SNAPSHOT_EVERY on the component). The coordinator persists only the
+# snapshot a handler returns, so the host attaches one, with the aggregate's
+# state after the new events, whenever the stream crosses a multiple of N.
+
+
+def _handled_book(channel, prior, n):
+    stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
+    request = builders.increase_command(n)
+    request.events.Clear()
+    if prior is not None:
+        request.events.CopyFrom(prior)
+    return stub.Handle(request, timeout=5).events
+
+
+def _snapshot_count(book) -> int:
+    state = counter_pb2.CounterState()
+    assert book.snapshot.state.Unpack(state)
+    return state.count
+
+
+def test_crossing_a_multiple_of_the_interval_attaches_a_routine_snapshot(started):
+    # Events 0..1 stored, two more make the stream 4 long: it crosses 3.
+    channel = started(_counter_host(snapshot_every=3))
+    book = _handled_book(channel, builders.prior_increases(2), 2)
+    assert len(book.pages) == 2
+    assert _snapshot_count(book) == 4
+    assert book.snapshot.retention == types_pb2.SnapshotRetention.RETENTION_DEFAULT
+
+
+def test_landing_exactly_on_a_multiple_attaches_a_routine_snapshot(started):
+    channel = started(_counter_host(snapshot_every=3))
+    book = _handled_book(channel, builders.prior_increases(2), 1)
+    assert _snapshot_count(book) == 3
+
+
+def test_staying_within_an_interval_attaches_no_snapshot(started):
+    # 3 stored + 2 new = 5: still short of 6.
+    channel = started(_counter_host(snapshot_every=3))
+    book = _handled_book(channel, builders.prior_increases(3), 2)
+    assert len(book.pages) == 2
+    assert not book.HasField("snapshot")
+
+
+def test_the_routine_snapshot_folds_from_the_loaded_snapshot(started):
+    # Snapshot count 10 at sequence 10, pages 10 (covered) and 11: the
+    # aggregate holds 11 over a stream of 12; one more event crosses 12 at 13.
+    channel = started(_counter_host(snapshot_every=13))
+    book = _handled_book(channel, builders.snapshot_history(), 1)
+    assert _snapshot_count(book) == 12
+
+
+def test_without_an_interval_no_snapshot_is_attached(started, monkeypatch):
+    monkeypatch.delenv("ANGZARR_SNAPSHOT_EVERY", raising=False)
+    channel = started(_counter_host())
+    book = _handled_book(channel, builders.prior_increases(2), 5)
+    assert not book.HasField("snapshot")
+
+
+def test_the_interval_defaults_to_angzarr_snapshot_every(started, monkeypatch):
+    monkeypatch.setenv("ANGZARR_SNAPSHOT_EVERY", "2")
+    channel = started(_counter_host())
+    book = _handled_book(channel, builders.prior_increases(1), 1)
+    assert _snapshot_count(book) == 2
+
+
+def test_an_interval_of_one_snapshots_every_event(started):
+    channel = started(_counter_host(snapshot_every=1))
+    book = _handled_book(channel, builders.prior_increases(1), 1)
+    assert _snapshot_count(book) == 2
+
+
+def test_a_blank_interval_variable_means_no_interval(started, monkeypatch):
+    monkeypatch.setenv("ANGZARR_SNAPSHOT_EVERY", "  ")
+    channel = started(_counter_host())
+    book = _handled_book(channel, builders.prior_increases(2), 5)
+    assert not book.HasField("snapshot")
+
+
+def test_the_stream_length_comes_from_the_pages_without_a_next_sequence(started):
+    # Pages 0..1 with no next_sequence: a stream of 2; one more event makes
+    # 3, a multiple of 3.
+    prior = builders.prior_increases(2)
+    prior.next_sequence = 0
+    channel = started(_counter_host(snapshot_every=3))
+    assert _snapshot_count(_handled_book(channel, prior, 1)) == 3
+
+
+def test_the_stream_length_comes_from_a_lone_snapshot(started):
+    # Only a snapshot at sequence 10 (count 10): a stream of 11; one more
+    # event makes 12, a multiple of 12.
+    prior = builders.snapshot_history()
+    del prior.pages[:]
+    prior.next_sequence = 0
+    channel = started(_counter_host(snapshot_every=12))
+    assert _snapshot_count(_handled_book(channel, prior, 1)) == 11
+
+
+def test_several_hosted_aggregates_get_no_routine_snapshot(started):
+    host = _counter_host(snapshot_every=1)
+    host.add_aggregate(
+        AggregateDispatch("Other", "other", Rebuilder(counter_pb2.CounterState))
+    )
+    channel = started(host)
+    book = _handled_book(channel, builders.prior_increases(1), 1)
+    assert len(book.pages) == 1
+    assert not book.HasField("snapshot")
+
+
+class _NoReplayRouter:
+    def dispatch_replay(self, domain, request):  # pragma: no cover - must not run
+        raise AssertionError("a handler's own snapshot needs no replay")
+
+
+def test_a_snapshot_the_handler_returned_is_kept():
+    response = command_handler_pb2.BusinessResponse()
+    response.events.pages.add()
+    response.events.snapshot.retention = types_pb2.SnapshotRetention.RETENTION_PERSIST
+    response.events.snapshot.state.type_url = "/own.State"
+    _attach_routine_snapshot(
+        _NoReplayRouter(), "counter", types_pb2.EventBook(next_sequence=1), response, 1
+    )
+    assert response.events.snapshot.state.type_url == "/own.State"
+    assert (
+        response.events.snapshot.retention
+        == types_pb2.SnapshotRetention.RETENTION_PERSIST
+    )
+
+
+def test_a_boolean_interval_is_a_configuration_error():
+    with pytest.raises(ConfigurationError, match="snapshot_every"):
+        _counter_host(snapshot_every=True)
+
+
+@pytest.mark.parametrize("value", ["0", "-3", "twenty"])
+def test_an_unusable_interval_is_a_configuration_error(monkeypatch, value):
+    monkeypatch.setenv("ANGZARR_SNAPSHOT_EVERY", value)
+    with pytest.raises(ConfigurationError, match="ANGZARR_SNAPSHOT_EVERY"):
+        _counter_host()
+
+
+def test_an_unusable_explicit_interval_is_a_configuration_error():
+    with pytest.raises(ConfigurationError, match="snapshot_every"):
+        _counter_host(snapshot_every=0)
 
 
 # --- Saga / process manager / projector / upcaster ---------------------------
