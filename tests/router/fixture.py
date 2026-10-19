@@ -72,7 +72,7 @@ class CounterAggregate:
 class OrderSaga:
     """Implements order_saga_angzarr.OrderSagaHandler."""
 
-    def increased(self, event, dests, source):
+    def increased(self, event, source):
         return [_reserve_command()], []
 
 
@@ -100,7 +100,7 @@ class CounterProjector:
 class OrderProcessManager:
     """Implements order_process_manager_angzarr.OrderProcessManagerHandler."""
 
-    def increased(self, event, state, dests, trigger_cover):
+    def increased(self, event, state, trigger_cover):
         resp = process_manager_pb2.ProcessManagerHandleResponse()
         resp.commands.append(_reserve_command())
         for _ in range(state.count):
@@ -131,7 +131,7 @@ class AuditProcessManager:
     "audit" fact per prior state event and no commands, and compensates with
     one "audit" process event and no escalation."""
 
-    def increased(self, event, state, dests, trigger_cover):
+    def increased(self, event, state, trigger_cover):
         resp = process_manager_pb2.ProcessManagerHandleResponse()
         for _ in state.seen:
             resp.facts.add().cover.domain = AUDIT_MARK

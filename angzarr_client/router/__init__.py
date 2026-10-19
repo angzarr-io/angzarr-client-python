@@ -8,7 +8,7 @@ templates) targets this surface:
 
     from angzarr_client.router import (
         Router, AggregateDispatch, Rebuilder, ProjectorDispatch,
-        SagaDispatch, ProcessManagerDispatch, Destinations,
+        SagaDispatch, ProcessManagerDispatch,
         CommandContext, FactRecord, PageContext, current_cover, current_page,
         CodedError, reject, GrpcCode, abi_version, AbiVersionError,
         WILDCARD_DOMAIN,
@@ -21,7 +21,6 @@ from ._dispatch import (
     AggregateDispatch,
     CodedError,
     CommandContext,
-    Destinations,
     FactRecord,
     GrpcCode,
     PageContext,
@@ -44,7 +43,6 @@ __all__ = [
     "AggregateDispatch",
     "CodedError",
     "CommandContext",
-    "Destinations",
     "FactRecord",
     "GrpcCode",
     "PageContext",

@@ -427,12 +427,12 @@ def _pm_trigger(label: str, seq: int):
 def test_process_manager_handler_reads_the_trigger_cover():
     seen = []
 
-    def with_cover(event, state, dests, trigger_cover):
-        seen.append(("rich", trigger_cover.root.value, dests.domains))
+    def with_cover(event, state, trigger_cover):
+        seen.append(("rich", trigger_cover.root.value))
         return process_manager_pb2.ProcessManagerHandleResponse()
 
-    def plain(event, state, dests):
-        seen.append(("accessor", current_cover().root.value, dests.domains))
+    def plain(event, state):
+        seen.append(("accessor", current_cover().root.value))
         return process_manager_pb2.ProcessManagerHandleResponse()
 
     root = builders.root_of("table-1")
@@ -456,7 +456,7 @@ def test_process_manager_handler_reads_the_trigger_cover():
         with Router() as router:
             router.register_process_manager(pm)
             router.dispatch_process_manager(_pm_trigger("table-1", 2))
-        assert seen == [(kind, root, ["inventory"])]
+        assert seen == [(kind, root)]
 
 
 # --- saga source cover through the accessor ---
@@ -465,7 +465,7 @@ def test_process_manager_handler_reads_the_trigger_cover():
 def test_saga_handler_reaches_the_source_cover_through_the_accessor():
     seen = []
 
-    def translate(event, dests, source_cover):
+    def translate(event, source_cover):
         seen.append((source_cover.root.value, current_cover().root.value))
         return [], []
 
@@ -486,11 +486,11 @@ def test_saga_handler_reaches_the_source_cover_through_the_accessor():
 def test_saga_handlers_read_the_source_cover_and_sequence_by_argument_and_accessor():
     seen = []
 
-    def translate_rich(event, dests, source: PageContext):
+    def translate_rich(event, source: PageContext):
         seen.append(("rich", source.cover.root.value, source.sequence))
         return [], []
 
-    def translate_plain(event, dests, source_cover):
+    def translate_plain(event, source_cover):
         page = current_page()
         seen.append(("plain", page.cover.root.value, page.sequence))
         return [], []

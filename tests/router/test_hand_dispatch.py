@@ -1,7 +1,7 @@
 """Dispatch through the hand-written registration APIs (no generated wiring):
 ordered compensator fan-out across the FFI, the trampoline's boundary guard
-against exceptions that are not ``Exception`` subclasses, declared-output
-Destinations for sagas and process managers, and process-manager compensators
+against exceptions that are not ``Exception`` subclasses, the arguments
+saga and process-manager handlers see, and process-manager compensators
 returning a full response."""
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from angzarr_client.proto.io.angzarr.v1 import (
 from angzarr_client.router import (
     AggregateDispatch,
     CodedError,
-    Destinations,
     GrpcCode,
     ProcessManagerDispatch,
     Rebuilder,
@@ -94,15 +93,12 @@ def test_handler_base_exception_surfaces_as_internal_failure():
     assert "handler aborted" in exc.value.message
 
 
-def test_destinations_are_the_declared_output_domains():
-    dests = Destinations(["inventory", "billing"])
-    assert dests.has_domain("inventory")
-    assert dests.has_domain("billing")
-    assert not dests.has_domain("shipping")
-    assert dests.domains == ["inventory", "billing"]
-    assert Destinations().domains == []
-    assert not hasattr(dests, "stamp_command")
-    assert not hasattr(dests, "sequence_for")
+def test_the_binding_hands_handlers_no_destinations():
+    # Emitted commands carry no destination state or sequences, so handlers
+    # receive no Destinations; the declared targets stay on the registration.
+    import angzarr_client.router as router_module
+
+    assert not hasattr(router_module, "Destinations")
 
 
 def _saga_source(seq: int):
@@ -121,11 +117,11 @@ def _reserve_to(domain: str):
     return cmd
 
 
-def test_saga_destinations_are_its_registered_targets_and_commands_are_deferred():
-    seen: list[list[str]] = []
+def test_saga_handler_sees_the_event_and_source_cover_and_commands_are_deferred():
+    seen: list[str] = []
 
-    def translate(event, dests, source_cover):
-        seen.append(dests.domains)
+    def translate(event, source_cover):
+        seen.append(source_cover.domain)
         return [_reserve_to("inventory"), _reserve_to("billing")], []
 
     saga = SagaDispatch("order-saga", "order", targets=["inventory", "billing"])
@@ -134,7 +130,7 @@ def test_saga_destinations_are_its_registered_targets_and_commands_are_deferred(
         router.register_saga(saga)
         resp = router.dispatch_saga(_saga_source(7))
 
-    assert seen == [["inventory", "billing"]]
+    assert seen == ["order"]
     assert [c.cover.domain for c in resp.commands] == ["inventory", "billing"]
     builders.assert_deferred(resp.commands[0], "order", 7, 0)
     builders.assert_deferred(resp.commands[1], "order", 7, 1)
@@ -153,11 +149,11 @@ def _pm_trigger(seq: int):
     return req
 
 
-def test_process_manager_destinations_are_its_registered_targets():
-    seen: list[list[str]] = []
+def test_process_manager_handler_sees_the_event_and_state():
+    seen: list[str] = []
 
-    def react(event, state, dests):
-        seen.append(dests.domains)
+    def react(event, state):
+        seen.append(event.type_url)
         resp = process_manager_pb2.ProcessManagerHandleResponse()
         resp.commands.append(_reserve_to("inventory"))
         return resp
@@ -173,15 +169,15 @@ def test_process_manager_destinations_are_its_registered_targets():
         router.register_process_manager(pm)
         resp = router.dispatch_process_manager(_pm_trigger(3))
 
-    assert seen == [["inventory"]]
+    assert seen == [builders.type_url(builders.FQ_INCREASED)]
     builders.assert_deferred(resp.commands[0], "counter", 3, 0)
 
 
 def test_process_manager_targets_default_to_none_declared():
-    seen: list[list[str]] = []
+    seen: list[str] = []
 
-    def react(event, state, dests):
-        seen.append(dests.domains)
+    def react(event, state):
+        seen.append(event.type_url)
         return process_manager_pb2.ProcessManagerHandleResponse()
 
     pm = ProcessManagerDispatch(
@@ -192,7 +188,7 @@ def test_process_manager_targets_default_to_none_declared():
         router.register_process_manager(pm)
         router.dispatch_process_manager(_pm_trigger(0))
 
-    assert seen == [[]]
+    assert seen == [builders.type_url(builders.FQ_INCREASED)]
 
 
 def _pm_rejection(seq: int):

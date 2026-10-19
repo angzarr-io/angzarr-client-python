@@ -141,7 +141,6 @@ def _then_router_module() -> None:
         "ProcessManagerDispatch",
         "ProjectorDispatch",
         "Rebuilder",
-        "Destinations",
         "CodedError",
     ):
         assert hasattr(router, name), f"angzarr_client.router lacks {name}"

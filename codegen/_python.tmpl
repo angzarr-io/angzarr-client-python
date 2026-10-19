@@ -66,7 +66,7 @@ scaffold so the two never drift. */ -}}
 {{- if $c.state }}{{ $state = typeRef $c.state }}{{ end -}}
 {{- if eq $c.kind "SAGA" -}}
 {{- range $c.handlers -}}
-{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, event: %s, dests: _az.Destinations, source: _az.PageContext)" (typeRef .message)) "returns" " -> tuple[list[_t.CommandBook], list[_t.EventBook]]")) -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, event: %s, source: _az.PageContext)" (typeRef .message)) "returns" " -> tuple[list[_t.CommandBook], list[_t.EventBook]]")) -}}
 {{- end -}}
 {{- else if eq $c.kind "AGGREGATE" -}}
 {{- range $c.handlers -}}
@@ -88,7 +88,7 @@ scaffold so the two never drift. */ -}}
 {{- end -}}
 {{- else if eq $c.kind "PROCESS_MANAGER" -}}
 {{- range $c.handlers -}}
-{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, event: %s, state: %s, dests: _az.Destinations, trigger_cover: Optional[_t.Cover])" (typeRef .message) $state) "returns" " -> _pm.ProcessManagerHandleResponse")) -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, event: %s, state: %s, trigger_cover: Optional[_t.Cover])" (typeRef .message) $state) "returns" " -> _pm.ProcessManagerHandleResponse")) -}}
 {{- end -}}
 {{- range $c.appliers -}}
 {{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, state: %s, event: %s, ctx: _az.PageContext)" $state (typeRef .message)) "returns" " -> None")) -}}

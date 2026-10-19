@@ -24,10 +24,10 @@ class {{ $c.name }}Handler(Protocol):
 def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.SagaDispatch:
     dispatch = _az.SagaDispatch({{ quote $c.name }}, {{ quote $c.input_domain }}, targets=[{{ include "py.domains" $c.output_domains }}])
 {{- range $c.handlers }}
-    def _on_{{ snake .method }}(event_any, dests, source):
+    def _on_{{ snake .method }}(event_any, source):
         event = {{ typeRef .message }}()
 {{- include "py.unpack" (dict "target" "event" "any" "event_any") }}
-        return handler.{{ snake .method }}(event, dests, source)
+        return handler.{{ snake .method }}(event, source)
     dispatch.on_event_with_context({{ quote .message.full_name }}, _on_{{ snake .method }})
 {{- end }}
     return dispatch
@@ -76,10 +76,10 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.ProcessManage
 {{- include "py.appliers" $c }}
     dispatch = _az.ProcessManagerDispatch({{ quote $c.name }}, {{ quote $c.domain }}, rebuilder, targets=[{{ include "py.domains" $c.output_domains }}])
 {{- range $c.handlers }}
-    def _on_{{ snake .method }}(event_any, state, dests, trigger_cover):
+    def _on_{{ snake .method }}(event_any, state, trigger_cover):
         event = {{ typeRef .message }}()
 {{- include "py.unpack" (dict "target" "event" "any" "event_any") }}
-        return handler.{{ snake .method }}(event, state, dests, trigger_cover)
+        return handler.{{ snake .method }}(event, state, trigger_cover)
     dispatch.on_event_with_cover({{ quote .source_domain }}, {{ quote .message.full_name }}, _on_{{ snake .method }})
 {{- end }}
 {{- range $c.rejections }}

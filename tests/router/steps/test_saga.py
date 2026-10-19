@@ -30,9 +30,9 @@ class _World:
         saga = order_saga_angzarr.new_order_saga_dispatch(OrderSaga())
         generated = saga.events[FQ_INCREASED]
 
-        def increased(event, dests, source):
+        def increased(event, source):
             self.seen.append(source.sequence)
-            return generated(event, dests, source.cover)
+            return generated(event, source.cover)
 
         saga.on_event_with_context(FQ_INCREASED, increased)
         self.router.register_saga(saga)

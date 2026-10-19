@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import enum
 import threading
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -397,37 +397,15 @@ class ProjectorDispatch:
         return self
 
 
-class Destinations:
-    """The declared output domains of one saga or process manager (its command
-    targets), in declaration order. Emitted commands carry no destination
-    sequence: the router stamps their ``angzarr_deferred`` provenance from the
-    triggering page, so a handler returns its commands as built."""
-
-    __slots__ = ("_domains",)
-
-    def __init__(self, domains: Iterable[str] | None = None):
-        self._domains = list(domains) if domains else []
-
-    def has_domain(self, domain: str) -> bool:
-        """Whether ``domain`` is a declared output domain."""
-        return domain in self._domains
-
-    @property
-    def domains(self) -> list[str]:
-        """The declared output domains, in declaration order."""
-        return list(self._domains)
-
-
 # Saga thunk shapes (a saga is stateless — no state argument):
-#   event: (event: Any, dests: Destinations, source_cover: Cover) -> (commands, events)
-#   context event: (event: Any, dests: Destinations, source: PageContext) ->
-#                  (commands, events)
-# dests are the saga's declared targets; source_cover is the source book's
-# cover passed through whole so the saga can route emitted commands by the
-# trigger's identity; source adds the triggering event's sequence. The router
-# stamps the commands deferred. Sagas receive no rejections.
-SagaEventThunk = Callable[[any_pb2.Any, Destinations, object], tuple[list, list]]
-SagaContextThunk = Callable[[any_pb2.Any, Destinations, PageContext], tuple[list, list]]
+#   event: (event: Any, source_cover: Cover) -> (commands, events)
+#   context event: (event: Any, source: PageContext) -> (commands, events)
+# source_cover is the source book's cover passed through whole so the saga can
+# route emitted commands by the trigger's identity; source adds the triggering
+# event's sequence. Emitted commands carry no destination state or sequence:
+# the router stamps them deferred. Sagas receive no rejections.
+SagaEventThunk = Callable[[any_pb2.Any, object], tuple[list, list]]
+SagaContextThunk = Callable[[any_pb2.Any, PageContext], tuple[list, list]]
 
 
 @dataclass
@@ -455,26 +433,26 @@ class SagaDispatch:
         book's cover and the event's sequence) in place of the source
         cover."""
 
-        def translate(event, dests, _source_cover):
-            return thunk(event, dests, current_page())
+        def translate(event, _source_cover):
+            return thunk(event, current_page())
 
         self.events[full_name] = translate
         return self
 
 
 # Process-manager thunk shapes (a PM is stateful — it sees rebuilt state):
-#   event:     (event: Any, state, dests) -> ProcessManagerHandleResponse
-#   cover event: (event: Any, state, dests, trigger_cover: Cover | None) ->
+#   event:     (event: Any, state) -> ProcessManagerHandleResponse
+#   cover event: (event: Any, state, trigger_cover: Cover | None) ->
 #                ProcessManagerHandleResponse
 #   rejection: (notification, rejection, state) ->
 #                ProcessManagerHandleResponse            (process events, commands,
 #                                                         facts, escalation)
 #              | (process_events, escalation | None)
 #              | None                                    (nothing)
-# dests are the PM's declared targets. The router stamps every command the
-# PM returns (from an event handler or a compensator) deferred.
-PMEventThunk = Callable[[any_pb2.Any, object, Destinations], object]
-PMCoverEventThunk = Callable[[any_pb2.Any, object, Destinations, object], object]
+# The router stamps every command the PM returns (from an event handler or a
+# compensator) deferred.
+PMEventThunk = Callable[[any_pb2.Any, object], object]
+PMCoverEventThunk = Callable[[any_pb2.Any, object, object], object]
 PMRejectionThunk = Callable[[object, object, object], object]
 
 
@@ -507,8 +485,8 @@ class ProcessManagerDispatch:
         that also receives the trigger book's cover (None when it carries
         none)."""
 
-        def handle(event, state, dests):
-            return thunk(event, state, dests, current_page().cover)
+        def handle(event, state):
+            return thunk(event, state, current_page().cover)
 
         self.handlers.setdefault(input_domain, {})[full_name] = handle
         return self
@@ -759,9 +737,9 @@ def _projector_unknown_invoker(thunk: ProjectorUnknownThunk) -> Invoker:
     return inv
 
 
-def _saga_event_invoker(targets: list[str], thunk: SagaEventThunk) -> Invoker:
+def _saga_event_invoker(thunk: SagaEventThunk) -> Invoker:
     # Saga is stateless — the session's host state is untouched. The event
-    # thunk sees the saga's declared targets and returns a SagaResponse.
+    # thunk returns the commands and events of a SagaResponse.
     def inv(_session, type_url, payload, aux):
         sax = abi_pb2.SagaEventAux()
         sax.ParseFromString(aux)
@@ -771,7 +749,6 @@ def _saga_event_invoker(targets: list[str], thunk: SagaEventThunk) -> Invoker:
         with _handling(source):
             commands, events = thunk(
                 any_pb2.Any(type_url=type_url, value=payload),
-                Destinations(targets),
                 sax.source_cover,
             )
         resp = saga_pb2.SagaResponse(commands=commands, events=events)
@@ -780,9 +757,7 @@ def _saga_event_invoker(targets: list[str], thunk: SagaEventThunk) -> Invoker:
     return inv
 
 
-def _pm_event_invoker(
-    key: int, factory, targets: list[str], thunk: PMEventThunk
-) -> Invoker:
+def _pm_event_invoker(key: int, factory, thunk: PMEventThunk) -> Invoker:
     # The PM is stateful: the appliers fold process_state into the session's
     # state first, then this handler reads it. The host returns a full
     # ProcessManagerHandleResponse; the trigger cover is its page context.
@@ -791,11 +766,7 @@ def _pm_event_invoker(
         pax.ParseFromString(aux)
         state = session.ensure_state(key, factory)
         with _handling(PageContext(cover=_cover_of(pax, "trigger_cover"))):
-            resp = thunk(
-                any_pb2.Any(type_url=type_url, value=payload),
-                state,
-                Destinations(targets),
-            )
+            resp = thunk(any_pb2.Any(type_url=type_url, value=payload), state)
         if resp is None:
             return None, _STATUS_OK_EMPTY
         return resp.SerializeToString(), _STATUS_OK
@@ -1130,13 +1101,12 @@ class Router:
         thunk, serialize the SagaDescriptor, and hand it to the core with the
         shared trampoline."""
         with self._lock:
-            targets = list(dispatch.targets)
             desc = abi_pb2.SagaDescriptor(
                 name=dispatch.name, input_domain=dispatch.input_domain
             )
-            desc.target_domains.extend(targets)
+            desc.target_domains.extend(dispatch.targets)
             for fq, thunk in dispatch.events.items():
-                cid = self._assign(_saga_event_invoker(targets, thunk))
+                cid = self._assign(_saga_event_invoker(thunk))
                 desc.events.append(abi_pb2.CallbackEntry(fq_type=fq, callback_id=cid))
 
             desc_bytes = desc.SerializeToString()
@@ -1170,11 +1140,10 @@ class Router:
         with self._lock:
             factory = dispatch.rebuilder.factory
             key = self._component_key()
-            targets = list(dispatch.targets)
             desc = abi_pb2.ProcessManagerDescriptor(
                 name=dispatch.name, pm_domain=dispatch.pm_domain
             )
-            desc.target_domains.extend(targets)
+            desc.target_domains.extend(dispatch.targets)
             for fq, thunk in dispatch.rebuilder.appliers.items():
                 cid = self._assign(_applier_invoker(key, factory, thunk))
                 desc.appliers.append(abi_pb2.CallbackEntry(fq_type=fq, callback_id=cid))
@@ -1184,7 +1153,7 @@ class Router:
                 )
             for input_domain, by_type in dispatch.handlers.items():
                 for fq, thunk in by_type.items():
-                    cid = self._assign(_pm_event_invoker(key, factory, targets, thunk))
+                    cid = self._assign(_pm_event_invoker(key, factory, thunk))
                     desc.events.append(
                         abi_pb2.PmEventEntry(
                             input_domain=input_domain, fq_type=fq, callback_id=cid

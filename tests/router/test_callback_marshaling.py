@@ -169,7 +169,7 @@ def _saga_request(label: str = "order-1"):
 def test_saga_receives_the_exact_event_and_its_returned_events_are_kept():
     seen = []
 
-    def translate(event, dests, source_cover):
+    def translate(event, source_cover):
         seen.append((event.type_url, event.value))
         emitted = types_pb2.EventBook()
         emitted.cover.domain = "order-audit"
@@ -186,11 +186,11 @@ def test_saga_receives_the_exact_event_and_its_returned_events_are_kept():
     assert [b.cover.domain for b in resp.events] == ["order-audit"]
 
 
-def test_saga_context_handler_sees_its_declared_destinations():
+def test_saga_context_handler_sees_the_triggering_sequence():
     seen = []
 
-    def translate(event, dests, source: PageContext):
-        seen.append((dests.domains, source.sequence))
+    def translate(event, source: PageContext):
+        seen.append(source.sequence)
         return [], []
 
     saga = SagaDispatch(
@@ -200,12 +200,12 @@ def test_saga_context_handler_sees_its_declared_destinations():
         router.register_saga(saga)
         router.dispatch_saga(_saga_request())
 
-    assert seen == [(["inventory"], 4)]
+    assert seen == [4]
 
 
 def test_a_saga_emitting_nothing_returns_an_empty_response():
     saga = SagaDispatch("order-saga", "order").on_event(
-        builders.FQ_INCREASED, lambda _e, _d, _c: ([], [])
+        builders.FQ_INCREASED, lambda _e, _c: ([], [])
     )
     with Router() as router:
         router.register_saga(saga)
@@ -217,7 +217,7 @@ def test_a_saga_emitting_nothing_returns_an_empty_response():
 def test_process_manager_handler_receives_the_exact_event():
     seen = []
 
-    def react(event, state, dests):
+    def react(event, state):
         seen.append((event.type_url, event.value))
         return process_manager_pb2.ProcessManagerHandleResponse()
 
@@ -452,7 +452,7 @@ def test_pm_snapshot_seeds_the_state_its_handler_sees():
         seen.append(("snapshot", snapshot.type_url))
         state.ParseFromString(snapshot.value)
 
-    def react(event, state, dests):
+    def react(event, state):
         seen.append(("handler", state.count))
         return process_manager_pb2.ProcessManagerHandleResponse()
 

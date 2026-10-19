@@ -104,7 +104,7 @@ def _reserving_pm(covers: list) -> ProcessManagerDispatch:
     def apply_increased(state, _event):
         state.count += 1
 
-    def on_increased(_event, _state, _dests, trigger_cover):
+    def on_increased(_event, _state, trigger_cover):
         covers.append(trigger_cover)
         return process_manager_pb2.ProcessManagerHandleResponse()
 
