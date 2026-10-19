@@ -411,12 +411,6 @@ _CALLS = {
             command_handler_pb2.FactRequest(), timeout=5
         ),
     ),
-    "replay": (
-        "aggregate",
-        lambda ch: command_handler_pb2_grpc.CommandHandlerServiceStub(ch).Replay(
-            command_handler_pb2.ReplayRequest(), timeout=5
-        ),
-    ),
     "saga": (
         "saga",
         lambda ch: saga_pb2_grpc.SagaServiceStub(ch).Handle(
@@ -450,19 +444,6 @@ def test_every_rpc_reports_a_coded_router_failure_as_its_status(hosts, call):
     assert err.value.details() == "scripted failure"
     info = _error_info(err.value)
     assert (info.reason, dict(info.metadata)) == ("SCRIPTED_FAILURE", {"k": "v"})
-
-
-def test_replay_names_the_one_aggregates_domain(hosts):
-    host, router = _aggregate_host(_empty_response)
-    stub = command_handler_pb2_grpc.CommandHandlerServiceStub(hosts(host))
-    request = command_handler_pb2.ReplayRequest(
-        events=builders.prior_increases(1).pages
-    )
-    stub.Replay(request, timeout=5)
-    assert [(kind, args[0]) for kind, args in router.calls] == [
-        ("dispatch_replay", "counter")
-    ]
-    assert router.calls[0][1][1] == request
 
 
 _UNIMPLEMENTED = CodedError(

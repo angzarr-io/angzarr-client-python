@@ -166,32 +166,16 @@ def test_handle_fact_without_a_fact_handler_is_refused(started):
     assert _error_info(err.value).reason
 
 
-def test_replay_rebuilds_the_one_aggregates_state(started):
+def test_replay_is_not_served(started):
+    # The latest spec has no Replay RPC; the host leaves it unimplemented.
     channel = started(_counter_host())
     stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
     request = command_handler_pb2.ReplayRequest(
         events=builders.prior_increases(3).pages
     )
-    resp = stub.Replay(request, timeout=5)
-    state = counter_pb2.CounterState()
-    assert resp.state.Unpack(state)
-    assert state.count == 3
-
-
-def test_replay_with_several_aggregates_is_unsupported(started):
-    host = _counter_host()
-    host.add_aggregate(
-        AggregateDispatch("Other", "other", Rebuilder(counter_pb2.CounterState))
-    )
-    channel = started(host)
-    stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
     with pytest.raises(grpc.RpcError) as err:
-        stub.Replay(command_handler_pb2.ReplayRequest(), timeout=5)
+        stub.Replay(request, timeout=5)
     assert err.value.code() == grpc.StatusCode.UNIMPLEMENTED
-    assert err.value.details() == messages.HANDLER_DOES_NOT_SUPPORT_REPLAY
-    info = _error_info(err.value)
-    assert info.reason == codes.HANDLER_DOES_NOT_SUPPORT_REPLAY
-    assert info.metadata["domains"] == "counter,other"
 
 
 # --- routine snapshots (snapshot_every) ---------------------------------------

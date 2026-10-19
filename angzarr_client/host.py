@@ -7,7 +7,7 @@ hand-built ones) and, optionally, its own gRPC services; the host exposes
 the coordinator-facing framework services for the kinds registered:
 
 - ``CommandHandlerService`` (aggregates): Handle (commands and the
-  rejection / undo notification envelopes), HandleFact, Replay; with a
+  rejection / undo notification envelopes) and HandleFact; with a
   routine snapshot interval (``ANGZARR_SNAPSHOT_EVERY``), Handle returns the
   aggregate's state as a snapshot whenever the stream crosses a multiple of
   it;
@@ -261,30 +261,6 @@ class _CommandHandlerServicer(command_handler_pb2_grpc.CommandHandlerServiceServ
 
     async def HandleFact(self, request, context):
         return await self._dispatcher.call(context, self._router.dispatch_fact, request)
-
-    async def Replay(self, request, context):
-        # ReplayRequest names no domain: a host replays for its one
-        # aggregate. With several, the request is ambiguous and the host
-        # reports replay as unsupported (the coordinator falls back to
-        # strict merging).
-        if len(self._domains) != 1:
-            from .router import GrpcCode
-            from .router._dispatch import _build_status_bytes
-
-            details = _build_status_bytes(
-                GrpcCode.UNIMPLEMENTED,
-                messages.HANDLER_DOES_NOT_SUPPORT_REPLAY,
-                codes.HANDLER_DOES_NOT_SUPPORT_REPLAY,
-                {"domains": ",".join(self._domains)},
-            )
-            context.set_trailing_metadata(((_STATUS_DETAILS_KEY, details),))
-            await context.abort(
-                grpc.StatusCode.UNIMPLEMENTED, messages.HANDLER_DOES_NOT_SUPPORT_REPLAY
-            )
-        domain = self._domains[0]
-        return await self._dispatcher.call(
-            context, lambda req: self._router.dispatch_replay(domain, req), request
-        )
 
 
 class _SagaServicer(saga_pb2_grpc.SagaServiceServicer):
