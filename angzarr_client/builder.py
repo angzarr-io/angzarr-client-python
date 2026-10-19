@@ -134,7 +134,7 @@ class CommandBuilder:
         """Build and execute the command.
 
         Args:
-            sync_mode: Execution mode (ASYNC, SIMPLE, or CASCADE).
+            sync_mode: Execution mode (ASYNC, DECISION or SIMPLE).
                       Defaults to ASYNC for fire-and-forget behavior.
         """
         cmd = self.build()

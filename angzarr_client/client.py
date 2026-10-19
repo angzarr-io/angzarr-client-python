@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
     from .builder import CommandBuilder, QueryBuilder
 from ._pb import (
-    CascadeErrorMode,
     CommandBook,
     CommandHandlerCoordinatorServiceStub,
     CommandRequest,
@@ -306,17 +305,13 @@ class CommandHandlerClient:
         """Execute a command with default async mode.
 
         This is a convenience method that wraps the command in a CommandRequest
-        with SYNC_MODE_ASYNC (fire-and-forget) and CASCADE_ERROR_FAIL_FAST.
+        with SYNC_MODE_ASYNC (fire-and-forget).
 
         Args:
             command: The command to execute.
             timeout: Optional per-call deadline in seconds.
         """
-        request = CommandRequest(
-            command=command,
-            sync_mode=SyncMode.SYNC_MODE_ASYNC,
-            cascade_error_mode=CascadeErrorMode.CASCADE_ERROR_FAIL_FAST,
-        )
+        request = CommandRequest(command=command, sync_mode=SyncMode.SYNC_MODE_ASYNC)
         return self.handle_command(request, timeout=timeout)
 
     def handle_command(
@@ -333,22 +328,6 @@ class CommandHandlerClient:
         """
         md = correlated_metadata(request.command.cover.correlation_id)
         return _invoke(self._stub.HandleCommand, request, timeout=timeout, metadata=md)
-
-    def handle_sync_speculative(
-        self,
-        request: SpeculateCommandHandlerRequest,
-        timeout: float | None = None,
-    ) -> CommandResponse:
-        """Execute a command speculatively against temporal state (no persistence).
-
-        Args:
-            request: The speculative command request.
-            timeout: Optional per-call deadline in seconds.
-        """
-        md = correlated_metadata(request.command.cover.correlation_id)
-        return _invoke(
-            self._stub.HandleSyncSpeculative, request, timeout=timeout, metadata=md
-        )
 
     def command(self, domain: str, root: PyUUID) -> CommandBuilder:
         """Start building a command for an existing aggregate."""
@@ -629,14 +608,10 @@ class DomainClient:
 
         Args:
             command: The command to execute.
-            sync_mode: Execution mode (ASYNC, SIMPLE, or CASCADE).
+            sync_mode: Execution mode (ASYNC, DECISION or SIMPLE).
             timeout: Optional per-call deadline in seconds.
         """
-        request = CommandRequest(
-            command=command,
-            sync_mode=sync_mode,
-            cascade_error_mode=CascadeErrorMode.CASCADE_ERROR_FAIL_FAST,
-        )
+        request = CommandRequest(command=command, sync_mode=sync_mode)
         return self.command_handler.handle_command(request, timeout=timeout)
 
     def get_event_book(self, query: Query, timeout: float | None = None) -> EventBook:

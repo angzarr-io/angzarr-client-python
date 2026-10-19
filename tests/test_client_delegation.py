@@ -85,7 +85,7 @@ class TestQueryClientCalls:
 
 
 class TestCommandHandlerClientCalls:
-    def test_handle_wraps_command_as_async_fail_fast(self) -> None:
+    def test_handle_wraps_command_as_async_with_no_cascade_mode(self) -> None:
         stub = Mock(HandleCommand=RecordingRpc("resp"))
         cmd = _command()
 
@@ -95,15 +95,12 @@ class TestCommandHandlerClientCalls:
         request, timeout = stub.HandleCommand.calls[0]
         assert request.command == cmd
         assert request.sync_mode == SyncMode.SYNC_MODE_ASYNC
-        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_FAIL_FAST
+        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_UNSPECIFIED
         assert timeout == 3.0
 
-    def test_handle_sync_speculative_passes_deadline(self) -> None:
-        stub = Mock(HandleSyncSpeculative=RecordingRpc("resp"))
-        CommandHandlerClient.from_stub(stub).handle_sync_speculative(
-            SpeculateCommandHandlerRequest(), timeout=1.5
-        )
-        assert stub.HandleSyncSpeculative.calls[0][1] == 1.5
+    def test_offers_no_speculative_execution(self) -> None:
+        # What-if execution is an edition, never a speculative RPC.
+        assert not hasattr(CommandHandlerClient, "handle_sync_speculative")
 
     def test_command_new_builder_executes_through_this_client(self) -> None:
         stub = Mock(HandleCommand=RecordingRpc("resp"))
@@ -168,24 +165,24 @@ class TestDomainClientDelegation:
             Mock(spec=grpc.Channel),
         )
 
-    def test_execute_sends_async_fail_fast_request(self, client, handler_stub) -> None:
+    def test_execute_sends_async_request(self, client, handler_stub) -> None:
         cmd = _command()
         assert client.execute(cmd, timeout=6.0) == "resp"
 
         request, timeout = handler_stub.HandleCommand.calls[0]
         assert request.command == cmd
         assert request.sync_mode == SyncMode.SYNC_MODE_ASYNC
-        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_FAIL_FAST
+        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_UNSPECIFIED
         assert timeout == 6.0
 
     def test_execute_with_mode_uses_requested_mode(self, client, handler_stub) -> None:
         cmd = _command("inventory")
-        client.execute_with_mode(cmd, SyncMode.SYNC_MODE_CASCADE, timeout=7.0)
+        client.execute_with_mode(cmd, SyncMode.SYNC_MODE_SIMPLE, timeout=7.0)
 
         request, timeout = handler_stub.HandleCommand.calls[0]
         assert request.command == cmd
-        assert request.sync_mode == SyncMode.SYNC_MODE_CASCADE
-        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_FAIL_FAST
+        assert request.sync_mode == SyncMode.SYNC_MODE_SIMPLE
+        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_UNSPECIFIED
         assert timeout == 7.0
 
     def test_get_event_book_delegates_query_and_deadline(self, client) -> None:

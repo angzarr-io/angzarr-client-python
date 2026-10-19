@@ -206,33 +206,6 @@ class TestCommandHandlerClient:
         with pytest.raises(GRPCError):
             client.handle_command(cmd)
 
-    def test_handle_sync_speculative_success(self) -> None:
-        """handle_sync_speculative returns CommandResponse on success."""
-        channel = self._mock_channel()
-        client = CommandHandlerClient(channel)
-        expected_resp = CommandResponse()
-        client._stub.HandleSyncSpeculative = Mock(return_value=expected_resp)
-
-        request = SpeculateCommandHandlerRequest()
-        result = client.handle_sync_speculative(request)
-
-        client._stub.HandleSyncSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
-        )
-        assert result is not None
-
-    def test_handle_sync_speculative_raises_grpc_error(self) -> None:
-        """handle_sync_speculative raises GRPCError on RpcError."""
-        channel = self._mock_channel()
-        client = CommandHandlerClient(channel)
-        rpc_error = MockRpcError(grpc.StatusCode.INVALID_ARGUMENT)
-        client._stub.HandleSyncSpeculative = Mock(side_effect=rpc_error)
-
-        request = SpeculateCommandHandlerRequest()
-        with pytest.raises(GRPCError) as exc_info:
-            client.handle_sync_speculative(request)
-        assert exc_info.value.is_invalid_argument()
-
     def test_close_closes_channel(self) -> None:
         """close closes the underlying channel."""
         channel = self._mock_channel()
@@ -497,25 +470,6 @@ class TestCorrelationIdMetadataPropagation:
         client.handle_command(req)
         assert (self.HEADER, "trace-ch-01") in self._captured_metadata(
             client._stub.HandleCommand
-        )
-
-    def test_command_handler_handle_sync_speculative_attaches_metadata(
-        self,
-    ) -> None:
-        client = CommandHandlerClient(self._channel())
-        client._stub.HandleSyncSpeculative = Mock(return_value=CommandResponse())
-        from angzarr_client._pb import (
-            CommandBook,
-            Cover,
-            SpeculateCommandHandlerRequest,
-        )
-
-        req = SpeculateCommandHandlerRequest(
-            command=CommandBook(cover=Cover(correlation_id="trace-spec-01"))
-        )
-        client.handle_sync_speculative(req)
-        assert (self.HEADER, "trace-spec-01") in self._captured_metadata(
-            client._stub.HandleSyncSpeculative
         )
 
     def test_speculative_client_command_handler_attaches_metadata(self) -> None:
