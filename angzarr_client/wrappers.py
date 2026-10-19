@@ -43,7 +43,6 @@ from ._pb import (
 )
 from ._pb import (
     MergeStrategy,
-    PageHeader,
 )
 from ._pb import (
     Query as _QueryProto,
@@ -280,19 +279,6 @@ class EventPage(Wrapped):
             return 0
         return self._proto.header.sequence
 
-    def header(self) -> PageHeader | None:
-        """The page header proto, or None if missing."""
-        if not self._proto.HasField("header"):
-            return None
-        return self._proto.header
-
-    def is_deferred(self) -> bool:
-        """True if this page carries a deferred-sequence header."""
-        if not self._proto.HasField("header"):
-            return False
-        h = self._proto.header
-        return h.HasField("external_deferred") or h.HasField("angzarr_deferred")
-
     def type_url(self) -> str | None:
         """Event payload's type URL, or None if missing."""
         if not self._proto.HasField("event"):
@@ -339,19 +325,6 @@ class CommandPage(Wrapped):
         if not self._proto.HasField("header"):
             return 0
         return self._proto.header.sequence
-
-    def header(self) -> PageHeader | None:
-        """The page header proto, or None if missing."""
-        if not self._proto.HasField("header"):
-            return None
-        return self._proto.header
-
-    def is_deferred(self) -> bool:
-        """True if this page carries a deferred-sequence header."""
-        if not self._proto.HasField("header"):
-            return False
-        h = self._proto.header
-        return h.HasField("external_deferred") or h.HasField("angzarr_deferred")
 
     def type_url(self) -> str | None:
         """Command payload's type URL, or None if missing."""

@@ -20,7 +20,6 @@ from ._pb import (
     CommandPage,
     Cover,
     Edition,
-    EventBook,
     EventPage,
     PageHeader,
     Query,
@@ -123,22 +122,6 @@ def events_from_response(resp) -> list[EventPage]:
     return list(resp.events.pages)
 
 
-def idempotency_key(deferred) -> str | None:
-    """Build the composite idempotency key for a saga-produced deferred sequence.
-
-    Format: ``{source.edition}:{source.domain}:{source.root_hex}:{source_seq}``.
-    Returns ``None`` when the deferred sequence has no source cover —
-    a malformed wire input is a missing-key signal, not an exception.
-    Audit finding #55.
-    """
-    if deferred is None or not deferred.HasField("source"):
-        return None
-    source = deferred.source
-    edition_name = source.edition.name if source.HasField("edition") else ""
-    root_hex = source.root.value.hex() if source.HasField("root") else ""
-    return f"{edition_name}:{source.domain}:{root_hex}:{deferred.source_seq}"
-
-
 def decode_event(page: EventPage, full_type_name: str, msg_class: type[T]) -> T | None:
     """Decode a page's event payload if its type URL matches the given name.
 
@@ -159,24 +142,6 @@ def decode_event(page: EventPage, full_type_name: str, msg_class: type[T]) -> T 
         return msg
     except Exception:  # noqa: BLE001 — undecodable payload decodes to None
         return None
-
-
-# Destination map (cross-language alias for Rust's `proto_ext::destination_map`)
-
-
-def destination_map(destinations: list[EventBook]) -> dict[str, EventBook]:
-    """Build a map from root UUID hex to EventBook for destination lookup.
-
-    Used in multi-destination sagas to look up the correct EventBook
-    by aggregate root when setting command sequences. Entries without
-    a root are skipped.
-    """
-    result: dict[str, EventBook] = {}
-    for dest in destinations:
-        if not dest.HasField("cover") or not dest.cover.HasField("root"):
-            continue
-        result[dest.cover.root.value.hex()] = dest
-    return result
 
 
 # Type URL helpers

@@ -42,7 +42,6 @@ from .helpers import (
     UNKNOWN_DOMAIN,
     WILDCARD_DOMAIN,
     correlated_metadata,
-    destination_map,
     full_type_url,
     full_type_url_for,
     implicit_edition,
@@ -144,7 +143,6 @@ __all__ = [
     # Pure utilities (non-accessor — accessors live on wrapper classes)
     "correlated_metadata",
     "default_retry_policy",
-    "destination_map",
     "full_type_url",
     "full_type_url_for",
     "get_transport_config",

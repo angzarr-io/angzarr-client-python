@@ -7,7 +7,6 @@ import grpc
 import pytest
 
 from angzarr_client._pb import (
-    CascadeErrorMode,
     CommandBook,
     Cover,
     Query,
@@ -25,6 +24,7 @@ from angzarr_client.client import (
     _invoke,
 )
 from angzarr_client.errors import TransportError
+from angzarr_client.proto.io.angzarr.v1 import types_pb2
 
 
 class RecordingRpc:
@@ -95,7 +95,7 @@ class TestCommandHandlerClientCalls:
         request, timeout = stub.HandleCommand.calls[0]
         assert request.command == cmd
         assert request.sync_mode == SyncMode.SYNC_MODE_ASYNC
-        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_UNSPECIFIED
+        assert request.cascade_error_mode == types_pb2.CASCADE_ERROR_UNSPECIFIED
         assert timeout == 3.0
 
     def test_offers_no_speculative_execution(self) -> None:
@@ -172,7 +172,7 @@ class TestDomainClientDelegation:
         request, timeout = handler_stub.HandleCommand.calls[0]
         assert request.command == cmd
         assert request.sync_mode == SyncMode.SYNC_MODE_ASYNC
-        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_UNSPECIFIED
+        assert request.cascade_error_mode == types_pb2.CASCADE_ERROR_UNSPECIFIED
         assert timeout == 6.0
 
     def test_execute_with_mode_uses_requested_mode(self, client, handler_stub) -> None:
@@ -182,7 +182,7 @@ class TestDomainClientDelegation:
         request, timeout = handler_stub.HandleCommand.calls[0]
         assert request.command == cmd
         assert request.sync_mode == SyncMode.SYNC_MODE_SIMPLE
-        assert request.cascade_error_mode == CascadeErrorMode.CASCADE_ERROR_UNSPECIFIED
+        assert request.cascade_error_mode == types_pb2.CASCADE_ERROR_UNSPECIFIED
         assert timeout == 7.0
 
     def test_get_event_book_delegates_query_and_deadline(self, client) -> None:

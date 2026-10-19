@@ -7,11 +7,8 @@ import pytest
 from google.protobuf.any_pb2 import Any as ProtoAny
 
 from angzarr_client._pb import (
-    UUID,
-    Cover,
     DomainDivergence,
     Edition,
-    EventBook,
     EventPage,
     PageHeader,
 )
@@ -25,7 +22,6 @@ from angzarr_client.helpers import (
     UNKNOWN_DOMAIN,
     WILDCARD_DOMAIN,
     decode_event,
-    destination_map,
     divergence_for,
     events_from_response,
     implicit_edition,
@@ -136,84 +132,6 @@ class TestEditionHelpers:
 
 # EventBook accessor free functions (next_sequence, event_pages) were
 # deleted; see ``EventBook`` wrapper in ``test_wrappers.py``.
-
-
-class TestDestinationMap:
-    """Tests for destination_map function."""
-
-    def test_builds_map_from_destinations(self) -> None:
-        """destination_map builds hex-keyed map from EventBook list."""
-        uuid1 = PyUUID("11111111-1111-1111-1111-111111111111")
-        uuid2 = PyUUID("22222222-2222-2222-2222-222222222222")
-
-        book1 = EventBook(next_sequence=5)
-        book1.cover.domain = "player"
-        book1.cover.root.CopyFrom(uuid_to_proto(uuid1))
-
-        book2 = EventBook(next_sequence=10)
-        book2.cover.domain = "player"
-        book2.cover.root.CopyFrom(uuid_to_proto(uuid2))
-
-        result = destination_map([book1, book2])
-
-        assert len(result) == 2
-        assert result[uuid1.bytes.hex()] is book1
-        assert result[uuid2.bytes.hex()] is book2
-
-    def test_empty_list_returns_empty_map(self) -> None:
-        """destination_map returns empty dict for empty list."""
-        assert destination_map([]) == {}
-
-    def test_skips_entries_without_root(self) -> None:
-        """destination_map skips EventBooks without root set."""
-        uuid1 = PyUUID("11111111-1111-1111-1111-111111111111")
-
-        book_with_root = EventBook(next_sequence=5)
-        book_with_root.cover.domain = "player"
-        book_with_root.cover.root.CopyFrom(uuid_to_proto(uuid1))
-
-        book_without_root = EventBook(next_sequence=10)
-        book_without_root.cover.domain = "player"
-        # No root set
-
-        result = destination_map([book_with_root, book_without_root])
-
-        assert len(result) == 1
-        assert uuid1.bytes.hex() in result
-
-    def test_rootless_entry_does_not_stop_later_entries(self) -> None:
-        """A rootless EventBook ahead of rooted ones is skipped, not terminal."""
-        uuid1 = PyUUID("11111111-1111-1111-1111-111111111111")
-        no_cover = EventBook(next_sequence=1)
-        no_root = EventBook(next_sequence=2)
-        no_root.cover.domain = "player"
-        rooted = EventBook(next_sequence=3)
-        rooted.cover.root.CopyFrom(uuid_to_proto(uuid1))
-
-        result = destination_map([no_cover, no_root, rooted])
-
-        assert result == {uuid1.bytes.hex(): rooted}
-
-    def test_works_with_next_sequence_lookup(self) -> None:
-        """destination_map integrates with EventBook.next_sequence() for lookups."""
-        from angzarr_client import EventBook as EventBookW
-
-        uuid1 = PyUUID("11111111-1111-1111-1111-111111111111")
-
-        book = EventBook(next_sequence=42)
-        book.cover.domain = "player"
-        book.cover.root.CopyFrom(uuid_to_proto(uuid1))
-
-        dest_map = destination_map([book])
-        key = uuid1.bytes.hex()
-
-        # Pattern used in sagas: wrap the proto and read next_sequence().
-        assert EventBookW(dest_map[key]).next_sequence() == 42
-        assert dest_map.get("nonexistent") is None
-
-
-# CommandBook accessor free function (command_pages) was deleted; see
-# ``CommandBook.pages()`` in ``test_wrappers.py``.
 
 
 class TestEventsFromResponse:
@@ -644,66 +562,6 @@ class TestAdditionalHelpers:
 # Audit #86 reverted 2026-04-29: edition propagation moved to
 # coordinator-contract; the four `TestPropagateEditionFrom` tests
 # were deleted along with the `propagate_edition_from` helper.
-
-
-class TestIdempotencyKey:
-    """Tests for ``idempotency_key`` — composite saga-deferred dedup key.
-
-    Audit finding #55: ported from Rust's
-    ``AngzarrDeferredSequenceExt::idempotency_key``.
-    """
-
-    def test_returns_composite_key_with_all_fields(self) -> None:
-        from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.io.angzarr.v1.types_pb2 import (
-            AngzarrDeferredSequence,
-        )
-
-        cover = Cover(
-            domain="orders",
-            root=UUID(value=b"\x01" * 16),
-            edition=Edition(name="angzarr"),
-        )
-        deferred = AngzarrDeferredSequence(source=cover, source_seq=7)
-
-        # Format: {edition}:{domain}:{root_hex}:{source_seq}
-        assert idempotency_key(deferred) == f"angzarr:orders:{'01' * 16}:7"
-
-    def test_returns_none_when_source_missing(self) -> None:
-        from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.io.angzarr.v1.types_pb2 import (
-            AngzarrDeferredSequence,
-        )
-
-        # No source set — should return None, not raise.
-        deferred = AngzarrDeferredSequence(source_seq=3)
-        assert idempotency_key(deferred) is None
-
-    def test_returns_none_when_input_is_none(self) -> None:
-        from angzarr_client.helpers import idempotency_key
-
-        assert idempotency_key(None) is None
-
-    def test_empty_edition_name_yields_empty_first_part(self) -> None:
-        from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.io.angzarr.v1.types_pb2 import (
-            AngzarrDeferredSequence,
-        )
-
-        # No explicit edition — first segment is empty (default-edition convention).
-        cover = Cover(domain="players", root=UUID(value=b"\xab" * 16))
-        deferred = AngzarrDeferredSequence(source=cover, source_seq=42)
-        assert idempotency_key(deferred) == f":players:{'ab' * 16}:42"
-
-    def test_empty_root_yields_empty_root_segment(self) -> None:
-        from angzarr_client.helpers import idempotency_key
-        from angzarr_client.proto.io.angzarr.v1.types_pb2 import (
-            AngzarrDeferredSequence,
-        )
-
-        cover = Cover(domain="orders", edition=Edition(name="angzarr"))
-        deferred = AngzarrDeferredSequence(source=cover, source_seq=1)
-        assert idempotency_key(deferred) == "angzarr:orders::1"
 
 
 class TestCorrelatedMetadata:

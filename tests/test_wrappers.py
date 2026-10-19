@@ -694,34 +694,6 @@ class TestEventPageWAdditional:
     def test_sequence_num_zero_when_no_header(self) -> None:
         assert EventPage(EventPageProto()).sequence_num() == 0
 
-    def test_header_returns_header(self) -> None:
-        proto = EventPageProto(header=PageHeader(sequence=3))
-        h = EventPage(proto).header()
-        assert h is not None
-        assert h.sequence == 3
-
-    def test_header_none_when_absent(self) -> None:
-        assert EventPage(EventPageProto()).header() is None
-
-    def test_is_deferred_false_when_no_header(self) -> None:
-        assert EventPage(EventPageProto()).is_deferred() is False
-
-    def test_is_deferred_false_when_no_deferred_subfield(self) -> None:
-        assert (
-            EventPage(EventPageProto(header=PageHeader(sequence=1))).is_deferred()
-            is False
-        )
-
-    def test_is_deferred_true_for_external_deferred(self) -> None:
-        proto = EventPageProto(header=PageHeader(sequence=1))
-        proto.header.external_deferred.SetInParent()
-        assert EventPage(proto).is_deferred() is True
-
-    def test_is_deferred_true_for_angzarr_deferred(self) -> None:
-        proto = EventPageProto(header=PageHeader(sequence=1))
-        proto.header.angzarr_deferred.SetInParent()
-        assert EventPage(proto).is_deferred() is True
-
     def test_type_url_returns_url(self) -> None:
         proto = EventPageProto(header=PageHeader(sequence=1))
         proto.event.Pack(CoverProto(domain="x"))
@@ -764,30 +736,6 @@ class TestCommandPageWAdditional:
 
     def test_sequence_zero_when_no_header(self) -> None:
         assert CommandPage(CommandPageProto()).sequence_num() == 0
-
-    def test_header_returns_header(self) -> None:
-        proto = CommandPageProto()
-        proto.header.sequence = 5
-        h = CommandPage(proto).header()
-        assert h is not None and h.sequence == 5
-
-    def test_header_none_when_absent(self) -> None:
-        assert CommandPage(CommandPageProto()).header() is None
-
-    def test_is_deferred_false_when_no_header(self) -> None:
-        assert CommandPage(CommandPageProto()).is_deferred() is False
-
-    def test_is_deferred_true_for_external_deferred(self) -> None:
-        proto = CommandPageProto()
-        proto.header.sequence = 1
-        proto.header.external_deferred.SetInParent()
-        assert CommandPage(proto).is_deferred() is True
-
-    def test_is_deferred_true_for_angzarr_deferred(self) -> None:
-        proto = CommandPageProto()
-        proto.header.sequence = 1
-        proto.header.angzarr_deferred.SetInParent()
-        assert CommandPage(proto).is_deferred() is True
 
     def test_type_url_returns_url(self) -> None:
         proto = CommandPageProto()

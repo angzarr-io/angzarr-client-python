@@ -44,8 +44,6 @@ NO_HANDLER_REGISTERED = "no handler registered for the given (domain, type_url)"
 MISSING_COMMAND_BOOK = "missing command book"
 MISSING_COMMAND_PAGE = "missing command page"
 MISSING_COMMAND_PAYLOAD = "missing command payload"
-NOTIFICATION_DECODE_FAILED = "failed to decode Notification payload"
-REJECTION_NOTIFICATION_DECODE_FAILED = "failed to decode RejectionNotification payload"
 
 # Dispatch — saga
 MISSING_SAGA_SOURCE = "missing saga source"
@@ -76,9 +74,6 @@ DUPLICATE_COMMAND_HANDLER = (
 MIXED_HANDLER_KINDS = (
     "cannot mix handler kinds in one Router — all handlers must share a kind"
 )
-
-# Saga / PM destinations
-MISSING_DESTINATION_SEQUENCE = "no sequence for destination domain"
 
 # Component host
 HANDLER_PANICKED = "handler panicked during dispatch"
