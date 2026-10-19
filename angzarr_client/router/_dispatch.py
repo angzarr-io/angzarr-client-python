@@ -172,17 +172,10 @@ class PageContext:
     process-manager triggers, whose callbacks carry no page sequence).
     Projector folds and aggregate / process-manager appliers see the
     folded event's own book cover and page sequence; a saga handler sees the
-    source book's cover and the triggering event's sequence.
-
-    ``speculative`` is True while a projector folds and finishes a book
-    speculatively (ProjectorService.HandleSpeculative): the projection is
-    returned, not applied, so the handler must not write durable or external
-    state (read models, stores, outgoing messages). It is False for every
-    other dispatch."""
+    source book's cover and the triggering event's sequence."""
 
     cover: types_pb2.Cover | None = None
     sequence: int = 0
-    speculative: bool = False
 
 
 _CURRENT_PAGE: ContextVar[PageContext | None] = ContextVar(
@@ -604,11 +597,10 @@ class _Session:
     keyed by the component key assigned at registration and is never shared
     with another component."""
 
-    __slots__ = ("_states", "router", "speculative")
+    __slots__ = ("_states", "router")
 
-    def __init__(self, router: Router, speculative: bool = False):
+    def __init__(self, router: Router):
         self.router = router
-        self.speculative = speculative
         self._states: dict[int, object] = {}
 
     def ensure_state(self, key: int, factory: Callable[[], object]) -> object:
@@ -732,11 +724,7 @@ def _projector_event_invoker(key: int, factory, thunk: ProjectorEventThunk) -> I
         pax.ParseFromString(aux)
         state = session.ensure_state(key, factory)
         with _handling(
-            PageContext(
-                cover=_cover_of(pax, "cover"),
-                sequence=pax.sequence,
-                speculative=session.speculative,
-            )
+            PageContext(cover=_cover_of(pax, "cover"), sequence=pax.sequence)
         ):
             thunk(state, any_pb2.Any(type_url=type_url, value=payload))
         return None, _STATUS_OK
@@ -754,10 +742,7 @@ def _projector_finish_invoker(
         if payload:
             book.ParseFromString(payload)
         state = session.ensure_state(key, factory)
-        page = PageContext(
-            cover=_cover_of(book, "cover"), speculative=session.speculative
-        )
-        with _handling(page):
+        with _handling(PageContext(cover=_cover_of(book, "cover"))):
             projection = thunk(state, book)
         if projection is None:
             return None, _STATUS_OK_EMPTY
@@ -980,18 +965,15 @@ class Router:
         self._next_component += 1
         return self._next_component
 
-    def _call(
-        self, fn, request: bytes, page: PageContext, speculative: bool = False
-    ) -> tuple[int, bytes]:
+    def _call(self, fn, request: bytes, page: PageContext) -> tuple[int, bytes]:
         """Run one dispatch entry point over ``request`` bytes with a fresh
-        session (marked ``speculative`` when asked) and ``page`` as the
-        dispatch-level page context (callbacks whose aux carries a cover
+        session and ``page`` as the dispatch-level page context (callbacks whose aux carries a cover
         narrow it). Returns the dispatch's return code and its consumed out
         bytes."""
         # The session is reached from callbacks via this handle; the core holds
         # it only for the duration of this synchronous call. `handle` must stay
         # referenced until dispatch returns.
-        session = _Session(self, speculative)
+        session = _Session(self)
         handle = ffi.new_handle(session)
         out = ffi.new("angzarr_buf*")
         with _handling(page):
@@ -1128,16 +1110,13 @@ class Router:
             if ret != 0:
                 raise _decode_status(None, ret)
 
-    def dispatch_projector(self, event_book, *, speculative: bool = False) -> object:
+    def dispatch_projector(self, event_book) -> object:
         """Fold one EventBook through the registered projector and return the
-        Projection, or raise a CodedError decoded from the core's failure.
-        ``speculative`` marks the dispatch for the projector's handlers
-        (PageContext.speculative): the Projection is returned, not applied."""
+        Projection, or raise a CodedError decoded from the core's failure."""
         ret, resp_bytes = self._call(
             lib.angzarr_router_dispatch_projector,
             event_book.SerializeToString(),
-            PageContext(cover=_cover_of(event_book, "cover"), speculative=speculative),
-            speculative,
+            PageContext(cover=_cover_of(event_book, "cover")),
         )
         if ret == 0:
             proj = types_pb2.Projection()

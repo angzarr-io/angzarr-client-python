@@ -410,7 +410,7 @@ def test_process_manager_acknowledges_an_event_it_does_not_consume(started):
     assert resp == process_manager_pb2.ProcessManagerHandleResponse()
 
 
-def test_projector_handle_and_speculative_return_the_projection(started):
+def test_projector_handle_returns_the_projection(started):
     host = ComponentHost(Router())
     host.add_projector(
         counter_projector_angzarr.new_counter_projector_dispatch(CounterProjector())
@@ -418,10 +418,9 @@ def test_projector_handle_and_speculative_return_the_projection(started):
     channel = started(host)
     stub = projector_pb2_grpc.ProjectorServiceStub(channel)
     book = _increased_book("counter", 2)
-    for call in (stub.Handle, stub.HandleSpeculative):
-        projection = call(book, timeout=5)
-        assert projection.projector == "counter-projector"
-        assert projection.sequence == 2
+    projection = stub.Handle(book, timeout=5)
+    assert projection.projector == "counter-projector"
+    assert projection.sequence == 2
 
 
 class _FailingUpcaster:

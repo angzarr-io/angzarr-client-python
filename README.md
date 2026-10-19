@@ -96,11 +96,6 @@ a `google.rpc.Status` / `ErrorInfo` (reason = the error code) in
 handlers as `RejectionNotification.code` (branch on it, never on
 `rejection_reason`, which is the human-readable message).
 
-`ProjectorService.HandleSpeculative` folds the book speculatively: projector
-handlers see `ctx.speculative` (`current_page().speculative` in the finisher)
-and must then leave durable and external state (read models, stores,
-outgoing messages) untouched — the projection is returned, not applied.
-
 ## Coordinator clients
 
 ```python

@@ -12,10 +12,7 @@ the coordinator-facing framework services for the kinds registered:
   aggregate's state as a snapshot whenever the stream crosses a multiple of
   it;
 - ``SagaService`` / ``ProcessManagerService``: Handle;
-- ``ProjectorService``: Handle, and HandleSpeculative dispatched with
-  ``speculative=True``: projector handlers see ``PageContext.speculative``
-  (``current_page().speculative`` in the finisher) and must leave durable and
-  external state untouched;
+- ``ProjectorService``: Handle;
 - ``UpcasterService``: Upcast, over an application upcaster.
 
 Dispatch is the router's. A coded failure from the router travels as its
@@ -327,12 +324,6 @@ class _ProjectorServicer(projector_pb2_grpc.ProjectorServiceServicer):
         return await self._dispatcher.call(
             context, self._router.dispatch_projector, request
         )
-
-    async def HandleSpeculative(self, request, context):
-        return await self._dispatcher.call(context, self._speculate, request)
-
-    def _speculate(self, request):
-        return self._router.dispatch_projector(request, speculative=True)
 
 
 class _UpcasterServicer(upcaster_pb2_grpc.UpcasterServiceServicer):
