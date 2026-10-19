@@ -88,8 +88,8 @@ host.run()   # binds the transport the environment selects; stops on SIGTERM / S
 other kinds. The transport comes from the environment: `TRANSPORT_TYPE=tcp`
 (default; `ANGZARR_BIND_ADDRESS`, else `[::]:$PORT`) or `TRANSPORT_TYPE=uds`
 (`$UDS_BASE_PATH/$SERVICE_NAME[-<qualifier>].sock`, removed on shutdown).
-Health reports `NOT_SERVING` until the server listens and the readiness probes
-pass, and again once shutdown begins; in-flight calls then finish within the
+Health reports `NOT_SERVING` until the server listens, and again once shutdown
+begins; in-flight calls then finish within the
 grace period. A coded failure from a handler travels as its gRPC status, with
 a `google.rpc.Status` / `ErrorInfo` (reason = the error code) in
 `grpc-status-details-bin`; the coordinator hands that code to compensation

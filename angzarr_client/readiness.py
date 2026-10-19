@@ -27,22 +27,15 @@ import abc
 import asyncio
 import logging
 import os
-from dataclasses import dataclass
 
 DEFAULT_PROBE_INTERVAL = 30.0
-"""Default cadence for re-evaluating output-domain probes (seconds)."""
+"""Default cadence for re-evaluating probes (seconds)."""
 
 DEFAULT_PROBE_TIMEOUT = 2.0
 """Default per-probe timeout (seconds)."""
 
 ENV_INTERVAL = "ANGZARR_READINESS_PROBE_INTERVAL"
 ENV_TIMEOUT = "ANGZARR_READINESS_PROBE_TIMEOUT"
-ENV_BUS_ENDPOINT = "ANGZARR_BUS_ENDPOINT"
-"""Audit #74: optional async-bus endpoint (Kafka / RabbitMQ / SQS /
-SNS / NATS / etc.). When set, a single :class:`BusProbe` covers
-reachability of the async path for every async-only saga / PM target.
-When unset, no bus probe is added — async-only targets are simply not
-part of readiness."""
 
 _LOG = logging.getLogger(__name__)
 
@@ -118,126 +111,6 @@ class TransportProbe(Probe):
 
     async def check(self) -> bool:
         return self._signal.is_bound()
-
-
-@dataclass(frozen=True)
-class _TcpEndpoint:
-    addr: str  # "host:port"
-
-
-@dataclass(frozen=True)
-class _UdsEndpoint:
-    path: str
-
-
-_Endpoint = _TcpEndpoint | _UdsEndpoint
-
-
-def _parse_endpoint(raw: str) -> _Endpoint:
-    """Classify a resolved endpoint string into TCP or UDS. ``unix:``
-    prefix or leading ``/`` selects UDS; otherwise TCP.
-    """
-    if raw.startswith("unix:"):
-        return _UdsEndpoint(raw[len("unix:") :])
-    if raw.startswith("/"):
-        return _UdsEndpoint(raw)
-    return _TcpEndpoint(raw)
-
-
-async def _try_tcp_connect(addr: str) -> bool:
-    host, sep, port_s = addr.rpartition(":")
-    if not sep or not port_s:
-        return False
-    if host.startswith("[") and host.endswith("]"):
-        host = host[1:-1]
-    try:
-        port = int(port_s)
-    except ValueError:
-        return False
-    try:
-        _, writer = await asyncio.open_connection(host or "localhost", port)
-    except OSError:
-        return False
-    writer.close()
-    try:
-        await writer.wait_closed()
-    except OSError:
-        pass
-    return True
-
-
-async def _try_uds_connect(path: str) -> bool:
-    try:
-        _, writer = await asyncio.open_unix_connection(path)
-    except (OSError, FileNotFoundError):
-        return False
-    writer.close()
-    try:
-        await writer.wait_closed()
-    except OSError:
-        pass
-    return True
-
-
-class OutputDomainProbe(Probe):
-    """Per-output-domain coordinator probe — attempts to open a connection
-    to the downstream domain's command-handler coordinator endpoint.
-
-    Audit #74: built only for **sync** output domains (declared via
-    ``@saga(sync=True)`` or ``@process_manager(sync_targets=[...])``).
-    Async-only targets ride the bus; see :class:`BusProbe`.
-    """
-
-    def __init__(self, domain: str, endpoint: _Endpoint) -> None:
-        self._domain = domain
-        self._endpoint = endpoint
-
-    @classmethod
-    def for_domain(cls, domain: str) -> OutputDomainProbe:
-        from .client import resolve_ch_endpoint
-
-        raw = resolve_ch_endpoint(domain)
-        return cls(domain, _parse_endpoint(raw))
-
-    @property
-    def name(self) -> str:
-        return self._domain
-
-    async def check(self) -> bool:
-        if isinstance(self._endpoint, _TcpEndpoint):
-            return await _try_tcp_connect(self._endpoint.addr)
-        return await _try_uds_connect(self._endpoint.path)
-
-
-class BusProbe(Probe):
-    """Async-bus reachability probe (audit #74) — covers the path that
-    async-only saga / PM targets ride. The endpoint is operator-supplied
-    via :data:`ENV_BUS_ENDPOINT` and points at whatever broker the
-    deployment uses (Kafka, RabbitMQ, SQS/SNS, NATS, etc.).
-
-    Connection-only — confirms the broker is reachable, not that
-    publishes will succeed end-to-end. Same contract as
-    :class:`OutputDomainProbe` for sync targets.
-    """
-
-    def __init__(self, endpoint: _Endpoint) -> None:
-        self._endpoint = endpoint
-
-    @classmethod
-    def from_env(cls) -> BusProbe | None:
-        raw = os.environ.get(ENV_BUS_ENDPOINT)
-        if not raw:
-            return None
-        return cls(_parse_endpoint(raw))
-
-    @property
-    def name(self) -> str:
-        return "bus"
-
-    async def check(self) -> bool:
-        if isinstance(self._endpoint, _TcpEndpoint):
-            return await _try_tcp_connect(self._endpoint.addr)
-        return await _try_uds_connect(self._endpoint.path)
 
 
 async def run_supervisor(

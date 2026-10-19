@@ -493,22 +493,6 @@ def test_every_served_service_reports_serving_after_not_serving(started):
     assert host.health_status(SAGA_SERVICE) is None
 
 
-def test_an_unreachable_sync_output_domain_keeps_the_host_not_serving(
-    monkeypatch, started
-):
-    monkeypatch.setenv("ANGZARR_READINESS_PROBE_INTERVAL", "0.05")
-    monkeypatch.setenv("ANGZARR_READINESS_PROBE_TIMEOUT", "0.05")
-    host = _counter_host(sync_output_domains=["unreachable"])
-    address = host.start("127.0.0.1:0")
-    try:
-        threading.Event().wait(0.3)
-        assert host.health_status("") == _NOT_SERVING
-        assert _SERVING not in host.health_history("")
-        assert address.startswith("127.0.0.1:")
-    finally:
-        host.stop(grace=0)
-
-
 def test_stop_reports_not_serving_and_refuses_new_calls():
     host = _counter_host()
     address = host.start("127.0.0.1:0")

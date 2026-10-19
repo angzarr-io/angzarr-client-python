@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import re
 import signal
-import socket
 import threading
 import time
 from types import SimpleNamespace
@@ -569,23 +568,6 @@ def test_an_ipv6_address_is_reported_with_its_bound_port(hosts):
 def fast_probes(monkeypatch):
     monkeypatch.setenv("ANGZARR_READINESS_PROBE_INTERVAL", "0.02")
     monkeypatch.setenv("ANGZARR_READINESS_PROBE_TIMEOUT", "0.2")
-    monkeypatch.delenv("ANGZARR_BUS_ENDPOINT", raising=False)
-
-
-@pytest.fixture
-def unix_listener():
-    sockets: list[socket.socket] = []
-
-    def listen(path) -> str:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.bind(str(path))
-        sock.listen(64)
-        sockets.append(sock)
-        return str(path)
-
-    yield listen
-    for sock in sockets:
-        sock.close()
 
 
 def _saga_host() -> ComponentHost:
@@ -594,81 +576,20 @@ def _saga_host() -> ComponentHost:
     return host
 
 
-def test_a_reachable_sync_output_domain_lets_the_host_serve(
-    monkeypatch, fast_probes, unix_listener, tmp_path, hosts
-):
-    monkeypatch.setenv("ANGZARR_MODE", "standalone")
-    monkeypatch.setenv("ANGZARR_UDS_BASE", str(tmp_path))
-    unix_listener(tmp_path / "ch-orders.sock")
-    host = _counter_host(sync_output_domains=["orders"])
-    hosts(host, serving=False)
-    assert _until(lambda: host.health_status("") == _SERVING)
+def test_the_host_takes_no_sync_output_domains():
+    # Readiness is plain SERVING / NOT_SERVING (parity/client/hosting.feature):
+    # no command-target supervision.
+    with pytest.raises(TypeError):
+        ComponentHost(Router(), sync_output_domains=["orders"])
 
 
-def test_a_saga_host_waits_for_an_unreachable_bus(
+def test_a_saga_host_serves_whatever_the_bus_endpoint(
     monkeypatch, fast_probes, tmp_path, hosts
 ):
     monkeypatch.setenv("ANGZARR_BUS_ENDPOINT", f"unix:{tmp_path}/bus.sock")
-    host = _saga_host()
-    hosts(host, serving=False)
-    assert _until(lambda: len(host.health_history(SAGA_SERVICE)) >= 4)
-    assert _SERVING not in host.health_history(SAGA_SERVICE)
-
-
-def test_a_saga_host_serves_once_the_bus_is_reachable(
-    monkeypatch, fast_probes, unix_listener, tmp_path, hosts
-):
-    bus = unix_listener(tmp_path / "bus.sock")
-    monkeypatch.setenv("ANGZARR_BUS_ENDPOINT", f"unix:{bus}")
     host = _saga_host()
     hosts(host, serving=False)
     assert _until(lambda: host.health_status(SAGA_SERVICE) == _SERVING)
-
-
-def test_an_aggregate_only_host_ignores_the_bus(
-    monkeypatch, fast_probes, tmp_path, hosts
-):
-    monkeypatch.setenv("ANGZARR_BUS_ENDPOINT", f"unix:{tmp_path}/bus.sock")
-    host = _counter_host()
-    hosts(host, serving=False)
-    assert _until(lambda: host.health_status(COMMAND_HANDLER_SERVICE) == _SERVING)
-
-
-@pytest.fixture
-def unresponsive_tcp_endpoint():
-    """A loopback TCP listener whose accept queue is full: connects to it
-    hang instead of failing."""
-    listener = socket.socket()
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(0)
-    port = listener.getsockname()[1]
-    fillers = []
-    for _ in range(3):
-        filler = socket.socket()
-        filler.setblocking(False)
-        try:
-            filler.connect(("127.0.0.1", port))
-        except BlockingIOError:
-            pass
-        fillers.append(filler)
-    time.sleep(0.1)
-    yield f"127.0.0.1:{port}"
-    for sock in [*fillers, listener]:
-        sock.close()
-
-
-def test_a_hanging_probe_is_cut_off_by_the_probe_timeout(
-    monkeypatch, unresponsive_tcp_endpoint, hosts
-):
-    monkeypatch.setenv("ANGZARR_READINESS_PROBE_INTERVAL", "0.02")
-    monkeypatch.setenv("ANGZARR_READINESS_PROBE_TIMEOUT", "0.05")
-    monkeypatch.setenv("ANGZARR_BUS_ENDPOINT", unresponsive_tcp_endpoint)
-    host = _saga_host()
-    hosts(host, serving=False)
-    # Each timed-out tick republishes NOT_SERVING; a probe left hanging would
-    # leave only the initial status.
-    assert _until(lambda: len(host.health_history("")) >= 4, timeout=1.0)
-    assert set(host.health_history("")) == {_NOT_SERVING}
 
 
 # --- run() ---------------------------------------------------------------------

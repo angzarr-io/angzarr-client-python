@@ -1,8 +1,7 @@
 """Tests for the readiness supervisor and probes.
 
 Mirrors ``client-rust/main/src/readiness.rs`` semantics: TransportProbe
-flips once the listener is bound (and never reverts); OutputDomainProbe
-attempts a TCP/UDS connect on each tick and reports reachability;
+flips once the listener is bound (and never reverts);
 ``run_supervisor`` aggregates probes and publishes ``SERVING`` /
 ``NOT_SERVING`` to the named services on every tick.
 """
@@ -16,14 +15,9 @@ from grpc_health.v1 import health_pb2
 from angzarr_client.readiness import (
     DEFAULT_PROBE_INTERVAL,
     DEFAULT_PROBE_TIMEOUT,
-    BusProbe,
-    OutputDomainProbe,
     Probe,
     TransportProbe,
     TransportSignal,
-    _parse_endpoint,
-    _TcpEndpoint,
-    _UdsEndpoint,
     probe_config_from_env,
     run_supervisor,
 )
@@ -85,167 +79,6 @@ class TestTransportProbe:
         # No public unmark; reusing the signal stays bound.
         assert signal.is_bound() is True
         assert await probe.check() is True
-
-
-# ---------------------------------------------------------------------------
-# Endpoint parsing
-# ---------------------------------------------------------------------------
-
-
-class TestParseEndpoint:
-    def test_tcp_host_port(self) -> None:
-        ep = _parse_endpoint("inventory:1310")
-        assert ep == _TcpEndpoint("inventory:1310")
-
-    def test_unix_prefix_is_uds(self) -> None:
-        ep = _parse_endpoint("unix:/tmp/sock")
-        assert ep == _UdsEndpoint("/tmp/sock")
-
-    def test_unix_relative_is_uds(self) -> None:
-        ep = _parse_endpoint("unix:relative.sock")
-        assert ep == _UdsEndpoint("relative.sock")
-
-    def test_leading_slash_is_uds(self) -> None:
-        ep = _parse_endpoint("/var/run/angzarr.sock")
-        assert ep == _UdsEndpoint("/var/run/angzarr.sock")
-
-
-# ---------------------------------------------------------------------------
-# OutputDomainProbe
-# ---------------------------------------------------------------------------
-
-
-class TestOutputDomainProbe:
-    async def test_tcp_check_succeeds_when_listener_bound(
-        self, unused_tcp_port
-    ) -> None:
-        async def handler(reader, writer):
-            writer.close()
-
-        server = await asyncio.start_server(handler, "127.0.0.1", unused_tcp_port)
-        try:
-            probe = OutputDomainProbe(
-                "downstream", _TcpEndpoint(f"127.0.0.1:{unused_tcp_port}")
-            )
-            assert probe.name == "downstream"
-            assert await probe.check() is True
-        finally:
-            server.close()
-            await server.wait_closed()
-
-    async def test_tcp_check_fails_when_nothing_listening(
-        self, unused_tcp_port
-    ) -> None:
-        # No listener bound — connect should fail fast.
-        probe = OutputDomainProbe(
-            "downstream", _TcpEndpoint(f"127.0.0.1:{unused_tcp_port}")
-        )
-        assert await probe.check() is False
-
-    async def test_tcp_check_fails_on_garbage_address(self) -> None:
-        probe = OutputDomainProbe("garbage", _TcpEndpoint("not-a-host:notaport"))
-        assert await probe.check() is False
-
-    async def test_uds_check_succeeds_when_socket_bound(self, tmp_path) -> None:
-        sock_path = str(tmp_path / "ready.sock")
-
-        async def handler(reader, writer):
-            writer.close()
-
-        server = await asyncio.start_unix_server(handler, sock_path)
-        try:
-            probe = OutputDomainProbe("uds-downstream", _UdsEndpoint(sock_path))
-            assert await probe.check() is True
-        finally:
-            server.close()
-            await server.wait_closed()
-
-    async def test_uds_check_fails_when_socket_missing(self, tmp_path) -> None:
-        probe = OutputDomainProbe(
-            "uds-downstream", _UdsEndpoint(str(tmp_path / "missing.sock"))
-        )
-        assert await probe.check() is False
-
-    def test_for_domain_distributed_mode_resolves_to_tcp(self, monkeypatch) -> None:
-        monkeypatch.setenv("ANGZARR_MODE", "distributed")
-        monkeypatch.delenv("ANGZARR_CH_PORT", raising=False)
-        probe = OutputDomainProbe.for_domain("inventory")
-        assert probe.name == "inventory"
-        assert isinstance(probe._endpoint, _TcpEndpoint)
-        # Distributed mode uses the same Kubernetes service-name format
-        # as the client (`ch-<domain>.angzarr.svc:<port>`).
-        assert "inventory" in probe._endpoint.addr
-        assert probe._endpoint.addr.endswith(":1310")
-
-    def test_for_domain_standalone_mode_resolves_to_uds(self, monkeypatch) -> None:
-        monkeypatch.setenv("ANGZARR_MODE", "standalone")
-        probe = OutputDomainProbe.for_domain("inventory")
-        assert isinstance(probe._endpoint, _UdsEndpoint)
-        assert probe._endpoint.path.endswith("ch-inventory.sock")
-
-
-# ---------------------------------------------------------------------------
-# BusProbe
-# ---------------------------------------------------------------------------
-
-
-class TestBusProbe:
-    def test_from_env_returns_none_when_unset(self, monkeypatch) -> None:
-        monkeypatch.delenv("ANGZARR_BUS_ENDPOINT", raising=False)
-        assert BusProbe.from_env() is None
-
-    def test_from_env_returns_none_when_blank(self, monkeypatch) -> None:
-        monkeypatch.setenv("ANGZARR_BUS_ENDPOINT", "")
-        assert BusProbe.from_env() is None
-
-    def test_from_env_parses_tcp(self, monkeypatch) -> None:
-        monkeypatch.setenv("ANGZARR_BUS_ENDPOINT", "kafka.bus.svc:9092")
-        probe = BusProbe.from_env()
-        assert probe is not None
-        assert probe.name == "bus"
-        assert isinstance(probe._endpoint, _TcpEndpoint)
-        assert probe._endpoint.addr == "kafka.bus.svc:9092"
-
-    def test_from_env_parses_uds(self, monkeypatch) -> None:
-        monkeypatch.setenv("ANGZARR_BUS_ENDPOINT", "unix:/var/run/bus.sock")
-        probe = BusProbe.from_env()
-        assert probe is not None
-        assert isinstance(probe._endpoint, _UdsEndpoint)
-        assert probe._endpoint.path == "/var/run/bus.sock"
-
-    async def test_tcp_check_succeeds_when_listener_bound(
-        self, unused_tcp_port
-    ) -> None:
-        async def handler(reader, writer):
-            writer.close()
-
-        server = await asyncio.start_server(handler, "127.0.0.1", unused_tcp_port)
-        try:
-            probe = BusProbe(_TcpEndpoint(f"127.0.0.1:{unused_tcp_port}"))
-            assert await probe.check() is True
-        finally:
-            server.close()
-            await server.wait_closed()
-
-    async def test_tcp_check_fails_when_nothing_listening(
-        self, unused_tcp_port
-    ) -> None:
-        probe = BusProbe(_TcpEndpoint(f"127.0.0.1:{unused_tcp_port}"))
-        assert await probe.check() is False
-
-    async def test_uds_check_succeeds_when_socket_bound(self, tmp_path) -> None:
-        sock_path = str(tmp_path / "bus.sock")
-
-        async def handler(reader, writer):
-            writer.close()
-
-        server = await asyncio.start_unix_server(handler, sock_path)
-        try:
-            probe = BusProbe(_UdsEndpoint(sock_path))
-            assert await probe.check() is True
-        finally:
-            server.close()
-            await server.wait_closed()
 
 
 # ---------------------------------------------------------------------------

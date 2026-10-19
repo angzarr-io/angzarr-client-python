@@ -24,7 +24,7 @@ component handles is acknowledged with an empty response.
 
 Health doubles as readiness: every served service (and the overall server,
 ``""``) reports ``NOT_SERVING`` until the readiness supervisor has seen the
-server listening (and the probes in ``readiness`` pass), and again once
+server listening, and again once
 shutdown begins; in-flight calls then complete within the grace period. A
 Unix-socket host removes its socket file on shutdown.
 
@@ -64,13 +64,7 @@ from .proto.io.angzarr.v1 import (
     upcaster_pb2,
     upcaster_pb2_grpc,
 )
-from .readiness import (
-    BusProbe,
-    OutputDomainProbe,
-    Probe,
-    TransportProbe,
-    TransportSignal,
-)
+from .readiness import Probe, TransportProbe, TransportSignal
 from .server import get_transport_config
 
 if TYPE_CHECKING:
@@ -330,11 +324,7 @@ class ComponentHost:
     ``router`` defaults to a new :class:`angzarr_client.router.Router`, which
     the host then closes on :meth:`stop`. ``max_workers`` bounds concurrent
     dispatches (router dispatch blocks on the native call and on handler
-    code). ``sync_output_domains`` names command targets whose coordinators
-    must be reachable before the host reports SERVING
-    (:class:`readiness.OutputDomainProbe`); when sagas or process managers
-    are registered and ``ANGZARR_BUS_ENDPOINT`` is set, the bus must be
-    reachable too. ``snapshot_every`` (default ``ANGZARR_SNAPSHOT_EVERY``)
+    code). ``snapshot_every`` (default ``ANGZARR_SNAPSHOT_EVERY``)
     asks for a routine snapshot of a single hosted aggregate whenever a
     command's events carry its stream across a multiple of that many events.
     """
@@ -344,7 +334,6 @@ class ComponentHost:
         router=None,
         *,
         max_workers: int = 16,
-        sync_output_domains: list[str] | None = None,
         snapshot_every: int | None = None,
         logger=None,
     ) -> None:
@@ -358,7 +347,6 @@ class ComponentHost:
             self._owns_router = False
         self.router = router
         self._max_workers = max_workers
-        self._sync_output_domains = list(sync_output_domains or [])
         self._log = logger if logger is not None else structlog.get_logger(__name__)
         self._aggregate_domains: list[str] = []
         self._kinds: set[str] = set()
@@ -587,11 +575,6 @@ class ComponentHost:
         signal_bound = TransportSignal()
         signal_bound.mark_bound()
         probes: list[Probe] = [TransportProbe(signal_bound)]
-        probes += [OutputDomainProbe.for_domain(d) for d in self._sync_output_domains]
-        if self._kinds & {SAGA_SERVICE, PROCESS_MANAGER_SERVICE}:
-            bus = BusProbe.from_env()
-            if bus is not None:
-                probes.append(bus)
         interval, timeout = readiness.probe_config_from_env()
         self._supervisor = asyncio.create_task(
             readiness.run_supervisor(
