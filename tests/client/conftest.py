@@ -8,19 +8,25 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import SCENARIO_IDS_ATTR
+
 PENDING = {
     "C-0336": "angzarr_client exposes no connect-timeout option on connect()",
     "C-0337": "angzarr_client exposes no keep-alive option on connect()",
-    "C-0572": "client-python has no batch helper (owner: do not invent one)",
-    "C-0573": "client-python has no batch helper (owner: do not invent one)",
-    "C-0574": "client-python has no batch helper (owner: do not invent one)",
 }
+
+
+def _scenario_ids(item) -> frozenset:
+    """The scenario ids (@C-NNNN) of the scenario ``item`` runs, recorded by
+    tests/conftest.py's pytest_bdd_apply_tag (they are not pytest marks)."""
+    return getattr(getattr(item, "function", None), SCENARIO_IDS_ATTR, frozenset())
 
 
 def pytest_collection_modifyitems(items):
     for item in items:
+        tags = _scenario_ids(item)
         for tag, reason in PENDING.items():
-            if item.get_closest_marker(tag) is not None:
+            if tag in tags:
                 item.add_marker(
                     pytest.mark.xfail(strict=True, reason=f"pending ({tag}): {reason}")
                 )

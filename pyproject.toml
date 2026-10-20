@@ -120,20 +120,16 @@ asyncio_mode = "auto"
 # fires while the main thread is blocked in a C-level wait).
 timeout = 120
 timeout_method = "thread"
-filterwarnings = [
-    # pytest-bdd converts each Gherkin tag into a pytest mark. Scenario IDs
-    # (@C-NNNN, @EU-NNNN, @EA-NNNN) collide with PytestUnknownMarkWarning.
-    "ignore:Unknown pytest.mark.C-:pytest.PytestUnknownMarkWarning",
-    "ignore:Unknown pytest.mark.EU-:pytest.PytestUnknownMarkWarning",
-    "ignore:Unknown pytest.mark.EA-:pytest.PytestUnknownMarkWarning",
-]
 # The spec's category tags on the bound features (pytest-bdd turns each
-# Gherkin tag into a mark), registered so pytest knows them.
+# Gherkin tag into a mark), registered so pytest knows them. Scenario-id
+# tags (@C-NNNN, @EU-NNNN, @EA-NNNN) are not turned into marks at all
+# (tests/conftest.py, pytest_bdd_apply_tag).
 markers = [
     "commutative: handling.feature, COMMUTATIVE conflict resolution",
     "conflict_nonce: handling.feature, the AGGREGATE_HANDLES conflict nonce",
     "describe: handling.feature, describing the process (ComponentService.Describe)",
     "rules_version: handling.feature, the build version on answers and descriptions",
+    "saga: handling.feature, a saga's one destination",
     "snapshot_source: handling.feature, the state answered on every response",
     "upcasting: handling.feature, command and fact upcasting",
 ]
