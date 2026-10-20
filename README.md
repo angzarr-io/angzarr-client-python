@@ -74,11 +74,12 @@ Implement the stub and host it:
 
 ```python
 from angzarr_client import ComponentHost, configure_logging
+from myapp._version import __version__  # versionator output emit python > myapp/_version.py
 from myapp.gen.my.v1.thing_aggregate_angzarr import new_thing_aggregate_dispatch
 from myapp.thing_aggregate_angzarr_handler import ThingAggregate
 
 configure_logging()
-host = ComponentHost()
+host = ComponentHost(rules_version=__version__)
 host.add_aggregate(new_thing_aggregate_dispatch(ThingAggregate()))
 # An application's own gRPC service, served and health-reported alongside:
 # host.add_service(add_MyQueryServiceServicer_to_server, MyQueryServicer(), "my.v1.MyQueryService")
@@ -86,7 +87,10 @@ host.run()   # binds the transport the environment selects; stops on SIGTERM / S
 ```
 
 `add_saga`, `add_process_manager`, `add_projector` and `add_upcaster` serve the
-other kinds. The transport comes from the environment: `TRANSPORT_TYPE=tcp`
+other kinds. `rules_version` is the binary's full build version: every hosted
+component reports it on every answer, and the host refuses to start without
+it. The host always serves `ComponentService.Describe`, which the coordinator
+calls to learn the components it hosts. The transport comes from the environment: `TRANSPORT_TYPE=tcp`
 (default; `ANGZARR_BIND_ADDRESS`, else `[::]:$PORT`) or `TRANSPORT_TYPE=uds`
 (`$UDS_BASE_PATH/$SERVICE_NAME[-<qualifier>].sock`, removed on shutdown).
 Health reports `NOT_SERVING` until the server listens, and again once shutdown
@@ -105,21 +109,32 @@ response = (
     client.command_handler
     .command("my-domain", root)
     .with_command("/my.v1.DoSomething", do_something)
+    .with_expected_sequence(seen_next_sequence)   # optional Handling
     .execute()
 )
 events = client.query.query("my-domain", root).get_event_book()
+workflow = client.get_correlated_events(correlation_id)
 ```
+
+A command is sent in one of three modes, named after the coordinator RPCs:
+`execute_async()` / `handle_async()` (HandleAsync: returns once accepted,
+answers nothing), `execute()` / `handle()` (Handle: the decision) and
+`execute_sync()` / `handle_sync()` (HandleSync: the decision plus the
+synchronous projectors in `response.outcome`). A stale expected sequence fails
+with an error whose `is_aborted()` is true.
 
 Type URLs are `"/"` + the message's fully-qualified name (`TYPE_URL_PREFIX`);
 any prefix is accepted on input, matching by the name after the last `/`.
 `compute_root(domain, key)` derives an aggregate root as
-`uuid5(NAMESPACE_OID, f"{domain}:{key}")`.
+`uuid5(ANGZARR_ROOT_NAMESPACE, f"{domain}:{key}")`, refusing a domain that
+contains `:`.
 
 ## Development
 
 Submodules: `angzarr-project` (the spec: protos and feature files) and
 `angzarr-router` (the router at a pinned revision: the cdylib source, its ABI
-protos and the conformance suite). Initialise both without `--recursive`.
+protos and the conformance suite). Initialise them with `--recursive`: the
+router builds its wire types from its own angzarr-project submodule.
 
 | recipe | does |
 |---|---|

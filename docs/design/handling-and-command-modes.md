@@ -1,7 +1,12 @@
 # Proposal: conflict handling, the build version, and command modes
 
-**Status:** proposed, not implemented. Awaiting owner sign-off, to be
-reviewed alongside the client-rust equivalent.
+**Status:** implemented, with the owner's sign-off rulings applied. Command
+modes are one method per RPC (`handle_async` / `handle` / `handle_sync` and
+`execute_async` / `execute` / `execute_sync`), not a `CommandMode` enum; the
+registration hello is pulled by the coordinator through
+`ComponentService.Describe`, which the host serves. The sections below are
+the original proposal; where they disagree with these rulings, the rulings
+win.
 
 **Spec:** angzarr-project `spec/20261019-draft` (619933c).
 
