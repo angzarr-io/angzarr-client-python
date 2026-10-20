@@ -101,6 +101,24 @@ def state() -> _State:
 # ---------------------------------------------------------------------------
 
 
+@given("an EventPage read from the event store")
+def _given_stored_page(state: _State) -> None:
+    state.current_event = _make_event_page()
+
+
+@then("event.payload should be a google.protobuf.Any")
+def _then_payload_is_any(state: _State) -> None:
+    assert state.current_event.HasField("payload")
+    assert isinstance(state.current_event.payload, ProtoAny)
+
+
+@then("the page should offer no payload reference")
+def _then_no_payload_reference(state: _State) -> None:
+    fields = {f.name for f in EventPage.DESCRIPTOR.fields}
+    assert not any("reference" in name for name in fields), fields
+    assert state.current_event.payload.DESCRIPTOR.full_name == "google.protobuf.Any"
+
+
 @given(parsers.parse('an event with type_url "{type_url}"'))
 def _given_event_with_type_url(state: _State, type_url: str) -> None:
     state.current_event = _make_event_page(type_url=type_url)

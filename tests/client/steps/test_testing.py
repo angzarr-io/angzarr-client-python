@@ -84,6 +84,11 @@ def _given_derived_root(state: _State, name: str) -> None:
     state.derived_root = uuid_for(name)
 
 
+@when(parsers.parse('I call make_cover with domain "{domain}"'))
+def _when_make_cover(state: _State, domain: str) -> None:
+    state.cover = make_cover(domain, state.derived_root)
+
+
 @then(parsers.parse('the cover\'s domain is "{domain}"'))
 def _then_cover_domain(state: _State, domain: str) -> None:
     assert state.cover is not None

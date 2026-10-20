@@ -17,7 +17,12 @@ from google.protobuf.message import Message
 from google.protobuf.wrappers_pb2 import StringValue
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client._pb import CommandBook, CommandResponse, EventBook
+from angzarr_client._pb import (
+    CommandBook,
+    CommandResponse,
+    ConflictResolution,
+    EventBook,
+)
 from angzarr_client.builder import CommandBuilder
 from angzarr_client.client import CommandHandlerClient
 from angzarr_client.error_codes import codes
@@ -184,7 +189,7 @@ def _when_set_payload(state: _World) -> None:
     state.build()
 
 
-@when(parsers.parse("I set sequence to {seq:d}"))
+@when(parsers.parse("I set the expected sequence to {seq:d}"))
 def _when_set_sequence(state: _World, seq: int) -> None:
     state.recipe.expected_sequence = seq
 
@@ -300,13 +305,69 @@ def _then_auto_root_is_valid_uuid(state: _World) -> None:
     ), f"command_new must produce UUID v4, got {parsed.version}"
 
 
-@then(parsers.parse("the built command should have sequence {seq:d}"))
+@then(parsers.parse("the built command should have expected sequence {seq:d}"))
 def _then_sequence(state: _World, seq: int) -> None:
-    # Only an explicitly set expected sequence is sent (Handling): an unset
-    # one is stamped by the coordinator, never defaulted here.
     handling = state.book().handling
     assert handling.HasField("expected_sequence"), "no expected sequence was sent"
     assert handling.expected_sequence == seq
+
+
+@then("the built command should have no expected sequence")
+def _then_no_sequence(state: _World) -> None:
+    # The coordinator stamps the head it decides against: nothing is sent.
+    assert not state.book().handling.HasField("expected_sequence")
+
+
+@when("I build a command using fluent chaining:")
+def _when_fluent_chain(state: _World) -> None:
+    assert state.client is not None
+    state.recipe = _Recipe(
+        domain="orders",
+        root=uuid.uuid4(),
+        correlation_id="trace-456",
+        command=(full_type_url(CreateOrder), _create_order()),
+        expected_sequence=3,
+    )
+    state.build()
+
+
+@then("all chained values should be preserved")
+def _then_chained_values(state: _World) -> None:
+    book = state.book()
+    r = state.recipe
+    assert book.cover.domain == r.domain
+    assert bytes(book.cover.root.value) == r.root.bytes
+    assert bytes(book.page.correlation_id.value) == correlation_for("trace-456").bytes
+    assert book.handling.expected_sequence == 3
+    assert book.page.command.payload.type_url == r.command[0]
+
+
+@when("I build a command without specifying a conflict resolution")
+def _when_build_no_resolution(state: _World) -> None:
+    state.client = state.client or CommandHandlerClient.from_stub(state.stub)
+    state.recipe = _Recipe(
+        domain="orders",
+        root=uuid.uuid4(),
+        command=(full_type_url(CreateOrder), _create_order()),
+    )
+    state.build()
+
+
+@when(parsers.parse("I build a command with conflict resolution {name}"))
+def _when_build_with_resolution(state: _World, name: str) -> None:
+    _when_build_no_resolution(state)
+    state.built = (
+        _apply(state.client, state.recipe)
+        .with_conflict_resolution(
+            ConflictResolution.Value(f"CONFLICT_RESOLUTION_{name}")
+        )
+        .build()
+    )
+
+
+@then(parsers.parse("the command's handling should have conflict resolution {name}"))
+def _then_resolution(state: _World, name: str) -> None:
+    assert state.book().handling.conflict_resolution == ConflictResolution.Value(name)
 
 
 @then(parsers.parse('the built command should have type URL containing "{needle}"'))

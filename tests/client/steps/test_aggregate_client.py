@@ -238,14 +238,14 @@ def _add_item(state: _World) -> CommandBuilder:
     )
 
 
-@when("I send a command without waiting for downstream work")
+@when("I send a command with handle_async")
 def _when_send_async(state: _World) -> None:
-    state.result = _add_item(state).execute_async()
+    state.result = state.client.handle_async(_add_item(state).build())
 
 
-@when("I send a command and wait for projectors")
+@when("I send a command with handle_sync")
 def _when_send_sync(state: _World) -> None:
-    state.result = _add_item(state).execute_sync()
+    state.result = state.client.handle_sync(_add_item(state).build())
 
 
 @when("I send a command with a malformed payload")
@@ -306,9 +306,13 @@ def _when_send_named_for_root(state: _World, name: str, root: str, seq: int) -> 
 # ---------------------------------------------------------------------------
 
 
+@then("the call returns without the command's events")
+def _then_returns_without_events(state: _World) -> None:
+    assert state.result is None, "handle_async answers nothing"
+
+
 @then("the response returns before any projectors have caught up")
 def _then_returns_before_projectors(state: _World) -> None:
-    assert state.result is None, "a fire-and-forget send answers nothing"
     assert state.backend.projector_runs == [], "a projector ran before the answer"
     assert state.backend.stored_pages(cover(state.domain, str(state.root))) == []
     state.backend.drain()
