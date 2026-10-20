@@ -70,13 +70,9 @@ HANDLER_FIELD_EMPTY_LIST = "HANDLER_FIELD_EMPTY_LIST"
 HANDLER_STATE_NOT_TYPE = "HANDLER_STATE_NOT_TYPE"
 HANDLER_UNKNOWN_KIND = "HANDLER_UNKNOWN_KIND"
 ROUTER_NO_HANDLERS = "ROUTER_NO_HANDLERS"
-# Audit #62: a Router was built with two ``@command_handler``s
-# claiming the same ``(domain, type_url)`` pair.
-DUPLICATE_COMMAND_HANDLER = "DUPLICATE_COMMAND_HANDLER"
-# Audit #72: a Router was built with handlers of different kinds
-# (e.g., a ``@command_handler`` and a ``@saga`` registered together).
-MIXED_HANDLER_KINDS = "MIXED_HANDLER_KINDS"
 
 # Component host
 HANDLER_PANICKED = "HANDLER_PANICKED"
 NO_COMPONENTS_REGISTERED = "NO_COMPONENTS_REGISTERED"
+# A host serves exactly one component; a second registration is refused.
+DUPLICATE_REGISTRATION = "DUPLICATE_REGISTRATION"

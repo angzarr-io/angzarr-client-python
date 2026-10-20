@@ -1,27 +1,28 @@
-"""ComponentHost: serves components registered with the router binding over
-gRPC, next to the gRPC health service.
+"""ComponentHost: serves the one component registered with the router
+binding over gRPC, next to the gRPC health service.
 
-The host knows framework concepts only. An application registers its
-components (generated ``new_<component>_dispatch(handler)`` tables, or
-hand-built ones) and, optionally, its own gRPC services; the host exposes
-the coordinator-facing framework services for the kinds registered:
+One business process hosts exactly one component (an aggregate, saga,
+process manager or projector) for its one coordinator; a second registration
+is refused (``DUPLICATE_REGISTRATION``). The host knows framework concepts
+only. An application registers its component (a generated
+``new_<component>_dispatch(handler)`` table, or a hand-built one) and,
+optionally, an upcaster and its own gRPC services; the host exposes:
 
-- ``ComponentService`` (always): Describe, answered from the router's
-  descriptors of every hosted component. The coordinator pulls it; the host
-  never calls its coordinator. Every component carries the binary's build
-  version, given once as ``ComponentHost(rules_version=...)``;
-- ``CommandHandlerService`` (aggregates): Handle, for commands and facts
-  alike (the page's body arm picks the pipeline);
-- ``SagaService`` / ``ProcessManagerService``: Handle;
-- ``ProjectorService``: Handle;
+- ``ComponentService``: Describe, answered from the router's descriptor of
+  the component. The coordinator pulls it; the host never calls its
+  coordinator. The component carries the binary's build version, given as
+  ``ComponentHost(rules_version=...)``;
+- the component's kind service: ``CommandHandlerService`` (an aggregate:
+  Handle, for commands and facts alike), ``SagaService``,
+  ``ProcessManagerService`` or ``ProjectorService`` (Handle);
 - ``UpcasterService``: Upcast, over an application upcaster.
 
 Dispatch is the router's. A coded failure from the router travels as its
 gRPC status: the status message is the error's message, and the
 ``grpc-status-details-bin`` trailer carries a ``google.rpc.Status`` whose
 ``ErrorInfo.reason`` is the error code. Saga and process-manager
-coordinators deliver every event of their source domains, so an event no
-component handles is acknowledged with an empty response.
+coordinators deliver every event of their source domains, so an event the
+component does not handle is acknowledged with an empty response.
 
 Health doubles as readiness: every served service (and the overall server,
 ``""``) reports ``NOT_SERVING`` until the readiness supervisor has seen the
@@ -259,17 +260,16 @@ class _RecordingHealth(health_aio.HealthServicer):
 
 
 class ComponentHost:
-    """Serves the components registered on a router over gRPC.
+    """Serves the one component registered on a router over gRPC.
 
     ``router`` defaults to a new :class:`angzarr_client.router.Router`, which
     the host then closes on :meth:`stop`. ``max_workers`` bounds concurrent
     dispatches (router dispatch blocks on the native call and on handler
     code). ``rules_version`` is the business binary's full build version
     (``__version__`` from the module ``versionator output emit python``
-    writes): it is stamped on every hosted table that has none of its own,
-    so every answer and every component's description carry it, and the
-    host refuses to start while any hosted component lacks one
-    (MISSING_RULES_VERSION).
+    writes): it is stamped on the hosted table unless it declares its own,
+    so every answer and the component's description carry it, and the host
+    refuses to start while the component lacks one (MISSING_RULES_VERSION).
     """
 
     def __init__(
@@ -291,7 +291,8 @@ class ComponentHost:
         self.rules_version = rules_version
         self._max_workers = max_workers
         self._log = logger if logger is not None else structlog.get_logger(__name__)
-        self._kinds: set[str] = set()
+        # The one component's kind service, once registered.
+        self._kind: str | None = None
         self._upcaster: Upcaster | None = None
         self._app_services: list[_Service] = []
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -308,27 +309,40 @@ class ComponentHost:
 
     def add_aggregate(self, dispatch) -> ComponentHost:
         """Register an aggregate's dispatch table; serves CommandHandlerService."""
+        self._claim(COMMAND_HANDLER_SERVICE)
         self.router.register_aggregate(self._versioned(dispatch))
-        self._kinds.add(COMMAND_HANDLER_SERVICE)
+        self._kind = COMMAND_HANDLER_SERVICE
         return self
 
     def add_saga(self, dispatch) -> ComponentHost:
         """Register a saga's dispatch table; serves SagaService."""
+        self._claim(SAGA_SERVICE)
         self.router.register_saga(self._versioned(dispatch))
-        self._kinds.add(SAGA_SERVICE)
+        self._kind = SAGA_SERVICE
         return self
 
     def add_process_manager(self, dispatch) -> ComponentHost:
         """Register a process manager's dispatch table; serves ProcessManagerService."""
+        self._claim(PROCESS_MANAGER_SERVICE)
         self.router.register_process_manager(self._versioned(dispatch))
-        self._kinds.add(PROCESS_MANAGER_SERVICE)
+        self._kind = PROCESS_MANAGER_SERVICE
         return self
 
     def add_projector(self, dispatch) -> ComponentHost:
         """Register a projector's dispatch table; serves ProjectorService."""
+        self._claim(PROJECTOR_SERVICE)
         self.router.register_projector(self._versioned(dispatch))
-        self._kinds.add(PROJECTOR_SERVICE)
+        self._kind = PROJECTOR_SERVICE
         return self
+
+    def _claim(self, service: str) -> None:
+        """Refuse a second component: a host serves exactly one."""
+        if self._kind is not None:
+            raise ConfigurationError(
+                messages.DUPLICATE_REGISTRATION,
+                code=codes.DUPLICATE_REGISTRATION,
+                details={"registered": self._kind, "refused": service},
+            )
 
     def _versioned(self, dispatch):
         """``dispatch`` with the host's build version, unless it declares
@@ -340,7 +354,6 @@ class ComponentHost:
     def add_upcaster(self, upcaster: Upcaster) -> ComponentHost:
         """Serve UpcasterService over ``upcaster``."""
         self._upcaster = upcaster
-        self._kinds.add(UPCASTER_SERVICE)
         return self
 
     def add_service(
@@ -360,8 +373,12 @@ class ComponentHost:
     @property
     def services(self) -> list[str]:
         """The full names of every service the host serves (health excepted)."""
-        kinds = self._kinds | ({COMPONENT_SERVICE} if self._kinds else set())
-        framework = [name for name in FRAMEWORK_SERVICES if name in kinds]
+        served = set()
+        if self._kind is not None:
+            served |= {COMPONENT_SERVICE, self._kind}
+        if self._upcaster is not None:
+            served.add(UPCASTER_SERVICE)
+        framework = [name for name in FRAMEWORK_SERVICES if name in served]
         return framework + [s.name for s in self._app_services]
 
     # --- lifecycle -----------------------------------------------------
@@ -371,7 +388,7 @@ class ComponentHost:
         to the transport the environment selects
         (:func:`angzarr_client.server.get_transport_config`); a TCP port of 0
         binds a free port, reflected in the returned address."""
-        if not self._kinds - {UPCASTER_SERVICE}:
+        if self._kind is None:
             raise ConfigurationError(
                 f"{codes.NO_COMPONENTS_REGISTERED}: {messages.NO_COMPONENTS_REGISTERED}"
             )
@@ -491,24 +508,24 @@ class ComponentHost:
         component_pb2_grpc.add_ComponentServiceServicer_to_server(
             _ComponentServicer(router, dispatcher), server
         )
-        if COMMAND_HANDLER_SERVICE in self._kinds:
+        if self._kind == COMMAND_HANDLER_SERVICE:
             command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server(
                 _CommandHandlerServicer(router, dispatcher),
                 server,
             )
-        if SAGA_SERVICE in self._kinds:
+        if self._kind == SAGA_SERVICE:
             saga_pb2_grpc.add_SagaServiceServicer_to_server(
                 _SagaServicer(router, dispatcher), server
             )
-        if PROCESS_MANAGER_SERVICE in self._kinds:
+        if self._kind == PROCESS_MANAGER_SERVICE:
             process_manager_pb2_grpc.add_ProcessManagerServiceServicer_to_server(
                 _ProcessManagerServicer(router, dispatcher), server
             )
-        if PROJECTOR_SERVICE in self._kinds:
+        if self._kind == PROJECTOR_SERVICE:
             projector_pb2_grpc.add_ProjectorServiceServicer_to_server(
                 _ProjectorServicer(router, dispatcher), server
             )
-        if UPCASTER_SERVICE in self._kinds:
+        if self._upcaster is not None:
             upcaster_pb2_grpc.add_UpcasterServiceServicer_to_server(
                 _UpcasterServicer(self._upcaster, dispatcher), server
             )

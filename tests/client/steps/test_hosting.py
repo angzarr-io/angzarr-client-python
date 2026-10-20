@@ -105,10 +105,9 @@ def _command(domain: str, text: str) -> types_pb2.ContextualCommand:
     return cc
 
 
-def _new_host(world: _World, domains: list[str], block: bool = False) -> ComponentHost:
+def _new_host(world: _World, domain: str, block: bool = False) -> ComponentHost:
     world.host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    for domain in domains:
-        world.host.add_aggregate(_aggregate(world, domain, block=block))
+    world.host.add_aggregate(_aggregate(world, domain, block=block))
     return world.host
 
 
@@ -141,16 +140,7 @@ def _socket_for(world: _World, feature_path: str) -> pathlib.Path:
     )
 )
 def _host_one(world: _World, domain: str) -> None:
-    _new_host(world, [domain])
-
-
-@given(
-    parsers.parse(
-        'a component host with aggregate components for domains "{first}" and "{second}" registered'
-    )
-)
-def _host_two(world: _World, first: str, second: str) -> None:
-    _new_host(world, [first, second])
+    _new_host(world, domain)
 
 
 @given("a component host with no components registered")
@@ -164,7 +154,7 @@ def _host_none(world: _World) -> None:
     )
 )
 def _host_started(world: _World, domain: str) -> None:
-    _new_host(world, [domain], block=True)
+    _new_host(world, domain, block=True)
     world.address = world.host.start(
         None if os.environ.get("TRANSPORT_TYPE") else "127.0.0.1:0"
     )

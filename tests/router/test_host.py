@@ -305,30 +305,66 @@ def test_an_unexpected_exception_is_internal_handler_panicked(started):
 # --- services, health and lifecycle ------------------------------------------
 
 
-def test_services_are_the_registered_kinds_then_application_services():
+def test_services_are_the_component_then_its_kind_then_application_services():
     host = _counter_host()
-    host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
-    host.add_process_manager(
-        order_process_manager_angzarr.new_order_process_manager_dispatch(
-            OrderProcessManager()
-        )
-    )
-    host.add_projector(
-        counter_projector_angzarr.new_counter_projector_dispatch(CounterProjector())
-    )
     host.add_upcaster(PassThroughUpcaster())
     host.add_service(lambda s, server: None, object(), "app.ReportService")
     assert host.services == [
         COMPONENT_SERVICE,
         COMMAND_HANDLER_SERVICE,
-        SAGA_SERVICE,
-        PROCESS_MANAGER_SERVICE,
-        PROJECTOR_SERVICE,
         UPCASTER_SERVICE,
         "app.ReportService",
     ]
     assert COMMAND_HANDLER_SERVICE == "io.angzarr.v1.CommandHandlerService"
     host.stop()
+
+
+@pytest.mark.parametrize(
+    ("kind", "service"),
+    [
+        ("aggregate", COMMAND_HANDLER_SERVICE),
+        ("saga", SAGA_SERVICE),
+        ("process_manager", PROCESS_MANAGER_SERVICE),
+        ("projector", PROJECTOR_SERVICE),
+    ],
+)
+def test_a_host_serves_its_one_component_kind(kind, service):
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
+    getattr(host, f"add_{kind}")(_TABLES[kind]())
+    try:
+        assert host.services == [COMPONENT_SERVICE, service]
+    finally:
+        host.stop()
+
+
+_TABLES = {
+    "aggregate": lambda: counter_aggregate_angzarr.new_counter_aggregate_dispatch(
+        CounterAggregate()
+    ),
+    "saga": lambda: order_saga_angzarr.new_order_saga_dispatch(OrderSaga()),
+    "process_manager": lambda: (
+        order_process_manager_angzarr.new_order_process_manager_dispatch(
+            OrderProcessManager()
+        )
+    ),
+    "projector": lambda: counter_projector_angzarr.new_counter_projector_dispatch(
+        CounterProjector()
+    ),
+}
+
+
+@pytest.mark.parametrize("first", sorted(_TABLES))
+@pytest.mark.parametrize("second", sorted(_TABLES))
+def test_a_second_component_of_any_kind_is_refused(first, second):
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
+    getattr(host, f"add_{first}")(_TABLES[first]())
+    try:
+        with pytest.raises(ConfigurationError) as exc:
+            getattr(host, f"add_{second}")(_TABLES[second]())
+        assert exc.value.code == codes.DUPLICATE_REGISTRATION
+        assert host.services[1:] == host.services[1:2], "nothing more is served"
+    finally:
+        host.stop()
 
 
 def test_every_served_service_reports_serving_after_not_serving(started):
