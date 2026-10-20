@@ -474,12 +474,14 @@ SagaContextThunk = Callable[[any_pb2.Any, PageContext], list]
 @dataclass
 class SagaDispatch:
     """One saga component's registration: name, the input domain it consumes,
-    the domains it issues commands to (its declared output domains), and event
-    handlers. A saga is stateless — no rebuilder, no state."""
+    its one destination (``output_domain``, the domain every command it emits
+    is for), and event handlers. A saga is stateless — no rebuilder, no
+    state. A command for any other domain fails the saga's answer INTERNAL
+    (SAGA_COMMAND_OUTSIDE_DESTINATION)."""
 
     name: str
     input_domain: str
-    targets: list[str] = field(default_factory=list)
+    output_domain: str
     events: dict[str, SagaEventThunk] = field(default_factory=dict)
     rules_version: str = ""
 
@@ -1045,7 +1047,7 @@ class Router:
             desc = abi_pb2.SagaDescriptor(
                 name=dispatch.name,
                 input_domain=dispatch.input_domain,
-                target_domains=dispatch.targets,
+                output_domain=dispatch.output_domain,
                 rules_version=dispatch.rules_version,
             )
             for fq, thunk in dispatch.events.items():

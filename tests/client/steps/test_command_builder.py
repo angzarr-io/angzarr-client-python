@@ -194,7 +194,7 @@ def _when_set_sequence(state: _World, seq: int) -> None:
     state.recipe.expected_sequence = seq
 
 
-@when(parsers.parse('I build one command for domain "{domain}" outside a batch'))
+@when(parsers.parse('I build one command for domain "{domain}"'))
 def _when_build_one(state: _World, domain: str) -> None:
     state.client = state.client or CommandHandlerClient.from_stub(state.stub)
     state.recipe = _Recipe(

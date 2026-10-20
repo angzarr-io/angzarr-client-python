@@ -22,7 +22,8 @@ class {{ $c.name }}Handler(Protocol):
 {{- if eq $c.kind "SAGA" }}
 
 def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.SagaDispatch:
-    dispatch = _az.SagaDispatch({{ quote $c.name }}, {{ quote $c.input_domain }}, targets=[{{ include "py.domains" $c.output_domains }}])
+{{- if ne (len $c.output_domains) 1 }}{{ fail (printf "saga %s must declare exactly one output domain" $c.name) }}{{ end }}
+    dispatch = _az.SagaDispatch({{ quote $c.name }}, {{ quote $c.input_domain }}, {{ quote (index $c.output_domains 0) }})
 {{- range $c.handlers }}
     def _on_{{ snake .method }}(event_any, source):
         event = {{ typeRef .message }}()

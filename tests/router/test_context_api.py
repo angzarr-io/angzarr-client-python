@@ -269,7 +269,7 @@ def test_saga_handler_reaches_the_source_cover_through_the_accessor():
         seen.append((source_cover.root.value, current_cover().root.value))
         return []
 
-    saga = SagaDispatch("order-saga", "order").on_event(
+    saga = SagaDispatch("order-saga", "order", "inventory").on_event(
         builders.FQ_INCREASED, translate
     )
     source = types_pb2.EventBook()
@@ -296,7 +296,7 @@ def test_saga_handlers_read_the_source_cover_and_sequence_by_argument_and_access
         return []
 
     saga = (
-        SagaDispatch("order-saga", "order")
+        SagaDispatch("order-saga", "order", "inventory")
         .on_event_with_context(builders.FQ_INCREASED, translate_rich)
         .on_event("test.counter.Reserve", translate_plain)
     )

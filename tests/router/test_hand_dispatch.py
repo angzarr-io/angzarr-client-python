@@ -82,21 +82,35 @@ def test_saga_handler_sees_the_source_cover_and_commands_pass_through():
 
     def translate(event, source_cover):
         seen.append(source_cover.domain)
-        return [_reserve_to("inventory"), _reserve_to("billing")]
+        return [_reserve_to("inventory"), _reserve_to("inventory")]
 
-    saga = SagaDispatch("order-saga", "order", targets=["inventory", "billing"])
+    saga = SagaDispatch("order-saga", "order", "inventory")
     saga.on_event(builders.FQ_INCREASED, translate)
     with Router() as router:
         router.register_saga(saga)
         resp = router.dispatch_saga(_saga_source(7))
 
     assert seen == ["order"]
-    assert list(resp.commands) == [_reserve_to("inventory"), _reserve_to("billing")]
+    assert list(resp.commands) == [_reserve_to("inventory")] * 2
+
+
+def test_a_saga_command_outside_its_destination_fails_internal():
+    saga = SagaDispatch("order-saga", "order", "inventory").on_event(
+        builders.FQ_INCREASED,
+        lambda _e, _c: [_reserve_to("inventory"), _reserve_to("billing")],
+    )
+    with Router() as router:
+        router.register_saga(saga)
+        with pytest.raises(CodedError) as exc:
+            router.dispatch_saga(_saga_source(7))
+
+    assert exc.value.code == "SAGA_COMMAND_OUTSIDE_DESTINATION"
+    assert exc.value.grpc == GrpcCode.INTERNAL
 
 
 def test_no_registration_has_a_rejection_or_compensation_api():
     tables = (
-        SagaDispatch("s", "order"),
+        SagaDispatch("s", "order", "inventory"),
         _counter_dispatch(),
         ProcessManagerDispatch("p", "p", Rebuilder(factory=counter_pb2.CounterState)),
     )

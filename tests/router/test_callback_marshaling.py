@@ -174,7 +174,7 @@ def test_saga_receives_the_exact_event_and_its_commands_are_kept():
         seen.append((event.type_url, event.value, source_cover.root.value))
         return [_reserve()]
 
-    saga = SagaDispatch("order-saga", "order").on_event(
+    saga = SagaDispatch("order-saga", "order", "inventory").on_event(
         builders.FQ_INCREASED, translate
     )
     with Router() as router:
@@ -192,9 +192,9 @@ def test_saga_context_handler_sees_the_triggering_sequence():
         seen.append(source.sequence)
         return []
 
-    saga = SagaDispatch(
-        "order-saga", "order", targets=["inventory"]
-    ).on_event_with_context(builders.FQ_INCREASED, translate)
+    saga = SagaDispatch("order-saga", "order", "inventory").on_event_with_context(
+        builders.FQ_INCREASED, translate
+    )
     with Router() as router:
         router.register_saga(saga)
         router.dispatch_saga(_saga_source())
@@ -204,7 +204,7 @@ def test_saga_context_handler_sees_the_triggering_sequence():
 
 @pytest.mark.parametrize("nothing", [[], None])
 def test_a_saga_emitting_nothing_returns_an_empty_response(nothing):
-    saga = SagaDispatch("order-saga", "order").on_event(
+    saga = SagaDispatch("order-saga", "order", "inventory").on_event(
         builders.FQ_INCREASED, lambda _e, _c: nothing
     )
     with Router() as router:
@@ -437,7 +437,7 @@ def _hosted(kind: str):
         table = AggregateDispatch("Ledger", "ledger", _counting_rebuilder())
         return table.on_command(builders.FQ_INCREASE_BY, _noop), "register_aggregate"
     if kind == "saga":
-        return SagaDispatch("OrderSaga", "order", ["inventory"]), "register_saga"
+        return SagaDispatch("OrderSaga", "order", "inventory"), "register_saga"
     if kind == "process_manager":
         pm = ProcessManagerDispatch("Reserving", "reserving-pm", _counting_rebuilder())
         pm.on_event("counter", builders.FQ_INCREASED, lambda _e, _s: None)
