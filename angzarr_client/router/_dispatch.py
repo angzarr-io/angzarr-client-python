@@ -160,15 +160,53 @@ class FactRecord:
         )
 
 
+class Conflict:
+    """A stale command's conflict under AGGREGATE_HANDLES (types.proto,
+    ContextualCommand.conflict_nonce): the window of events the command did
+    not see, and the nonce delivered with it. The handler settles the window
+    by calling :meth:`resolve_conflicts` with exactly that nonce before it
+    returns; otherwise the router discards its output and the command fails
+    CONFLICT_UNRESOLVED (ABORTED)."""
+
+    __slots__ = ("_resolved", "nonce", "window")
+
+    def __init__(self, window: list, nonce: bytes):
+        self.window = list(window)
+        self.nonce = bytes(nonce)
+        self._resolved: bytes | None = None
+
+    def resolve_conflicts(self, window, nonce: bytes) -> None:
+        """Declare the window settled (the spec's
+        ``resolve_conflicts(window, nonce)``). Only ``nonce`` is checked, by
+        the router: it must be the delivered one."""
+        del window
+        self._resolved = bytes(nonce)
+
+    @property
+    def resolved_nonce(self) -> bytes:
+        """The nonce the handler resolved with; empty when it did not."""
+        return self._resolved or b""
+
+    def __repr__(self) -> str:
+        return f"Conflict(window={len(self.window)} pages, nonce={self.nonce!r})"
+
+
 @dataclass
 class CommandContext:
-    """The historical-state evidence a handler sees, and the cover it is
-    handling. ``cover`` is the command's cover: the aggregate's own domain
-    and root, None when the command carried none."""
+    """The historical-state evidence a handler sees, the cover it is
+    handling, and the command's resolved Handling. ``cover`` is the
+    command's cover: the aggregate's own domain and root, None when the
+    command carried none. ``expected_sequence`` and ``conflict_resolution``
+    are the resolved ``Handling`` (types.proto); ``conflict`` is set only
+    under AGGREGATE_HANDLES (under STRICT there is no window, and under
+    COMMUTATIVE the router settles it)."""
 
     next_sequence: int = 0
     had_prior_events: bool = False
     cover: types_pb2.Cover | None = None
+    expected_sequence: int = 0
+    conflict_resolution: int = types_pb2.CONFLICT_RESOLUTION_UNSPECIFIED
+    conflict: Conflict | None = None
 
 
 @dataclass(frozen=True)
@@ -231,10 +269,16 @@ def current_cover() -> types_pb2.Cover:
 
 def _command_context(cax) -> CommandContext:
     """The CommandContext a CommandContextAux stands for."""
+    conflict = None
+    if cax.conflict_resolution == types_pb2.CONFLICT_RESOLUTION_AGGREGATE_HANDLES:
+        conflict = Conflict(cax.window, cax.conflict_nonce)
     return CommandContext(
         next_sequence=cax.next_sequence,
         had_prior_events=cax.had_prior_events,
         cover=_cover_of(cax, "cover"),
+        expected_sequence=cax.expected_sequence,
+        conflict_resolution=cax.conflict_resolution,
+        conflict=conflict,
     )
 
 
@@ -251,6 +295,9 @@ ApplierContextThunk = Callable[[object, any_pb2.Any, PageContext], None]
 CommandThunk = Callable[[any_pb2.Any, object, CommandContext], object | None]
 FactThunk = Callable[[any_pb2.Any, object], "FactRecord"]
 UpcasterThunk = Callable[[any_pb2.Any], object | None]
+#   changed:   (before, after) -> list[str]             (the conflict units
+#                                                         whose values differ)
+ChangedThunk = Callable[[object, object], list]
 
 
 def _state_type(factory: Callable[[], object], component: str) -> str:
@@ -308,6 +355,7 @@ class AggregateDispatch:
     facts: dict[str, FactThunk] = field(default_factory=dict)
     upcasters: dict[str, UpcasterThunk] = field(default_factory=dict)
     rules_version: str = ""
+    changed: ChangedThunk | None = None
 
     def on_command(self, full_name: str, thunk: CommandThunk) -> AggregateDispatch:
         """Register a handler for one fully-qualified command type."""
@@ -334,6 +382,15 @@ class AggregateDispatch:
         source type at registration (a second claim of one type in its domain
         is DUPLICATE_COMMAND_HANDLER)."""
         self.upcasters[source_type] = thunk
+        return self
+
+    def with_commutative(self, changed: ChangedThunk) -> AggregateDispatch:
+        """Turn on COMMUTATIVE conflict resolution (options.proto, the
+        conflict_units region): ``changed(before, after)`` receives two
+        decoded states and returns the conflict-unit paths whose values
+        differ. The router runs the resolver and the overlap rule; the
+        registration hello then lists COMMUTATIVE."""
+        self.changed = changed
         return self
 
     def with_rules_version(self, version: str) -> AggregateDispatch:
@@ -626,9 +683,13 @@ def _command_invoker(factory, thunk: CommandThunk) -> Invoker:
         state = _decode_state(factory, cax.state)
         with _handling(PageContext(cover=cctx.cover)):
             book = thunk(any_pb2.Any(type_url=type_url, value=payload), state, cctx)
-        if book is None:
+        resolved = cctx.conflict.resolved_nonce if cctx.conflict else b""
+        if book is None and not resolved:
             return None, _STATUS_OK_EMPTY
-        return abi_pb2.CommandOutput(events=book).SerializeToString(), _STATUS_OK
+        output = abi_pb2.CommandOutput(resolved_nonce=resolved)
+        if book is not None:
+            output.events.CopyFrom(book)
+        return output.SerializeToString(), _STATUS_OK
 
     return inv
 
@@ -646,6 +707,18 @@ def _fact_invoker(factory, thunk: FactThunk) -> Invoker:
                 f"fact handler for {type_url!r} returned {type(record).__name__}, not a FactRecord"
             )
         return record.to_abi().SerializeToString(), _STATUS_OK
+
+    return inv
+
+
+def _changed_invoker(factory, changed: ChangedThunk) -> Invoker:
+    def inv(_type_url, payload, _aux):
+        call = abi_pb2.ChangedCall()
+        call.ParseFromString(payload)
+        before = _decode_state(factory, call.before)
+        after = _decode_state(factory, call.after)
+        units = abi_pb2.ChangedUnits(units=list(changed(before, after)))
+        return units.SerializeToString(), _STATUS_OK
 
     return inv
 
@@ -869,6 +942,10 @@ class Router:
             for fq, thunk in dispatch.facts.items():
                 cid = self._assign(_fact_invoker(factory, thunk))
                 desc.facts.append(abi_pb2.CallbackEntry(fq_type=fq, callback_id=cid))
+            if dispatch.changed is not None:
+                desc.changed_callback_id = self._assign(
+                    _changed_invoker(factory, dispatch.changed)
+                )
             for fq, thunk in dispatch.upcasters.items():
                 cid = self._assign(_upcaster_invoker(thunk))
                 desc.command_upcasters.append(

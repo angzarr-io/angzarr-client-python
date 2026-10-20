@@ -1,10 +1,7 @@
-"""Item-4 proposal, handler side (docs/design/handling-and-command-modes.md):
-the conflict handling and rules-version surface the spec requires of
-aggregate authors, written as tests before the API exists.
-
-Every test here is a strict xfail until the owner signs the proposal off:
-each fails today because the proposed symbol is missing, and an XPASS fails
-the run, so implementing a symbol forces its marker off. Symbols mirror the
+"""Conflict handling for aggregate authors (docs/design/handling-and-command-modes.md):
+the resolved Handling a handler sees, AGGREGATE_HANDLES settled through
+``Conflict.resolve_conflicts(window, nonce)`` and COMMUTATIVE through
+``AggregateDispatch.with_commutative(changed)``. Symbols mirror the
 spec's names (types.proto Handling / ConflictResolution, decision 12.7's
 ``resolve_conflicts(window, nonce)``, options.proto's ``changed``) and the
 router core's Rust API (``CommandContext.{expected_sequence,
@@ -30,11 +27,6 @@ from angzarr_client.router import (
     Rebuilder,
     Router,
     pack,
-)
-
-PENDING = pytest.mark.xfail(
-    strict=True,
-    reason="item-4 proposal (handler conflict API) pending owner sign-off",
 )
 
 _ADD_ITEM = "google.protobuf.Value"
@@ -106,7 +98,6 @@ def _dispatch(dispatch: AggregateDispatch, cc):
 # --- the resolved Handling reaches business code ---
 
 
-@PENDING
 def test_c0541_under_strict_business_code_sees_the_handling_and_no_conflict():
     seen = []
 
@@ -128,7 +119,6 @@ def test_c0541_under_strict_business_code_sees_the_handling_and_no_conflict():
 # --- AGGREGATE_HANDLES: resolve_conflicts(window, nonce) ---
 
 
-@PENDING
 def test_c0542_settling_the_window_with_the_delivered_nonce_is_accepted():
     seen = []
 
@@ -150,7 +140,6 @@ def test_c0542_settling_the_window_with_the_delivered_nonce_is_accepted():
     assert len(resp.events.pages) == 1
 
 
-@PENDING
 def test_c0544_settling_with_a_made_up_nonce_fails_as_stale():
     def handle(cmd, state, cctx):
         cctx.conflict.resolve_conflicts(cctx.conflict.window, b"made-up")
@@ -168,7 +157,6 @@ def test_c0544_settling_with_a_made_up_nonce_fails_as_stale():
     assert (exc.value.code, exc.value.grpc) == ("CONFLICT_UNRESOLVED", GrpcCode.ABORTED)
 
 
-@PENDING
 def test_c0545_an_empty_window_still_has_to_be_settled():
     seen = []
 
@@ -188,10 +176,24 @@ def test_c0545_an_empty_window_still_has_to_be_settled():
     assert seen == [[]]
 
 
+def test_settling_the_window_and_emitting_nothing_is_accepted():
+    def handle(cmd, state, cctx):
+        cctx.conflict.resolve_conflicts(cctx.conflict.window, cctx.conflict.nonce)
+
+    cc = _command(
+        "apple",
+        ["pear"],
+        resolution=_STRATEGY.CONFLICT_RESOLUTION_AGGREGATE_HANDLES,
+        expected=0,
+    )
+    resp = _dispatch(_order(handle), cc)
+
+    assert len(resp.events.pages) == 0
+
+
 # --- COMMUTATIVE: with_commutative(changed) ---
 
 
-@PENDING
 def test_c0546_a_stale_command_changing_other_units_than_the_window_is_kept():
     seen = []
 
@@ -211,7 +213,6 @@ def test_c0546_a_stale_command_changing_other_units_than_the_window_is_kept():
     assert seen == [None]
 
 
-@PENDING
 def test_c0547_a_stale_command_changing_a_unit_the_window_changed_fails_as_stale():
     cc = _command(
         "pear",
@@ -225,7 +226,6 @@ def test_c0547_a_stale_command_changing_a_unit_the_window_changed_fails_as_stale
     assert (exc.value.code, exc.value.grpc) == ("CONFLICT_OVERLAP", GrpcCode.ABORTED)
 
 
-@PENDING
 def test_c0549_business_code_decides_on_the_head_window_included():
     seen = []
 
@@ -244,7 +244,6 @@ def test_c0549_business_code_decides_on_the_head_window_included():
     assert seen == [["pear", "plum"]]
 
 
-@PENDING
 def test_commutative_is_announced_in_the_registration_hello():
     with Router() as router:
         router.register_aggregate(
