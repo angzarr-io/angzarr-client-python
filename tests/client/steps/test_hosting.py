@@ -143,7 +143,17 @@ def _host_one(world: _World, domain: str) -> None:
     _new_host(world, domain)
 
 
-@given("a component host with no components registered")
+@given(
+    parsers.parse(
+        'a second component, an aggregate for domain "{domain}", registered on the '
+        "same host"
+    )
+)
+def _second_component(world: _World, domain: str) -> None:
+    world.host.add_aggregate(_aggregate(world, domain))
+
+
+@given("a component host with no component registered")
 def _host_none(world: _World) -> None:
     world.host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
 
@@ -278,8 +288,8 @@ def _listens(world: _World, transport: str, address: str) -> None:
 
 
 @then(
-    "the overall server's health status is SERVING only after every registered "
-    "component's service is listening"
+    "the overall server's health status is SERVING only after the component's "
+    "service is listening"
 )
 def _serving_after_listening(world: _World) -> None:
     assert (
@@ -326,6 +336,22 @@ def _app_served(world: _World, name: str) -> None:
     call = world.channel().unary_unary(f"/{REPORT_SERVICE}/Report")
     assert call(b"x", timeout=5) == b"report:x"
     _ch_served(world)
+
+
+@then("starting fails with a configuration error naming both components")
+def _config_error_naming_both(world: _World) -> None:
+    assert isinstance(world.start_error, ConfigurationError)
+    assert world.start_error.code == "DUPLICATE_REGISTRATION"
+    assert world.start_error.details == {
+        "registered": "order-component",
+        "refused": "payment-component",
+    }
+
+
+@then("no service is served")
+def _nothing_served(world: _World) -> None:
+    assert world.address == ""
+    assert world.host.health_status() is None
 
 
 @then("starting fails with a configuration error")

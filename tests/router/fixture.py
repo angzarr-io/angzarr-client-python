@@ -95,26 +95,6 @@ class OrderProcessManager:
         state.count += 1
 
 
-# --- AuditProcessManager ---
-
-
-class AuditProcessManager:
-    """Implements audit_process_manager_angzarr.AuditProcessManagerHandler.
-    Co-resident with the order PM over the same "counter" Increased trigger,
-    but over its own state type: it reacts with one unaddressed process event
-    recording what its rebuilt state saw, and no commands."""
-
-    def increased(self, event, state, trigger_cover):
-        resp = process_manager_pb2.ProcessManagerHandleResponse()
-        resp.process_events.append(
-            process_event(counter_pb2.AuditProcessManagerState(seen=state.seen))
-        )
-        return resp
-
-    def apply_increased(self, state, event, ctx) -> None:
-        state.seen.append("Increased")
-
-
 def reserve_command():
     """One Reserve command for "inventory", payload only."""
     cmd = types_pb2.CommandBook()

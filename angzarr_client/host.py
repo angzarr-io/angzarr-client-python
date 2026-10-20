@@ -3,7 +3,8 @@ binding over gRPC, next to the gRPC health service.
 
 One business process hosts exactly one component (an aggregate, saga,
 process manager or projector) for its one coordinator; a second registration
-is refused (``DUPLICATE_REGISTRATION``). The host knows framework concepts
+is not hosted, and the host refuses to start, naming both
+(``DUPLICATE_REGISTRATION``). The host knows framework concepts
 only. An application registers its component (a generated
 ``new_<component>_dispatch(handler)`` table, or a hand-built one) and,
 optionally, an upcaster and its own gRPC services; the host exposes:
@@ -65,7 +66,6 @@ from .proto.io.angzarr.v1 import (
     projector_pb2_grpc,
     saga_pb2,
     saga_pb2_grpc,
-    types_pb2,
     upcaster_pb2,
     upcaster_pb2_grpc,
 )
@@ -190,9 +190,7 @@ class _ComponentServicer(component_pb2_grpc.ComponentServiceServicer):
         self._dispatcher = dispatcher
 
     def _describe(self, _request):
-        return types_pb2.ComponentDescriptors(
-            components=self._router.component_descriptors()
-        )
+        return self._router.component_descriptor()
 
     async def Describe(self, request, context):
         return await self._dispatcher.call(context, self._describe, request)
@@ -293,6 +291,10 @@ class ComponentHost:
         self._log = logger if logger is not None else structlog.get_logger(__name__)
         # The one component's kind service, once registered.
         self._kind: str | None = None
+        self._component_name: str | None = None
+        # Components registered after the first: never hosted; start()
+        # refuses while any is.
+        self._refused: list[str] = []
         self._upcaster: Upcaster | None = None
         self._app_services: list[_Service] = []
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -309,40 +311,42 @@ class ComponentHost:
 
     def add_aggregate(self, dispatch) -> ComponentHost:
         """Register an aggregate's dispatch table; serves CommandHandlerService."""
-        self._claim(COMMAND_HANDLER_SERVICE)
-        self.router.register_aggregate(self._versioned(dispatch))
-        self._kind = COMMAND_HANDLER_SERVICE
+        if self._claim(dispatch):
+            self.router.register_aggregate(self._versioned(dispatch))
+            self._kind = COMMAND_HANDLER_SERVICE
         return self
 
     def add_saga(self, dispatch) -> ComponentHost:
         """Register a saga's dispatch table; serves SagaService."""
-        self._claim(SAGA_SERVICE)
-        self.router.register_saga(self._versioned(dispatch))
-        self._kind = SAGA_SERVICE
+        if self._claim(dispatch):
+            self.router.register_saga(self._versioned(dispatch))
+            self._kind = SAGA_SERVICE
         return self
 
     def add_process_manager(self, dispatch) -> ComponentHost:
         """Register a process manager's dispatch table; serves ProcessManagerService."""
-        self._claim(PROCESS_MANAGER_SERVICE)
-        self.router.register_process_manager(self._versioned(dispatch))
-        self._kind = PROCESS_MANAGER_SERVICE
+        if self._claim(dispatch):
+            self.router.register_process_manager(self._versioned(dispatch))
+            self._kind = PROCESS_MANAGER_SERVICE
         return self
 
     def add_projector(self, dispatch) -> ComponentHost:
         """Register a projector's dispatch table; serves ProjectorService."""
-        self._claim(PROJECTOR_SERVICE)
-        self.router.register_projector(self._versioned(dispatch))
-        self._kind = PROJECTOR_SERVICE
+        if self._claim(dispatch):
+            self.router.register_projector(self._versioned(dispatch))
+            self._kind = PROJECTOR_SERVICE
         return self
 
-    def _claim(self, service: str) -> None:
-        """Refuse a second component: a host serves exactly one."""
-        if self._kind is not None:
-            raise ConfigurationError(
-                messages.DUPLICATE_REGISTRATION,
-                code=codes.DUPLICATE_REGISTRATION,
-                details={"registered": self._kind, "refused": service},
-            )
+    def _claim(self, dispatch) -> bool:
+        """Whether ``dispatch`` is the host's one component. A second is not
+        hosted: it is remembered, and :meth:`start` refuses, naming both
+        (a host serves exactly one component)."""
+        name = getattr(dispatch, "name", "")
+        if self._component_name is None:
+            self._component_name = name
+            return True
+        self._refused.append(name)
+        return False
 
     def _versioned(self, dispatch):
         """``dispatch`` with the host's build version, unless it declares
@@ -352,7 +356,11 @@ class ComponentHost:
         return dispatch
 
     def add_upcaster(self, upcaster: Upcaster) -> ComponentHost:
-        """Serve UpcasterService over ``upcaster``."""
+        """Serve UpcasterService over ``upcaster``, beside the hosted
+        component: an upcaster is part of its component, and the component's
+        coordinator calls its own business process's UpcasterService. It is
+        never a component on its own: a host with an upcaster and no
+        component refuses to start (NO_COMPONENTS_REGISTERED)."""
         self._upcaster = upcaster
         return self
 
@@ -391,6 +399,15 @@ class ComponentHost:
         if self._kind is None:
             raise ConfigurationError(
                 f"{codes.NO_COMPONENTS_REGISTERED}: {messages.NO_COMPONENTS_REGISTERED}"
+            )
+        if self._refused:
+            raise ConfigurationError(
+                messages.DUPLICATE_REGISTRATION,
+                code=codes.DUPLICATE_REGISTRATION,
+                details={
+                    "registered": self._component_name,
+                    "refused": ", ".join(self._refused),
+                },
             )
         if self._thread is not None:
             raise ConfigurationError("the host is already started")
@@ -472,7 +489,7 @@ class ComponentHost:
         from .router import CodedError
 
         try:
-            self.router.component_descriptors()
+            self.router.component_descriptor()
         except CodedError as exc:
             raise ConfigurationError(f"{exc.code}: {exc.message}") from exc
 

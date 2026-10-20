@@ -194,6 +194,17 @@ def _when_set_sequence(state: _World, seq: int) -> None:
     state.recipe.expected_sequence = seq
 
 
+@when(parsers.parse('I build one command for domain "{domain}" outside a batch'))
+def _when_build_one(state: _World, domain: str) -> None:
+    state.client = state.client or CommandHandlerClient.from_stub(state.stub)
+    state.recipe = _Recipe(
+        domain=domain,
+        root=uuid.uuid4(),
+        command=(full_type_url(CreateOrder), _create_order()),
+    )
+    state.build()
+
+
 @when("I set the command type and payload")
 def _when_set_type_and_payload(state: _World) -> None:
     state.recipe.command = (TEST_COMMAND_URL, _test_command())

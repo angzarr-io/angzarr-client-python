@@ -129,6 +129,8 @@ filterwarnings = [
     # Category tags on merge_strategy.feature.
     "ignore:Unknown pytest.mark.merge_:pytest.PytestUnknownMarkWarning",
     "ignore:Unknown pytest.mark.edge_case:pytest.PytestUnknownMarkWarning",
+    # Category tags on the handler-contract tier (handling.feature).
+    "ignore:Unknown pytest.mark.describe:pytest.PytestUnknownMarkWarning",
 ]
 
 [tool.mutmut]

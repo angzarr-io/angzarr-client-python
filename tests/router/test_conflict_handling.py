@@ -249,7 +249,7 @@ def test_commutative_is_announced_in_the_registration_hello():
         router.register_aggregate(
             _order().with_commutative(_changed).with_rules_version("1.4.2")
         )
-        (hello,) = router.component_descriptors()
+        hello = router.component_descriptor()
 
     assert list(hello.state.options.conflict_resolutions) == [
         _STRATEGY.CONFLICT_RESOLUTION_COMMUTATIVE,

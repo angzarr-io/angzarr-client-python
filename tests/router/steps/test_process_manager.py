@@ -13,9 +13,8 @@ from angzarr_client.proto.io.angzarr.v1 import process_manager_pb2, types_pb2
 from angzarr_client.router import CodedError, Router
 
 from ..builders import FQ_INCREASED, type_url
-from ..fixture import AuditProcessManager, OrderProcessManager, recorded_states
+from ..fixture import OrderProcessManager, recorded_states
 from ..gen.test.counter import (
-    audit_process_manager_angzarr,
     counter_pb2,
     order_process_manager_angzarr,
 )
@@ -39,14 +38,6 @@ class _World:
         return [
             s.count
             for s in recorded_states(self.resp, counter_pb2.OrderProcessManagerState)
-        ]
-
-    def audit_counts(self) -> list[int]:
-        """How many events each reacting audit PM's rebuilt state saw."""
-        assert self.err is None, f"dispatch failed: {self.err}"
-        return [
-            len(s.seen)
-            for s in recorded_states(self.resp, counter_pb2.AuditProcessManagerState)
         ]
 
     def dispatch(self, request) -> None:
@@ -82,12 +73,9 @@ def _trigger(domain: str, fqs: list[str], state=None, newest_seq: int | None = N
     return req
 
 
-def _state_of(n: int, owner: str | None = None):
-    """A process-state book of n Increased events; ``owner`` sets its cover
-    domain (the PM the state belongs to)."""
+def _state_of(n: int):
+    """A process-state book of n Increased events."""
     book = types_pb2.EventBook()
-    if owner is not None:
-        book.cover.domain = owner
     for _ in range(n):
         book.pages.add().payload.type_url = type_url(FQ_INCREASED)
     return book
@@ -97,16 +85,6 @@ def _state_of(n: int, owner: str | None = None):
 def _an_order_pm(world):
     order_process_manager_angzarr.register_order_process_manager(
         world.router, OrderProcessManager()
-    )
-
-
-@given("co-resident order and audit process-managers")
-def _co_resident_pms(world):
-    order_process_manager_angzarr.register_order_process_manager(
-        world.router, OrderProcessManager()
-    )
-    audit_process_manager_angzarr.register_audit_process_manager(
-        world.router, AuditProcessManager()
     )
 
 
@@ -138,15 +116,6 @@ def _increased_over_state(world, n):
     world.dispatch(_trigger("counter", [FQ_INCREASED], state=_state_of(int(n))))
 
 
-@when(
-    parsers.re(
-        r'an Increased trigger is dispatched over a prior "(?P<owner>[^"]*)" state of (?P<n>\d+) events'
-    )
-)
-def _increased_over_owned_state(world, owner, n):
-    world.dispatch(_trigger("counter", [FQ_INCREASED], state=_state_of(int(n), owner)))
-
-
 @when("a request with no trigger is dispatched")
 def _no_trigger(world):
     world.dispatch(process_manager_pb2.ProcessManagerHandleRequest())
@@ -175,22 +144,6 @@ def _emits_no_commands(world):
 @then(parsers.re(r"the process-manager rebuilt (?P<n>\d+) prior state events"))
 def _rebuilt_n(world, n):
     assert world.order_counts() == [int(n)]
-
-
-@then(parsers.re(r"the order process-manager rebuilt (?P<n>\d+) prior state events"))
-def _order_rebuilt_n(world, n):
-    assert world.order_counts() == [int(n)]
-
-
-@then(parsers.re(r"the audit process-manager rebuilt (?P<n>\d+) prior state events"))
-def _audit_rebuilt_n(world, n):
-    assert world.audit_counts() == [int(n)]
-
-
-@then("the order process-manager did not react")
-def _order_did_not_react(world):
-    assert world.order_counts() == []
-    assert len(world.resp.commands) == 0
 
 
 @then("the command carries no router-stamped provenance")

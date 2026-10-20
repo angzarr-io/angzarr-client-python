@@ -53,7 +53,7 @@ ffi.cdef("""
     int32_t  angzarr_router_dispatch_process_manager(void* r,
                  const uint8_t* request, size_t request_len,
                  angzarr_buf* out);
-    int32_t  angzarr_router_component_descriptors(void* r, angzarr_buf* out);
+    int32_t  angzarr_router_component_descriptor(void* r, angzarr_buf* out);
     """)
 
 

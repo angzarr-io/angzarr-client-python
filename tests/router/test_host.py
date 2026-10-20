@@ -355,14 +355,24 @@ _TABLES = {
 
 @pytest.mark.parametrize("first", sorted(_TABLES))
 @pytest.mark.parametrize("second", sorted(_TABLES))
-def test_a_second_component_of_any_kind_is_refused(first, second):
+def test_a_host_given_a_second_component_refuses_to_start(first, second):
+    # C-0579: the second component is not hosted, and start() refuses,
+    # naming both, before anything is served.
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    getattr(host, f"add_{first}")(_TABLES[first]())
+    first_table, second_table = _TABLES[first](), _TABLES[second]()
+    getattr(host, f"add_{first}")(first_table)
+    getattr(host, f"add_{second}")(second_table)
     try:
+        assert host.router.component_descriptor().name == first_table.name
         with pytest.raises(ConfigurationError) as exc:
-            getattr(host, f"add_{second}")(_TABLES[second]())
+            host.start("127.0.0.1:0")
         assert exc.value.code == codes.DUPLICATE_REGISTRATION
-        assert host.services[1:] == host.services[1:2], "nothing more is served"
+        assert exc.value.details == {
+            "registered": first_table.name,
+            "refused": second_table.name,
+        }
+        assert host.address == ""
+        assert host.health_status() is None
     finally:
         host.stop()
 

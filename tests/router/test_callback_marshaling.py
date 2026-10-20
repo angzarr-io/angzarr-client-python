@@ -419,53 +419,81 @@ def test_the_rules_version_is_reported_on_every_response():
     )
     with Router() as router:
         router.register_aggregate(dispatch)
-        router.register_process_manager(pm)
         resp = router.dispatch(_ledger_command())
+    with Router() as router:
+        router.register_process_manager(pm)
         pm_resp = router.dispatch_process_manager(_pm_trigger())
 
     assert resp.rules_version == "1.4.2+build.7"
     assert pm_resp.rules_version == "1.4.2+build.7"
 
 
-def test_the_hellos_carry_every_component_in_registration_order():
-    aggregate = (
-        AggregateDispatch("Ledger", "ledger", _counting_rebuilder())
-        .on_command(builders.FQ_INCREASE_BY, _noop)
-        .with_rules_version("2.0.0")
-    )
-    saga = SagaDispatch("OrderSaga", "order", ["inventory"]).with_rules_version("2.0.0")
-    pm = ProcessManagerDispatch(
-        "Reserving", "reserving-pm", _counting_rebuilder()
-    ).with_rules_version("2.0.0")
-    pm.on_event("counter", builders.FQ_INCREASED, lambda _e, _s: None)
-    projector = (
-        ProjectorDispatch("Tracker", counter_pb2.CounterProjectorState)
-        .for_domains("counter")
-        .with_rules_version("2.0.0")
-    )
-    with Router() as router:
-        router.register_aggregate(aggregate)
-        router.register_saga(saga)
-        router.register_process_manager(pm)
-        router.register_projector(projector)
-        hellos = router.component_descriptors()
+_KINDS = types_pb2.ComponentKind
 
-    kinds = types_pb2.ComponentKind
-    assert [(h.name, h.kind, [t.domain for t in h.inputs]) for h in hellos] == [
-        ("Ledger", kinds.COMPONENT_KIND_AGGREGATE, []),
-        ("OrderSaga", kinds.COMPONENT_KIND_SAGA, ["order"]),
-        ("Reserving", kinds.COMPONENT_KIND_PROCESS_MANAGER, ["counter"]),
-        ("Tracker", kinds.COMPONENT_KIND_PROJECTOR, ["counter"]),
-    ]
-    assert {h.rules_version for h in hellos} == {"2.0.0"}
-    assert [h.state.type_url for h in hellos] == [
-        "/test.counter.CounterState",
-        "",
-        "/test.counter.CounterState",
-        "",
-    ]
+
+def _hosted(kind: str):
+    """One component of ``kind``, registered alone (one per router)."""
+    if kind == "aggregate":
+        table = AggregateDispatch("Ledger", "ledger", _counting_rebuilder())
+        return table.on_command(builders.FQ_INCREASE_BY, _noop), "register_aggregate"
+    if kind == "saga":
+        return SagaDispatch("OrderSaga", "order", ["inventory"]), "register_saga"
+    if kind == "process_manager":
+        pm = ProcessManagerDispatch("Reserving", "reserving-pm", _counting_rebuilder())
+        pm.on_event("counter", builders.FQ_INCREASED, lambda _e, _s: None)
+        return pm, "register_process_manager"
+    projector = ProjectorDispatch("Tracker", counter_pb2.CounterProjectorState)
+    return projector.for_domains("counter"), "register_projector"
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        (
+            "aggregate",
+            (
+                "Ledger",
+                _KINDS.COMPONENT_KIND_AGGREGATE,
+                [],
+                "/test.counter.CounterState",
+            ),
+        ),
+        ("saga", ("OrderSaga", _KINDS.COMPONENT_KIND_SAGA, ["order"], "")),
+        (
+            "process_manager",
+            (
+                "Reserving",
+                _KINDS.COMPONENT_KIND_PROCESS_MANAGER,
+                ["counter"],
+                "/test.counter.CounterState",
+            ),
+        ),
+        ("projector", ("Tracker", _KINDS.COMPONENT_KIND_PROJECTOR, ["counter"], "")),
+    ],
+)
+def test_the_router_describes_its_one_component(kind, expected):
+    table, register = _hosted(kind)
+    with Router() as router:
+        getattr(router, register)(table.with_rules_version("2.0.0"))
+        hello = router.component_descriptor()
+
+    assert (
+        hello.name,
+        hello.kind,
+        [t.domain for t in hello.inputs],
+        hello.state.type_url,
+    ) == expected
+    assert hello.rules_version == "2.0.0"
+
+
+def test_an_aggregate_describes_its_conflict_resolutions():
+    table, _ = _hosted("aggregate")
+    with Router() as router:
+        router.register_aggregate(table.with_rules_version("2.0.0"))
+        hello = router.component_descriptor()
+
     resolutions = types_pb2.ConflictResolution
-    assert list(hellos[0].state.options.conflict_resolutions) == [
+    assert list(hello.state.options.conflict_resolutions) == [
         resolutions.CONFLICT_RESOLUTION_STRICT,
         resolutions.CONFLICT_RESOLUTION_AGGREGATE_HANDLES,
     ]
@@ -477,16 +505,11 @@ def test_a_hello_without_a_rules_version_is_refused_naming_the_component():
             AggregateDispatch("Ledger", "ledger", _counting_rebuilder())
         )
         with pytest.raises(CodedError) as exc:
-            router.component_descriptors()
+            router.component_descriptor()
 
     assert exc.value.code == "MISSING_RULES_VERSION"
     assert exc.value.grpc == GrpcCode.INVALID_ARGUMENT
     assert exc.value.extras["component"] == "Ledger"
-
-
-def test_a_router_with_nothing_registered_has_no_hellos():
-    with Router() as router:
-        assert router.component_descriptors() == []
 
 
 # --- command upcasting ---
@@ -552,20 +575,6 @@ def test_an_upcaster_returning_none_leaves_the_payload_unchanged():
             router.dispatch(cc)
 
     assert exc.value.extras["upcast_type_url"] == "/test.counter.FailHard"
-
-
-def test_an_upcaster_source_type_claimed_twice_is_refused():
-    def ledger(name, source):
-        return AggregateDispatch(
-            name, "ledger", _counting_rebuilder()
-        ).with_command_upcaster(source, lambda old: old)
-
-    with Router() as router:
-        router.register_aggregate(ledger("Ledger", builders.FQ_FAIL_HARD))
-        with pytest.raises(CodedError) as exc:
-            router.register_aggregate(ledger("Shadow", builders.FQ_FAIL_HARD))
-
-    assert exc.value.grpc == GrpcCode.INVALID_ARGUMENT
 
 
 # --- conflict resolution across the ABI ---
@@ -693,16 +702,17 @@ def test_a_second_projector_is_refused_with_invalid_argument():
     assert exc.value.grpc == GrpcCode.INVALID_ARGUMENT
 
 
-def test_a_second_claim_of_a_command_type_is_refused_with_invalid_argument():
-    def ledger(name):
-        return AggregateDispatch(
-            name, "ledger", Rebuilder(factory=counter_pb2.CounterState)
-        ).on_command(builders.FQ_INCREASE_BY, _noop)
-
+@pytest.mark.parametrize("first", ["aggregate", "saga", "process_manager", "projector"])
+@pytest.mark.parametrize("second", ["aggregate", "saga", "process_manager"])
+def test_a_second_component_of_any_kind_is_refused(first, second):
+    # One router hosts one component; a second registration of any kind is
+    # refused (a second projector: the test above).
     with Router() as router:
-        router.register_aggregate(ledger("Ledger"))
+        table, register = _hosted(first)
+        getattr(router, register)(table)
+        table, register = _hosted(second)
         with pytest.raises(CodedError) as exc:
-            router.register_aggregate(ledger("Shadow"))
+            getattr(router, register)(table)
 
     assert exc.value.grpc == GrpcCode.INVALID_ARGUMENT
 
@@ -808,3 +818,19 @@ def test_c0571_a_pm_answer_carries_its_state_after_the_reaction(writes):
     expected = 3 if writes else 2
     assert resp.process_state.state == pack(counter_pb2.CounterState(count=expected))
     assert all(not book.HasField("snapshot") for book in resp.process_events)
+
+
+def test_a_refused_second_component_names_the_first_and_drops_its_callbacks():
+    from angzarr_client.router import _dispatch
+
+    with Router() as router:
+        table, register = _hosted("aggregate")
+        getattr(router, register)(table)
+        held = set(_dispatch._CALLBACKS)
+        table, register = _hosted("process_manager")
+        with pytest.raises(CodedError) as exc:
+            getattr(router, register)(table)
+        assert set(_dispatch._CALLBACKS) == held
+
+    assert exc.value.code == "DUPLICATE_REGISTRATION"
+    assert exc.value.extras == {"component": "Ledger", "kind": "aggregate"}

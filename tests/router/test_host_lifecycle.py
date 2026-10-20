@@ -83,8 +83,8 @@ class _ScriptedRouter:
     def close(self) -> None:
         pass
 
-    def component_descriptors(self) -> list:
-        return []
+    def component_descriptor(self):
+        return None
 
     def dispatch(self, request):
         return self._run("dispatch", request)

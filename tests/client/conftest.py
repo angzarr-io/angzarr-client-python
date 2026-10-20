@@ -11,8 +11,9 @@ import pytest
 PENDING = {
     "C-0336": "angzarr_client exposes no connect-timeout option on connect()",
     "C-0337": "angzarr_client exposes no keep-alive option on connect()",
-    "C-0498": "a host serves exactly one component (owner ruling); the spec "
-    "is deleting this scenario",
+    "C-0572": "client-python has no batch helper (owner: do not invent one)",
+    "C-0573": "client-python has no batch helper (owner: do not invent one)",
+    "C-0574": "client-python has no batch helper (owner: do not invent one)",
 }
 
 

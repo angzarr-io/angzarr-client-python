@@ -86,8 +86,10 @@ host.add_aggregate(new_thing_aggregate_dispatch(ThingAggregate()))
 host.run()   # binds the transport the environment selects; stops on SIGTERM / SIGINT
 ```
 
-`add_saga`, `add_process_manager`, `add_projector` and `add_upcaster` serve the
-other kinds. `rules_version` is the binary's full build version: every hosted
+A host serves exactly ONE component (one business process is one component):
+`add_saga`, `add_process_manager` or `add_projector` instead of
+`add_aggregate`, and `add_upcaster` beside it (an upcaster is part of its
+component). A host given a second component refuses to start. `rules_version` is the binary's full build version: every hosted
 component reports it on every answer, and the host refuses to start without
 it. The host always serves `ComponentService.Describe`, which the coordinator
 calls to learn the components it hosts. The transport comes from the environment: `TRANSPORT_TYPE=tcp`

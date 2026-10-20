@@ -82,7 +82,7 @@ def test_c0535_describing_the_process_announces_the_same_build_version(
 ):
     answer = _describe(started(_aggregate_host(rules_version=BUILD_VERSION)))
 
-    (described,) = answer.components
+    described = answer
     assert described.name == "CounterAggregate"
     assert described.kind == types_pb2.ComponentKind.COMPONENT_KIND_AGGREGATE
     assert described.rules_version == BUILD_VERSION
@@ -92,7 +92,7 @@ def test_c0535_describing_the_process_announces_the_same_build_version(
 def test_a_saga_host_describes_its_saga(started):  # noqa: F811
     host = ComponentHost(Router(), rules_version=BUILD_VERSION)
     host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
-    (described,) = _describe(started(host)).components
+    described = _describe(started(host))
 
     assert (described.name, described.kind, described.state.type_url) == (
         "OrderSaga",
@@ -117,7 +117,7 @@ def test_a_table_with_its_own_version_keeps_it(started):  # noqa: F811
             CounterAggregate()
         ).with_rules_version("9.9.9")
     )
-    (described,) = _describe(started(host)).components
+    described = _describe(started(host))
     assert described.rules_version == "9.9.9"
 
 

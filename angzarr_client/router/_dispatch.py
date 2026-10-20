@@ -50,6 +50,10 @@ CODE_UNHANDLED_HANDLER_ERROR = "UNHANDLED_HANDLER_ERROR"
 # (distinct from the io.angzarr proto package — see plan §1).
 ERROR_INFO_DOMAIN = "angzarr.io"
 
+# The code a second component's registration is refused with (one router
+# hosts one component).
+CODE_DUPLICATE_REGISTRATION = "DUPLICATE_REGISTRATION"
+
 # The code AnyDecodeError carries.
 CODE_ANY_DECODE_FAILED = "ANY_DECODE_FAILED"
 
@@ -773,8 +777,10 @@ def _pm_event_invoker(factory, thunk: PMEventThunk) -> Invoker:
 # --- the callback table and the single cffi callback trampoline ---
 
 # Every registered invoker, keyed by the callback id its registration
-# assigned. Ids are unique across routers: the callback carries no session,
-# so the id alone selects the invoker.
+# assigned. A router hosts one component, but a process may hold several
+# Router objects at once (one closed and another opened, or several in
+# tests); the C callback carries no session, so the table is module-wide and
+# ids are unique across routers: the id alone selects the invoker.
 _CALLBACKS: dict[int, Invoker] = {}
 _CALLBACK_IDS = itertools.count(1)
 
@@ -871,14 +877,17 @@ def _consume_out(out) -> bytes:
 
 
 class Router:
-    """Wraps the Rust core router and the callbacks its registrations
-    assigned. Registration is not safe for concurrent use; concurrent
-    dispatch is — every callback is stateless and the router owns all
+    """Wraps the Rust core router hosting ONE component (an aggregate, saga,
+    process manager or projector, with its upcasters) and the callbacks its
+    registration assigned. Registration is not safe for concurrent use;
+    concurrent dispatch is — every callback is stateless and the router owns all
     state."""
 
     def __init__(self):
         self._ptr = lib.angzarr_router_new()
         self._callback_ids: list[int] = []
+        # (kind, name) of the one component this router hosts, once registered.
+        self._component: tuple[str, str] | None = None
         self._lock = threading.Lock()
 
     def close(self) -> None:
@@ -913,11 +922,29 @@ class Router:
             ret = fn(self._ptr, _as_u8(request), len(request), out)
         return ret, _consume_out(out)
 
-    def _register(self, fn, desc) -> None:
+    def _register(self, fn, desc, kind: str, first_callback: int) -> None:
+        """Hand ``desc`` to the core. A refused registration drops the
+        callbacks it assigned (from index ``first_callback``); a second
+        component is refused DUPLICATE_REGISTRATION naming the one this
+        router already hosts."""
         desc_bytes = desc.SerializeToString()
         ret = fn(self._ptr, _as_u8(desc_bytes), len(desc_bytes), _trampoline)
-        if ret != 0:
-            raise _decode_status(None, ret)
+        if ret == 0:
+            self._component = (kind, desc.name)
+            return
+        for cid in self._callback_ids[first_callback:]:
+            _CALLBACKS.pop(cid, None)
+        del self._callback_ids[first_callback:]
+        if self._component is not None:
+            held_kind, held_name = self._component
+            raise CodedError(
+                code=CODE_DUPLICATE_REGISTRATION,
+                message=f"this router already hosts its one component, the "
+                f"{held_kind} {held_name!r}",
+                grpc=GrpcCode.INVALID_ARGUMENT,
+                extras={"component": held_name, "kind": held_kind},
+            )
+        raise _decode_status(None, ret)
 
     def register_aggregate(self, dispatch: AggregateDispatch) -> None:
         """Register one aggregate component: assign callback ids to every
@@ -925,6 +952,7 @@ class Router:
         version and upcaster source types included), and hand it to the core
         with the shared trampoline."""
         with self._lock:
+            first = len(self._callback_ids)
             factory = dispatch.rebuilder.factory
             desc = abi_pb2.AggregateDescriptor(
                 name=dispatch.name,
@@ -951,7 +979,9 @@ class Router:
                 desc.command_upcasters.append(
                     abi_pb2.CallbackEntry(fq_type=fq, callback_id=cid)
                 )
-            self._register(lib.angzarr_router_register_aggregate, desc)
+            self._register(
+                lib.angzarr_router_register_aggregate, desc, "aggregate", first
+            )
 
     def dispatch(self, contextual_command) -> object:
         """Run one ContextualCommand (a command, or a fact in the page's Fact
@@ -975,6 +1005,7 @@ class Router:
         version included), and hand it to the core with the shared
         trampoline."""
         with self._lock:
+            first = len(self._callback_ids)
             desc = abi_pb2.ProjectorDescriptor(
                 name=dispatch.name,
                 domains=dispatch.domains,
@@ -985,7 +1016,9 @@ class Router:
                 desc.fold_callback_id = self._assign(
                     _fold_invoker(dispatch.factory, dict(dispatch.events))
                 )
-            self._register(lib.angzarr_router_register_projector, desc)
+            self._register(
+                lib.angzarr_router_register_projector, desc, "projector", first
+            )
 
     def dispatch_projector(self, event_book) -> object:
         """Fold one EventBook through the registered projector and return the
@@ -1008,6 +1041,7 @@ class Router:
         thunk, serialize the SagaDescriptor, and hand it to the core with the
         shared trampoline."""
         with self._lock:
+            first = len(self._callback_ids)
             desc = abi_pb2.SagaDescriptor(
                 name=dispatch.name,
                 input_domain=dispatch.input_domain,
@@ -1017,12 +1051,12 @@ class Router:
             for fq, thunk in dispatch.events.items():
                 cid = self._assign(_saga_event_invoker(thunk))
                 desc.events.append(abi_pb2.CallbackEntry(fq_type=fq, callback_id=cid))
-            self._register(lib.angzarr_router_register_saga, desc)
+            self._register(lib.angzarr_router_register_saga, desc, "saga", first)
 
     def dispatch_saga(self, source) -> object:
-        """Run one source EventBook through the sagas consuming its domain and
-        return the merged SagaResponse, or raise a CodedError decoded from the
-        core's failure."""
+        """Run one source EventBook through the registered saga and return
+        its SagaResponse, or raise a CodedError decoded from the core's
+        failure."""
         ret, resp_bytes = self._call(
             lib.angzarr_router_dispatch_saga,
             source.SerializeToString(),
@@ -1041,6 +1075,7 @@ class Router:
         state type and rules version included), and hand it to the core with
         the shared trampoline."""
         with self._lock:
+            first = len(self._callback_ids)
             factory = dispatch.rebuilder.factory
             desc = abi_pb2.ProcessManagerDescriptor(
                 name=dispatch.name,
@@ -1061,12 +1096,17 @@ class Router:
                             input_domain=input_domain, fq_type=fq, callback_id=cid
                         )
                     )
-            self._register(lib.angzarr_router_register_process_manager, desc)
+            self._register(
+                lib.angzarr_router_register_process_manager,
+                desc,
+                "process manager",
+                first,
+            )
 
     def dispatch_process_manager(self, pm_request) -> object:
-        """Run one ProcessManagerHandleRequest through the registered PMs and
-        return the merged ProcessManagerHandleResponse, or raise a CodedError
-        decoded from the core's failure."""
+        """Run one ProcessManagerHandleRequest through the registered process
+        manager and return its ProcessManagerHandleResponse, or raise a
+        CodedError decoded from the core's failure."""
         ret, resp_bytes = self._call(
             lib.angzarr_router_dispatch_process_manager,
             pm_request.SerializeToString(),
@@ -1079,21 +1119,23 @@ class Router:
             return resp
         raise _decode_status(resp_bytes, ret)
 
-    def component_descriptors(self) -> list:
-        """The registration hello of every registered component, in
-        registration order: each an ``io.angzarr.v1.ComponentDescriptor`` the
-        router built from its own tables (name, kind, inputs, rules version
-        and, for aggregates and process managers, the state type and its
-        conflict resolutions). Raises the router's CodedError when a
-        component cannot build one (MISSING_RULES_VERSION)."""
+    def component_descriptor(self):
+        """The registration hello of the registered component: the
+        ``io.angzarr.v1.ComponentDescriptor`` the router built from its own
+        table (name, kind, inputs, rules version and, for an aggregate or a
+        process manager, the state type and its conflict resolutions), which
+        ComponentService.Describe answers. Raises the router's CodedError
+        when nothing is registered (NO_HANDLERS_REGISTERED) or the
+        component cannot build one (MISSING_RULES_VERSION,
+        MISSING_STATE_TYPE)."""
         out = ffi.new("angzarr_buf*")
-        ret = lib.angzarr_router_component_descriptors(self._ptr, out)
+        ret = lib.angzarr_router_component_descriptor(self._ptr, out)
         data = _consume_out(out)
         if ret != 0:
             raise _decode_status(data, ret)
-        hellos = types_pb2.ComponentDescriptors()
-        hellos.ParseFromString(data)
-        return list(hellos.components)
+        hello = types_pb2.ComponentDescriptor()
+        hello.ParseFromString(data)
+        return hello
 
 
 def abi_version() -> int:
