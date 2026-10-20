@@ -421,11 +421,7 @@ def _then_sent_to_gateway(state: _World) -> None:
     assert call is not None, "gateway received Handle"
     sent = call[0]
     built = state.book()
-    # build() and execute() each mint a fresh correlation id, so compare
-    # the addressing and the command itself.
-    assert sent.cover == built.cover
-    assert sent.page.HasField("correlation_id")
-    assert sent.page.command == built.page.command
+    assert sent == built
 
 
 @then("the response should be returned")
@@ -453,9 +449,7 @@ def _then_no_cross_contamination(state: _World) -> None:
     a, b = state.built_pair
     assert a.cover.domain == state.recipe.domain
     assert b.cover.domain == state.recipe.domain
-    assert (
-        a.page.correlation_id != b.page.correlation_id
-    ), "each build gets its own correlation id"
+    assert a.cover.root != b.cover.root, "each build keeps its own root"
 
 
 @then("I should receive a CommandBuilder for that domain and root")

@@ -46,8 +46,9 @@ class TestCommandBuilder:
         assert book.page.command.payload.type_url == "/test.CreateOrder"
         # No Handling: the coordinator stamps the expected sequence.
         assert not book.HasField("handling")
-        # Auto-generated correlation ID, a UUID v4.
-        assert proto_to_uuid(book.page.correlation_id).version == 4
+        # No correlation ID unless the sender sets one: the coordinator
+        # assigns it.
+        assert not book.page.HasField("correlation_id")
 
     def test_command_new_generates_uuid_v4_root(self) -> None:
         """``command_new`` materializes a client-side UUID v4 root.

@@ -11,6 +11,9 @@ import pytest
 PENDING = {
     "C-0336": "angzarr_client exposes no connect-timeout option on connect()",
     "C-0337": "angzarr_client exposes no keep-alive option on connect()",
+    "C-0305": "owner ruling: the builder sends no correlation id unless the "
+    "sender sets one (the coordinator assigns it); the scenario is being "
+    "rewritten to match",
 }
 
 

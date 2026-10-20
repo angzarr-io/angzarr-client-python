@@ -1,7 +1,6 @@
 """Fluent builders for commands and queries."""
 
 from uuid import UUID as PyUUID
-from uuid import uuid4
 
 from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.message import Message
@@ -109,8 +108,8 @@ class CommandBuilder:
         Requires a type URL and payload (:meth:`with_command`, or
         :meth:`with_type_url` plus :meth:`with_payload`); otherwise raises
         :class:`InvalidArgumentError` with code ``COMMAND_TYPE_URL_MISSING``
-        / ``COMMAND_PAYLOAD_MISSING``. The correlation ID defaults to a
-        fresh UUID v4.
+        / ``COMMAND_PAYLOAD_MISSING``. No correlation ID is sent unless one
+        was set: the coordinator assigns it.
         """
         if not self._type_url:
             raise InvalidArgumentError(
@@ -123,8 +122,6 @@ class CommandBuilder:
                 code=codes.COMMAND_PAYLOAD_MISSING,
             )
 
-        correlation_id = self._correlation_id or uuid4()
-
         cover = Cover(domain=self._domain)
         cover.root.CopyFrom(uuid_to_proto(self._root))
 
@@ -133,7 +130,8 @@ class CommandBuilder:
                 payload=ProtoAny(type_url=self._type_url, value=self._payload)
             )
         )
-        page.correlation_id.CopyFrom(uuid_to_proto(correlation_id))
+        if self._correlation_id is not None:
+            page.correlation_id.CopyFrom(uuid_to_proto(self._correlation_id))
 
         book = CommandBook()
         book.cover.CopyFrom(cover)

@@ -113,7 +113,7 @@ def test_every_mode_carries_the_correlation_header():
             return original(book, **kw)
 
         setattr(coordinator, rpc, record)
-    book = _builder(client).build()
+    book = _builder(client).with_correlation_id(_ROOT).build()
     client.handle(book)
     client.handle_async(book)
     client.handle_sync(book)
