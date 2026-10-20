@@ -23,6 +23,9 @@ from angzarr_client import ComponentHost, ConfigurationError
 from angzarr_client.proto.io.angzarr.v1 import command_handler_pb2_grpc, types_pb2
 from angzarr_client.router import AggregateDispatch, Rebuilder, Router, pack
 
+# The build version the hosts declare (ComponentHost(rules_version=...)).
+TEST_RULES_VERSION = "0.0.0+test"
+
 scenarios("parity/client/hosting.feature")
 
 COMMAND_HANDLER_SERVICE = "io.angzarr.v1.CommandHandlerService"
@@ -103,7 +106,7 @@ def _command(domain: str, text: str) -> types_pb2.ContextualCommand:
 
 
 def _new_host(world: _World, domains: list[str], block: bool = False) -> ComponentHost:
-    world.host = ComponentHost(Router())
+    world.host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
     for domain in domains:
         world.host.add_aggregate(_aggregate(world, domain, block=block))
     return world.host
@@ -152,7 +155,7 @@ def _host_two(world: _World, first: str, second: str) -> None:
 
 @given("a component host with no components registered")
 def _host_none(world: _World) -> None:
-    world.host = ComponentHost(Router())
+    world.host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
 
 
 @given(

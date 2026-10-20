@@ -178,6 +178,7 @@ def _then_host_serves_framework_services() -> None:
     from angzarr_client.host import FRAMEWORK_SERVICES
 
     assert set(FRAMEWORK_SERVICES) == {
+        "io.angzarr.v1.ComponentService",
         "io.angzarr.v1.CommandHandlerService",
         "io.angzarr.v1.SagaService",
         "io.angzarr.v1.ProcessManagerService",

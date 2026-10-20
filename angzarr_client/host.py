@@ -6,6 +6,10 @@ components (generated ``new_<component>_dispatch(handler)`` tables, or
 hand-built ones) and, optionally, its own gRPC services; the host exposes
 the coordinator-facing framework services for the kinds registered:
 
+- ``ComponentService`` (always): Describe, answered from the router's
+  descriptors of every hosted component. The coordinator pulls it; the host
+  never calls its coordinator. Every component carries the binary's build
+  version, given once as ``ComponentHost(rules_version=...)``;
 - ``CommandHandlerService`` (aggregates): Handle, for commands and facts
   alike (the page's body arm picks the pipeline);
 - ``SagaService`` / ``ProcessManagerService``: Handle;
@@ -52,12 +56,15 @@ from .errors import ClientError
 from .proto.io.angzarr.v1 import (
     command_handler_pb2,
     command_handler_pb2_grpc,
+    component_pb2,
+    component_pb2_grpc,
     process_manager_pb2,
     process_manager_pb2_grpc,
     projector_pb2,
     projector_pb2_grpc,
     saga_pb2,
     saga_pb2_grpc,
+    types_pb2,
     upcaster_pb2,
     upcaster_pb2_grpc,
 )
@@ -75,6 +82,9 @@ _STATUS_BY_CODE = {status.value[0]: status for status in grpc.StatusCode}
 COMMAND_HANDLER_SERVICE = command_handler_pb2.DESCRIPTOR.services_by_name[
     "CommandHandlerService"
 ].full_name
+COMPONENT_SERVICE = component_pb2.DESCRIPTOR.services_by_name[
+    "ComponentService"
+].full_name
 SAGA_SERVICE = saga_pb2.DESCRIPTOR.services_by_name["SagaService"].full_name
 PROCESS_MANAGER_SERVICE = process_manager_pb2.DESCRIPTOR.services_by_name[
     "ProcessManagerService"
@@ -87,6 +97,7 @@ UPCASTER_SERVICE = upcaster_pb2.DESCRIPTOR.services_by_name["UpcasterService"].f
 #: The framework services a host can serve; anything else it serves is an
 #: application service registered with :meth:`ComponentHost.add_service`.
 FRAMEWORK_SERVICES = (
+    COMPONENT_SERVICE,
     COMMAND_HANDLER_SERVICE,
     SAGA_SERVICE,
     PROCESS_MANAGER_SERVICE,
@@ -172,6 +183,20 @@ class _CommandHandlerServicer(command_handler_pb2_grpc.CommandHandlerServiceServ
         return await self._dispatcher.call(context, self._router.dispatch, request)
 
 
+class _ComponentServicer(component_pb2_grpc.ComponentServiceServicer):
+    def __init__(self, router, dispatcher: _Dispatcher) -> None:
+        self._router = router
+        self._dispatcher = dispatcher
+
+    def _describe(self, _request):
+        return types_pb2.ComponentDescriptors(
+            components=self._router.component_descriptors()
+        )
+
+    async def Describe(self, request, context):
+        return await self._dispatcher.call(context, self._describe, request)
+
+
 class _SagaServicer(saga_pb2_grpc.SagaServiceServicer):
     def __init__(self, router, dispatcher: _Dispatcher) -> None:
         self._router = router
@@ -239,13 +264,19 @@ class ComponentHost:
     ``router`` defaults to a new :class:`angzarr_client.router.Router`, which
     the host then closes on :meth:`stop`. ``max_workers`` bounds concurrent
     dispatches (router dispatch blocks on the native call and on handler
-    code).
+    code). ``rules_version`` is the business binary's full build version
+    (``__version__`` from the module ``versionator output emit python``
+    writes): it is stamped on every hosted table that has none of its own,
+    so every answer and every component's description carry it, and the
+    host refuses to start while any hosted component lacks one
+    (MISSING_RULES_VERSION).
     """
 
     def __init__(
         self,
         router=None,
         *,
+        rules_version: str = "",
         max_workers: int = 16,
         logger=None,
     ) -> None:
@@ -257,6 +288,7 @@ class ComponentHost:
         else:
             self._owns_router = False
         self.router = router
+        self.rules_version = rules_version
         self._max_workers = max_workers
         self._log = logger if logger is not None else structlog.get_logger(__name__)
         self._kinds: set[str] = set()
@@ -276,27 +308,34 @@ class ComponentHost:
 
     def add_aggregate(self, dispatch) -> ComponentHost:
         """Register an aggregate's dispatch table; serves CommandHandlerService."""
-        self.router.register_aggregate(dispatch)
+        self.router.register_aggregate(self._versioned(dispatch))
         self._kinds.add(COMMAND_HANDLER_SERVICE)
         return self
 
     def add_saga(self, dispatch) -> ComponentHost:
         """Register a saga's dispatch table; serves SagaService."""
-        self.router.register_saga(dispatch)
+        self.router.register_saga(self._versioned(dispatch))
         self._kinds.add(SAGA_SERVICE)
         return self
 
     def add_process_manager(self, dispatch) -> ComponentHost:
         """Register a process manager's dispatch table; serves ProcessManagerService."""
-        self.router.register_process_manager(dispatch)
+        self.router.register_process_manager(self._versioned(dispatch))
         self._kinds.add(PROCESS_MANAGER_SERVICE)
         return self
 
     def add_projector(self, dispatch) -> ComponentHost:
         """Register a projector's dispatch table; serves ProjectorService."""
-        self.router.register_projector(dispatch)
+        self.router.register_projector(self._versioned(dispatch))
         self._kinds.add(PROJECTOR_SERVICE)
         return self
+
+    def _versioned(self, dispatch):
+        """``dispatch`` with the host's build version, unless it declares
+        its own."""
+        if self.rules_version and not getattr(dispatch, "rules_version", ""):
+            dispatch.rules_version = self.rules_version
+        return dispatch
 
     def add_upcaster(self, upcaster: Upcaster) -> ComponentHost:
         """Serve UpcasterService over ``upcaster``."""
@@ -321,7 +360,8 @@ class ComponentHost:
     @property
     def services(self) -> list[str]:
         """The full names of every service the host serves (health excepted)."""
-        framework = [name for name in FRAMEWORK_SERVICES if name in self._kinds]
+        kinds = self._kinds | ({COMPONENT_SERVICE} if self._kinds else set())
+        framework = [name for name in FRAMEWORK_SERVICES if name in kinds]
         return framework + [s.name for s in self._app_services]
 
     # --- lifecycle -----------------------------------------------------
@@ -337,6 +377,7 @@ class ComponentHost:
             )
         if self._thread is not None:
             raise ConfigurationError("the host is already started")
+        self._check_descriptors()
         if address is None:
             _transport, address = get_transport_config()
         self._loop = asyncio.new_event_loop()
@@ -407,6 +448,17 @@ class ComponentHost:
             if started:
                 self._log.info("server_shutdown", services=self.services)
 
+    def _check_descriptors(self) -> None:
+        """Refuse to start while the coordinator would refuse the host's
+        components (decision 14.6): every one must describe itself, with a
+        build version."""
+        from .router import CodedError
+
+        try:
+            self.router.component_descriptors()
+        except CodedError as exc:
+            raise ConfigurationError(f"{exc.code}: {exc.message}") from exc
+
     def __enter__(self) -> Self:
         return self
 
@@ -436,6 +488,9 @@ class ComponentHost:
         dispatcher = _Dispatcher(self._executor, self._log)
         server = grpc.aio.server()
         router = self.router
+        component_pb2_grpc.add_ComponentServiceServicer_to_server(
+            _ComponentServicer(router, dispatcher), server
+        )
         if COMMAND_HANDLER_SERVICE in self._kinds:
             command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server(
                 _CommandHandlerServicer(router, dispatcher),

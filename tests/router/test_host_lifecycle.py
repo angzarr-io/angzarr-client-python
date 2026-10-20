@@ -21,7 +21,11 @@ import structlog
 from grpc_health.v1 import health_pb2
 
 from angzarr_client import ComponentHost, ConfigurationError
-from angzarr_client.host import COMMAND_HANDLER_SERVICE, SAGA_SERVICE
+from angzarr_client.host import (
+    COMMAND_HANDLER_SERVICE,
+    COMPONENT_SERVICE,
+    SAGA_SERVICE,
+)
 from angzarr_client.proto.io.angzarr.v1 import (
     command_handler_pb2,
     command_handler_pb2_grpc,
@@ -35,6 +39,7 @@ from angzarr_client.proto.io.angzarr.v1 import (
 from angzarr_client.router import CodedError, GrpcCode, Router
 
 from . import builders
+from .builders import TEST_RULES_VERSION
 from .fixture import OrderSaga
 from .gen.test.counter import order_saga_angzarr
 from .test_host import _counter_host, _error_info, _increased_book, _wait_serving
@@ -77,6 +82,9 @@ class _ScriptedRouter:
 
     def close(self) -> None:
         pass
+
+    def component_descriptors(self) -> list:
+        return []
 
     def dispatch(self, request):
         return self._run("dispatch", request)
@@ -187,7 +195,7 @@ def hosts():
 
 def _aggregate_host(answer, **kwargs) -> tuple[ComponentHost, _ScriptedRouter]:
     router = _ScriptedRouter(answer)
-    host = ComponentHost(router, **kwargs)
+    host = ComponentHost(router, rules_version=TEST_RULES_VERSION, **kwargs)
     host.add_aggregate(SimpleNamespace(domain="counter"))
     return host, router
 
@@ -462,7 +470,7 @@ def test_an_aggregate_reports_an_unimplemented_dispatch(hosts):
 
 
 def test_a_saga_acknowledges_an_event_from_a_domain_it_does_not_consume(hosts):
-    host = ComponentHost(Router())
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
     host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
     stub = saga_pb2_grpc.SagaServiceStub(hosts(host))
     resp = stub.Handle(_increased_book("elsewhere"), timeout=5)
@@ -557,7 +565,7 @@ def fast_probes(monkeypatch):
 
 
 def _saga_host() -> ComponentHost:
-    host = ComponentHost(Router())
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
     host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
     return host
 
@@ -566,7 +574,9 @@ def test_the_host_takes_no_sync_output_domains():
     # Readiness is plain SERVING / NOT_SERVING (parity/client/hosting.feature):
     # no command-target supervision.
     with pytest.raises(TypeError):
-        ComponentHost(Router(), sync_output_domains=["orders"])
+        ComponentHost(
+            Router(), rules_version=TEST_RULES_VERSION, sync_output_domains=["orders"]
+        )
 
 
 def test_a_saga_host_serves_whatever_the_bus_endpoint(
@@ -641,9 +651,16 @@ def test_run_logs_start_and_shutdown_and_restores_signal_handlers():
         (
             "info",
             "server_started",
-            {"services": [COMMAND_HANDLER_SERVICE], "address": address},
+            {
+                "services": [COMPONENT_SERVICE, COMMAND_HANDLER_SERVICE],
+                "address": address,
+            },
         ),
-        ("info", "server_shutdown", {"services": [COMMAND_HANDLER_SERVICE]}),
+        (
+            "info",
+            "server_shutdown",
+            {"services": [COMPONENT_SERVICE, COMMAND_HANDLER_SERVICE]},
+        ),
     ]
     assert {s: signal.getsignal(s) for s in previous} == previous
     assert host.wait(timeout=0)
@@ -711,7 +728,7 @@ def test_run_honours_a_signal_that_arrives_while_the_host_is_starting():
 def test_run_with_a_failing_start_raises_and_restores_the_signal_handlers():
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
     logger = _RecordingLogger()
-    host = ComponentHost(logger=logger)
+    host = ComponentHost(rules_version=TEST_RULES_VERSION, logger=logger)
     with pytest.raises(ConfigurationError):
         host.run("127.0.0.1:0")
     assert {sig: signal.getsignal(sig) for sig in previous} == previous

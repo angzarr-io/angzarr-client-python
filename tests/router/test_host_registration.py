@@ -1,38 +1,35 @@
-"""Item-4 proposal, rules version (docs/design/handling-and-command-modes.md):
-the business binary's build version — baked in at build time by versionator
-(``versionator output emit python`` writes ``__version__``) — given once to
-the host, which stamps it on every component it hosts, so every answer and
-the registration hello carry it (decisions 14.1, 14.5, 14.6;
-handling.feature C-0533..C-0535).
-
-Strict xfails until the owner signs the proposal off (see
-test_handling_proposal.py for the convention).
-"""
+"""Registration: the business binary's build version — baked in at build
+time by versionator (``versionator output emit python`` writes
+``__version__``) — given once to the host, which stamps it on every component
+it hosts, so every answer and every component's description carry it
+(decisions 14.1, 14.5, 14.6, 14.10; handling.feature C-0533..C-0535, C-0565).
+The coordinator pulls the descriptions: the host serves
+``ComponentService.Describe`` from the router's descriptors."""
 
 from __future__ import annotations
 
 import pytest
 
 from angzarr_client import ComponentHost, ConfigurationError
+from angzarr_client.host import COMPONENT_SERVICE
 from angzarr_client.proto.io.angzarr.v1 import (
     command_handler_pb2_grpc,
+    component_pb2,
+    component_pb2_grpc,
     process_manager_pb2,
     process_manager_pb2_grpc,
+    types_pb2,
 )
 from angzarr_client.router import Router
 
 from . import builders
-from .fixture import CounterAggregate, OrderProcessManager
+from .fixture import CounterAggregate, OrderProcessManager, OrderSaga
 from .gen.test.counter import (
     counter_aggregate_angzarr,
     order_process_manager_angzarr,
+    order_saga_angzarr,
 )
 from .test_host import _increased_book, started  # noqa: F401 — the fixture
-
-PENDING = pytest.mark.xfail(
-    strict=True,
-    reason="item-4 proposal (build-baked rules version) pending owner sign-off",
-)
 
 # What a versionator-emitted ``_version.__version__`` holds for a build.
 BUILD_VERSION = "1.4.2+build.7"
@@ -51,7 +48,6 @@ def _host(**kwargs) -> ComponentHost:
     return host
 
 
-@PENDING
 def test_c0533_every_answer_reports_the_build_version(started):  # noqa: F811
     channel = started(_host(rules_version=BUILD_VERSION))
     stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
@@ -60,7 +56,6 @@ def test_c0533_every_answer_reports_the_build_version(started):  # noqa: F811
     )
 
 
-@PENDING
 def test_c0534_a_process_managers_answer_reports_its_build_version(
     started,  # noqa: F811
 ):
@@ -72,7 +67,6 @@ def test_c0534_a_process_managers_answer_reports_its_build_version(
     assert stub.Handle(request, timeout=5).rules_version == BUILD_VERSION
 
 
-@PENDING
 def test_c0535_registration_announces_the_same_build_version():
     host = _host(rules_version=BUILD_VERSION)
     try:
@@ -84,7 +78,6 @@ def test_c0535_registration_announces_the_same_build_version():
     assert hellos[0].state.type_url == "/test.counter.CounterState"
 
 
-@PENDING
 def test_decision_14_6_a_host_without_a_build_version_refuses_to_start():
     host = _host()
     try:

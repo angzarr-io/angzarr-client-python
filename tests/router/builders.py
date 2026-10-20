@@ -37,6 +37,9 @@ _FIXTURES_DIR = (
 # error model is the one exception — pinned to type.googleapis.com.)
 _TYPE_URL_PREFIX = "/"
 
+# The build version the test hosts declare (ComponentHost(rules_version=...)).
+TEST_RULES_VERSION = "0.0.0+test"
+
 # Fully-qualified type names the CounterAggregate keys on (FIXTURE.md).
 FQ_INCREASED = "test.counter.Increased"
 FQ_INCREASE_BY = "test.counter.IncreaseBy"

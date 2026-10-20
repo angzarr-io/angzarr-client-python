@@ -16,6 +16,7 @@ from angzarr_client import ComponentHost, ConfigurationError, PassThroughUpcaste
 from angzarr_client.error_codes import codes, messages
 from angzarr_client.host import (
     COMMAND_HANDLER_SERVICE,
+    COMPONENT_SERVICE,
     PROCESS_MANAGER_SERVICE,
     PROJECTOR_SERVICE,
     SAGA_SERVICE,
@@ -43,6 +44,7 @@ from angzarr_client.router import (
 )
 
 from . import builders
+from .builders import TEST_RULES_VERSION
 from .fixture import CounterAggregate, CounterProjector, OrderProcessManager, OrderSaga
 from .gen.test.counter import (
     counter_aggregate_angzarr,
@@ -90,7 +92,7 @@ def _wait_serving(channel, service: str = "") -> None:
 
 
 def _counter_host(**kwargs) -> ComponentHost:
-    host = ComponentHost(Router(), **kwargs)
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION, **kwargs)
     host.add_aggregate(
         counter_aggregate_angzarr.new_counter_aggregate_dispatch(CounterAggregate())
     )
@@ -173,7 +175,7 @@ def test_a_fact_without_a_fact_handler_is_refused(started):
 
 
 def _saga_host() -> ComponentHost:
-    host = ComponentHost(Router())
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
     host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
     return host
 
@@ -203,7 +205,7 @@ def test_saga_reports_a_malformed_request(started):
 
 
 def _pm_host() -> ComponentHost:
-    host = ComponentHost(Router())
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
     host.add_process_manager(
         order_process_manager_angzarr.new_order_process_manager_dispatch(
             OrderProcessManager()
@@ -230,11 +232,14 @@ def test_process_manager_acknowledges_an_event_it_does_not_consume(started):
         trigger=_unconsumed_book("counter")
     )
     resp = stub.Handle(request, timeout=5)
-    assert resp == process_manager_pb2.ProcessManagerHandleResponse()
+    # Nothing reacts, but the answer still reports the build version.
+    assert resp == process_manager_pb2.ProcessManagerHandleResponse(
+        rules_version=TEST_RULES_VERSION
+    )
 
 
 def test_projector_handle_returns_the_projection(started):
-    host = ComponentHost(Router())
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
     host.add_projector(
         counter_projector_angzarr.new_counter_projector_dispatch(CounterProjector())
     )
@@ -314,6 +319,7 @@ def test_services_are_the_registered_kinds_then_application_services():
     host.add_upcaster(PassThroughUpcaster())
     host.add_service(lambda s, server: None, object(), "app.ReportService")
     assert host.services == [
+        COMPONENT_SERVICE,
         COMMAND_HANDLER_SERVICE,
         SAGA_SERVICE,
         PROCESS_MANAGER_SERVICE,
@@ -355,7 +361,7 @@ def test_stop_reports_not_serving_and_refuses_new_calls():
 
 
 def test_an_owned_router_is_closed_on_stop():
-    host = ComponentHost()
+    host = ComponentHost(rules_version=TEST_RULES_VERSION)
     host.add_aggregate(
         counter_aggregate_angzarr.new_counter_aggregate_dispatch(CounterAggregate())
     )
@@ -367,7 +373,7 @@ def test_an_owned_router_is_closed_on_stop():
 
 def test_a_borrowed_router_stays_open_after_stop():
     router = Router()
-    host = ComponentHost(router)
+    host = ComponentHost(router, rules_version=TEST_RULES_VERSION)
     host.add_aggregate(
         counter_aggregate_angzarr.new_counter_aggregate_dispatch(CounterAggregate())
     )
@@ -380,7 +386,7 @@ def test_a_borrowed_router_stays_open_after_stop():
 
 
 def test_stopping_an_unstarted_owning_host_closes_its_router():
-    host = ComponentHost()
+    host = ComponentHost(rules_version=TEST_RULES_VERSION)
     host.stop()
     assert host.wait(timeout=0)
     with pytest.raises(Exception):  # noqa: B017
@@ -388,7 +394,9 @@ def test_stopping_an_unstarted_owning_host_closes_its_router():
 
 
 def test_start_refuses_an_upcaster_only_host_and_a_second_start():
-    host = ComponentHost(Router()).add_upcaster(PassThroughUpcaster())
+    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION).add_upcaster(
+        PassThroughUpcaster()
+    )
     with pytest.raises(ConfigurationError, match=codes.NO_COMPONENTS_REGISTERED):
         host.start("127.0.0.1:0")
     host = _counter_host()
