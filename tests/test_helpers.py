@@ -6,12 +6,7 @@ from uuid import UUID as PyUUID
 import pytest
 from google.protobuf.any_pb2 import Any as ProtoAny
 
-from angzarr_client._pb import (
-    DomainDivergence,
-    Edition,
-    EventPage,
-    PageHeader,
-)
+from angzarr_client._pb import EventPage
 from angzarr_client.errors import InvalidTimestampError
 from angzarr_client.helpers import (
     CORRELATION_ID_HEADER,
@@ -22,9 +17,7 @@ from angzarr_client.helpers import (
     UNKNOWN_DOMAIN,
     WILDCARD_DOMAIN,
     decode_event,
-    divergence_for,
     events_from_response,
-    implicit_edition,
     new_command_book,
     new_command_page,
     new_cover,
@@ -89,47 +82,6 @@ class TestUuidConversion:
         assert proto.value == test_uuid.bytes
 
 
-class TestEditionHelpers:
-    """Tests for edition helper functions."""
-
-    def test_implicit_edition(self) -> None:
-        """implicit_edition creates named edition without divergences."""
-        ed = implicit_edition("branch-a")
-        assert ed.name == "branch-a"
-        assert len(ed.divergences) == 0
-
-    # Audit #86: dead helpers (main_timeline, explicit_edition,
-    # is_main_timeline, edition_is_empty, edition_name_or_default)
-    # deleted — they were stillborn from the unfinished
-    # edition-propagation feature. The live propagation contract is
-    # tested under TestPropagateEditionFrom below.
-
-    def test_divergence_for_found(self) -> None:
-        """divergence_for returns sequence when found."""
-        ed = Edition(
-            name="test",
-            divergences=[DomainDivergence(domain="orders", sequence=42)],
-        )
-        assert divergence_for(ed, "orders") == 42
-
-    def test_divergence_for_not_found(self) -> None:
-        """divergence_for returns ``None`` when not found.
-
-        Audit #49: shifted from -1 sentinel to ``Optional[int]`` to match
-        Rust's ``Option<u32>`` and stop conflating "missing" with the
-        impossible "negative-sequence" case.
-        """
-        ed = Edition(
-            name="test",
-            divergences=[DomainDivergence(domain="orders", sequence=42)],
-        )
-        assert divergence_for(ed, "inventory") is None
-
-    def test_divergence_for_none(self) -> None:
-        """divergence_for returns ``None`` for a ``None`` edition."""
-        assert divergence_for(None, "orders") is None
-
-
 # EventBook accessor free functions (next_sequence, event_pages) were
 # deleted; see ``EventBook`` wrapper in ``test_wrappers.py``.
 
@@ -153,10 +105,8 @@ class TestEventsFromResponse:
         from angzarr_client._pb import CommandResponse
 
         resp = CommandResponse()
-        page1 = resp.events.pages.add()
-        page1.header.sequence = 1
-        page2 = resp.events.pages.add()
-        page2.header.sequence = 2
+        resp.events.pages.add().sequence = 1
+        resp.events.pages.add().sequence = 2
         result = events_from_response(resp)
         assert len(result) == 2
 
@@ -298,16 +248,16 @@ class TestDecodeEvent:
         """Returns None when event field not set."""
         from angzarr_client._pb import Cover
 
-        page = EventPage(header=PageHeader(sequence=1))
+        page = EventPage(sequence=1)
         assert decode_event(page, "Cover", Cover) is None
 
     def test_returns_none_for_type_mismatch(self) -> None:
         """Returns None when type URL doesn't match."""
         from angzarr_client._pb import Cover
 
-        page = EventPage(header=PageHeader(sequence=1))
-        page.event.type_url = "type.googleapis.com/some.OtherType"
-        page.event.value = b""
+        page = EventPage(sequence=1)
+        page.payload.type_url = "type.googleapis.com/some.OtherType"
+        page.payload.value = b""
         assert decode_event(page, "Cover", Cover) is None
 
     def test_returns_decoded_message(self) -> None:
@@ -315,24 +265,24 @@ class TestDecodeEvent:
         from angzarr_client._pb import Cover
 
         # Create a cover and pack it
-        cover = Cover(domain="test", correlation_id="abc")
-        page = EventPage(header=PageHeader(sequence=1))
-        page.event.Pack(cover)
+        cover = Cover(domain="test", edition="abc")
+        page = EventPage(sequence=1)
+        page.payload.Pack(cover)
 
         # Use full type name for exact matching
         result = decode_event(page, "io.angzarr.v1.Cover", Cover)
         assert result is not None
         assert result.domain == "test"
-        assert result.correlation_id == "abc"
+        assert result.edition == "abc"
 
     def test_returns_none_for_decode_failure(self) -> None:
         """Returns None when decoding fails."""
         from angzarr_client._pb import Cover
 
         # Create page with matching type URL but invalid data
-        page = EventPage(header=PageHeader(sequence=1))
-        page.event.type_url = "type.googleapis.com/angzarr.Cover"
-        page.event.value = b"invalid proto data that will fail to decode"
+        page = EventPage(sequence=1)
+        page.payload.type_url = "type.googleapis.com/angzarr.Cover"
+        page.payload.value = b"invalid proto data that will fail to decode"
         # Should return None, not raise
         assert decode_event(page, "Cover", Cover) is None
 
@@ -346,39 +296,30 @@ class TestConstructionHelpers:
         cover = new_cover("orders", root)
         assert cover.domain == "orders"
         assert proto_to_uuid(cover.root) == root
-        assert cover.correlation_id == ""
-
-    def test_new_cover_with_correlation(self) -> None:
-        """new_cover accepts correlation_id."""
-        root = PyUUID("12345678-1234-5678-1234-567812345678")
-        cover = new_cover("orders", root, correlation_id_val="corr-123")
-        assert cover.correlation_id == "corr-123"
+        assert not cover.HasField("edition")
 
     def test_new_cover_with_edition(self) -> None:
-        """new_cover accepts edition."""
+        """new_cover names the edition when given one."""
         root = PyUUID("12345678-1234-5678-1234-567812345678")
-        ed = implicit_edition("branch-a")
-        cover = new_cover("orders", root, edition_val=ed)
-        assert cover.edition.name == "branch-a"
+        cover = new_cover("orders", root, edition="branch-a")
+        assert cover.edition == "branch-a"
 
     def test_new_command_page(self) -> None:
-        """new_command_page creates page with sequence and command."""
+        """new_command_page carries the command in the Command arm."""
         any_msg = ProtoAny(type_url="test/Cmd", value=b"data")
-        page = new_command_page(5, any_msg)
-        assert page.header.sequence == 5
-        assert page.command.type_url == "test/Cmd"
+        page = new_command_page(any_msg)
+        assert page.WhichOneof("body") == "command"
+        assert page.command.payload == any_msg
 
     def test_new_command_book(self) -> None:
-        """new_command_book creates book with cover and pages."""
+        """new_command_book addresses its single page to the cover."""
         root = PyUUID("12345678-1234-5678-1234-567812345678")
         cover = new_cover("orders", root)
         any_msg = ProtoAny(type_url="test/Cmd", value=b"data")
-        pages = [new_command_page(0, any_msg)]
 
-        book = new_command_book(cover, pages)
+        book = new_command_book(cover, new_command_page(any_msg))
         assert book.cover.domain == "orders"
-        assert len(book.pages) == 1
-        assert book.pages[0].header.sequence == 0
+        assert book.page.command.payload == any_msg
 
     def test_range_selection_lower_only(self) -> None:
         """range_selection with lower bound only."""
@@ -545,17 +486,17 @@ class TestAdditionalHelpers:
         assert full_type_url is full_type_url_for
 
     def test_decode_event_returns_none_on_unpack_failure(self, monkeypatch) -> None:
-        from angzarr_client._pb import Cover, EventPage, PageHeader
+        from angzarr_client._pb import Cover, EventPage
         from angzarr_client.helpers import decode_event
 
-        page = EventPage(header=PageHeader(sequence=1))
-        page.event.Pack(Cover(domain="x"))
+        page = EventPage(sequence=1)
+        page.payload.Pack(Cover(domain="x"))
 
         def boom(self, _msg):
             raise RuntimeError("decoding failed")
 
         # Patch Unpack on the Any to force the except branch
-        monkeypatch.setattr(type(page.event), "Unpack", boom)
+        monkeypatch.setattr(type(page.payload), "Unpack", boom)
         assert decode_event(page, "io.angzarr.v1.Cover", Cover) is None
 
 
@@ -620,3 +561,20 @@ class TestCorrelatedMetadata:
         assert isinstance(correlated_metadata("x"), list)
         assert isinstance(correlated_metadata("x")[0], tuple)
         assert len(correlated_metadata("x")[0]) == 2
+
+    def test_proto_uuid_renders_its_text_form(self) -> None:
+        # Correlation travels as a proto UUID (CommandPage.correlation_id,
+        # Query.correlation_id); the header carries its standard text form.
+        from angzarr_client.helpers import correlated_metadata
+
+        u = PyUUID("0192f0c1-0000-7000-8000-00000000c0de")
+        assert correlated_metadata(uuid_to_proto(u)) == [
+            (CORRELATION_ID_HEADER, str(u))
+        ]
+
+    def test_unset_proto_uuid_skips_the_header(self) -> None:
+        from angzarr_client._pb import UUID
+        from angzarr_client.helpers import correlated_metadata
+
+        assert correlated_metadata(UUID()) == []
+        assert correlated_metadata(None) == []

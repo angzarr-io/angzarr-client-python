@@ -42,9 +42,6 @@ from ._pb import (
     EventPage as _EventPageProto,
 )
 from ._pb import (
-    MergeStrategy,
-)
-from ._pb import (
     Query as _QueryProto,
 )
 from .helpers import type_url_matches
@@ -96,17 +93,6 @@ class CoverBearer(Wrapped):
             return UNKNOWN_DOMAIN
         return c.domain
 
-    def correlation_id(self) -> str:
-        """Get the correlation_id, or empty string if missing."""
-        c = self._cover_proto()
-        if c is None:
-            return ""
-        return c.correlation_id
-
-    def has_correlation_id(self) -> bool:
-        """True if a non-empty correlation_id is present."""
-        return bool(self.correlation_id())
-
     def root_uuid(self) -> PyUUID | None:
         """Extract the root UUID, or None if missing/malformed."""
         c = self._cover_proto()
@@ -127,9 +113,9 @@ class CoverBearer(Wrapped):
     def edition(self) -> str | None:
         """Edition name, or None when missing/empty."""
         c = self._cover_proto()
-        if c is None or not c.HasField("edition") or not c.edition.name:
+        if c is None or not c.HasField("edition") or not c.edition:
             return None
-        return c.edition.name
+        return c.edition
 
     def routing_key(self) -> str:
         """Bus routing key (currently the domain)."""
@@ -217,31 +203,11 @@ class CommandBook(CoverBearer):
         """
         return Cover(self._proto.cover)
 
-    def pages(self) -> list[CommandPage]:
-        """All command pages, wrapped."""
-        return [CommandPage(p) for p in self._proto.pages]
-
     def first_command(self) -> CommandPage | None:
-        """First command page, or None when empty."""
-        if not self._proto.pages:
+        """The book's command page, or None when it has none."""
+        if not self._proto.HasField("page"):
             return None
-        return CommandPage(self._proto.pages[0])
-
-    def command_sequence(self) -> int:
-        """Sequence number of the first command page (0 when empty)."""
-        if not self._proto.pages:
-            return 0
-        page = self._proto.pages[0]
-        if not page.HasField("header"):
-            return 0
-        return page.header.sequence
-
-    def merge_strategy(self) -> MergeStrategy:
-        """Effective merge strategy of the first page; commutative when there
-        are no pages."""
-        if not self._proto.pages:
-            return MergeStrategy.MERGE_COMMUTATIVE
-        return CommandPage(self._proto.pages[0]).merge_strategy()
+        return CommandPage(self._proto.page)
 
 
 class Query(CoverBearer):
@@ -274,22 +240,20 @@ class EventPage(Wrapped):
         return self._proto
 
     def sequence_num(self) -> int:
-        """Explicit sequence number, or 0 if not set."""
-        if not self._proto.HasField("header"):
-            return 0
-        return self._proto.header.sequence
+        """The page's sequence in its stream (0 when unset)."""
+        return self._proto.sequence
 
     def type_url(self) -> str | None:
         """Event payload's type URL, or None if missing."""
-        if not self._proto.HasField("event"):
+        if not self._proto.HasField("payload"):
             return None
-        return self._proto.event.type_url
+        return self._proto.payload.type_url
 
     def payload(self) -> bytes | None:
         """Raw event payload bytes, or None if missing."""
-        if not self._proto.HasField("event"):
+        if not self._proto.HasField("payload"):
             return None
-        return self._proto.event.value
+        return self._proto.payload.value
 
     def decode_typed(self, msg_class: type[T]) -> T | None:
         """Decode the event payload into ``msg_class`` when the type URL names
@@ -297,15 +261,15 @@ class EventPage(Wrapped):
 
         Returns None on missing event, type mismatch, or decode failure.
         """
-        if not self._proto.HasField("event"):
+        if not self._proto.HasField("payload"):
             return None
         if not type_url_matches(
-            self._proto.event.type_url, msg_class.DESCRIPTOR.full_name
+            self._proto.payload.type_url, msg_class.DESCRIPTOR.full_name
         ):
             return None
         try:
             msg = msg_class()
-            self._proto.event.Unpack(msg)
+            self._proto.payload.Unpack(msg)
             return msg
         except Exception:  # noqa: BLE001 — undecodable payload decodes to None
             return None
@@ -320,34 +284,25 @@ class CommandPage(Wrapped):
     def proto(self) -> _CommandPageProto:
         return self._proto
 
-    def sequence_num(self) -> int:
-        """Explicit sequence number, or 0 if not set."""
-        if not self._proto.HasField("header"):
-            return 0
-        return self._proto.header.sequence
+    def _body_payload(self):
+        """The payload of the body arm (Command or Fact), or None."""
+        arm = self._proto.WhichOneof("body")
+        if arm is None:
+            return None
+        body = getattr(self._proto, arm)
+        return body.payload if body.HasField("payload") else None
 
     def type_url(self) -> str | None:
-        """Command payload's type URL, or None if missing."""
-        if not self._proto.HasField("command"):
-            return None
-        return self._proto.command.type_url
+        """The body payload's type URL (Command or Fact arm), or None if
+        missing."""
+        payload = self._body_payload()
+        return None if payload is None else payload.type_url
 
     def payload(self) -> bytes | None:
-        """Raw command payload bytes, or None if missing."""
-        if not self._proto.HasField("command"):
-            return None
-        return self._proto.command.value
-
-    def merge_strategy(self) -> MergeStrategy:
-        """Effective per-page merge strategy: an unset (MERGE_UNSPECIFIED) or
-        unknown value is the documented default, commutative."""
-        value = self._proto.merge_strategy
-        if (
-            value == MergeStrategy.MERGE_UNSPECIFIED
-            or value not in MergeStrategy.values()
-        ):
-            return MergeStrategy.MERGE_COMMUTATIVE
-        return value
+        """The body's raw payload bytes (Command or Fact arm), or None if
+        missing."""
+        payload = self._body_payload()
+        return None if payload is None else payload.value
 
 
 class CommandResponse(Wrapped):

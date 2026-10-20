@@ -20,22 +20,10 @@ if TYPE_CHECKING:
 from ._pb import (
     CommandBook,
     CommandHandlerCoordinatorServiceStub,
-    CommandRequest,
     CommandResponse,
     EventBook,
     EventQueryServiceStub,
-    ProcessManagerCoordinatorServiceStub,
-    ProcessManagerHandleResponse,
-    Projection,
-    ProjectorCoordinatorServiceStub,
     Query,
-    SagaCoordinatorServiceStub,
-    SagaResponse,
-    SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
-    SyncMode,
 )
 
 
@@ -207,10 +195,10 @@ class QueryClient:
             timeout: Optional per-call deadline in seconds.
 
         Audit #69 stage (b): attaches ``x-correlation-id`` metadata from
-        ``query.cover.correlation_id`` so OTel exporters / mesh sidecars
+        ``query.correlation_id`` so OTel exporters / mesh sidecars
         can filter on it without decoding the body. Send-only.
         """
-        md = correlated_metadata(query.cover.correlation_id)
+        md = correlated_metadata(query.correlation_id)
         return _invoke(self._stub.GetEventBook, query, timeout=timeout, metadata=md)
 
     def get_events(self, query: Query, timeout: float | None = None) -> list[EventBook]:
@@ -220,7 +208,7 @@ class QueryClient:
             query: The query specification.
             timeout: Optional per-call deadline in seconds.
         """
-        md = correlated_metadata(query.cover.correlation_id)
+        md = correlated_metadata(query.correlation_id)
         return _invoke(
             self._stub.GetEvents, query, timeout=timeout, metadata=md, stream=True
         )
@@ -302,32 +290,19 @@ class CommandHandlerClient:
     def handle(
         self, command: CommandBook, timeout: float | None = None
     ) -> CommandResponse:
-        """Execute a command with default async mode.
-
-        This is a convenience method that wraps the command in a CommandRequest
-        with SYNC_MODE_ASYNC (fire-and-forget).
+        """Send a command and wait for its decision
+        (CommandHandlerCoordinatorService.Handle, DECISION): the response
+        carries the persisted events; a rejection raises :class:`GRPCError`.
 
         Args:
             command: The command to execute.
             timeout: Optional per-call deadline in seconds.
-        """
-        request = CommandRequest(command=command, sync_mode=SyncMode.SYNC_MODE_ASYNC)
-        return self.handle_command(request, timeout=timeout)
-
-    def handle_command(
-        self, request: CommandRequest, timeout: float | None = None
-    ) -> CommandResponse:
-        """Execute a command with the specified sync mode.
-
-        Args:
-            request: The command request.
-            timeout: Optional per-call deadline in seconds.
 
         Audit #69 stage (b): attaches ``x-correlation-id`` metadata
-        from the canonical ``request.command.cover.correlation_id``.
+        from ``command.page.correlation_id``.
         """
-        md = correlated_metadata(request.command.cover.correlation_id)
-        return _invoke(self._stub.HandleCommand, request, timeout=timeout, metadata=md)
+        md = correlated_metadata(command.page.correlation_id)
+        return _invoke(self._stub.Handle, command, timeout=timeout, metadata=md)
 
     def command(self, domain: str, root: PyUUID) -> CommandBuilder:
         """Start building a command for an existing aggregate."""
@@ -360,153 +335,12 @@ class CommandHandlerClient:
         self.close()
 
 
-class SpeculativeClient:
-    """Client for speculative operations across coordinator services.
-
-    Speculative execution runs commands/events against temporal state without persistence.
-    Each coordinator service now provides its own speculative method.
-    """
-
-    def __init__(self, channel: grpc.Channel, owns_channel: bool = True):
-        self._command_handler_stub = CommandHandlerCoordinatorServiceStub(channel)
-        self._saga_stub = SagaCoordinatorServiceStub(channel)
-        self._projector_stub = ProjectorCoordinatorServiceStub(channel)
-        self._pm_stub = ProcessManagerCoordinatorServiceStub(channel)
-        self._channel = channel
-        self._owns_channel = owns_channel
-
-    @classmethod
-    def connect(
-        cls, endpoint: str, retry: RetryPolicy | None = None
-    ) -> SpeculativeClient:
-        """Connect to coordinator services at the given endpoint.
-
-        Args:
-            endpoint: The gRPC endpoint (host:port or UDS path).
-            retry: Optional retry policy. Defaults to exponential backoff.
-        """
-        policy = retry or default_retry_policy()
-        channel = policy.execute(lambda: _create_channel(endpoint))
-        return cls(channel, owns_channel=True)
-
-    @classmethod
-    def from_channel(cls, channel: grpc.Channel) -> SpeculativeClient:
-        """Create a client from a caller-managed channel.
-
-        The returned client will not close the channel when `close()` is called;
-        the caller retains ownership.
-        """
-        return cls(channel, owns_channel=False)
-
-    @classmethod
-    def from_env(cls, env_var: str, default: str) -> SpeculativeClient:
-        """Connect using an environment variable with fallback."""
-        endpoint = os.environ.get(env_var) or default
-        return cls.connect(endpoint)
-
-    @classmethod
-    def from_stubs(
-        cls,
-        command_handler_stub,
-        saga_stub,
-        projector_stub,
-        pm_stub,
-    ) -> SpeculativeClient:
-        """Compose a SpeculativeClient from pre-built gRPC stubs.
-
-        Bypasses channel construction; the four stubs back the four
-        speculative methods (`command_handler`, `saga`, `projector`,
-        `process_manager`). Test-only seam — see
-        `tests/_fakes.py::RecordingStub`. P1.12.e / finding #24.
-        """
-        instance = cls.__new__(cls)
-        instance._command_handler_stub = command_handler_stub
-        instance._saga_stub = saga_stub
-        instance._projector_stub = projector_stub
-        instance._pm_stub = pm_stub
-        instance._channel = None
-        instance._owns_channel = False
-        return instance
-
-    def command_handler(
-        self,
-        request: SpeculateCommandHandlerRequest,
-        timeout: float | None = None,
-    ) -> CommandResponse:
-        """Execute a command speculatively against temporal state.
-
-        Audit #69 stage (b): canonical correlation_id at
-        ``request.command.cover.correlation_id``.
-        """
-        md = correlated_metadata(request.command.cover.correlation_id)
-        return _invoke(
-            self._command_handler_stub.HandleSyncSpeculative,
-            request,
-            timeout=timeout,
-            metadata=md,
-        )
-
-    def projector(
-        self, request: SpeculateProjectorRequest, timeout: float | None = None
-    ) -> Projection:
-        """Speculatively execute a projector against events.
-
-        Audit #69 stage (b): canonical correlation_id at
-        ``request.events.cover.correlation_id``.
-        """
-        md = correlated_metadata(request.events.cover.correlation_id)
-        return _invoke(
-            self._projector_stub.HandleSpeculative,
-            request,
-            timeout=timeout,
-            metadata=md,
-        )
-
-    def saga(
-        self, request: SpeculateSagaRequest, timeout: float | None = None
-    ) -> SagaResponse:
-        """Speculatively execute a saga against events.
-
-        Audit #69 stage (b): canonical correlation_id at
-        ``request.request.source.cover.correlation_id``.
-        """
-        md = correlated_metadata(request.request.source.cover.correlation_id)
-        return _invoke(
-            self._saga_stub.ExecuteSpeculative, request, timeout=timeout, metadata=md
-        )
-
-    def process_manager(
-        self, request: SpeculatePmRequest, timeout: float | None = None
-    ) -> ProcessManagerHandleResponse:
-        """Speculatively execute a process manager.
-
-        Audit #69 stage (b): canonical correlation_id at
-        ``request.request.trigger.cover.correlation_id``.
-        """
-        md = correlated_metadata(request.request.trigger.cover.correlation_id)
-        return _invoke(
-            self._pm_stub.HandleSpeculative, request, timeout=timeout, metadata=md
-        )
-
-    def close(self) -> None:
-        """Close the underlying channel if this client owns it."""
-        if self._owns_channel:
-            self._channel.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        self.close()
-
-
 class DomainClient:
-    """Combined client for command handler, query, and speculative operations on a single domain."""
+    """Combined client for command handler and query operations on a single domain."""
 
     def __init__(self, channel: grpc.Channel, owns_channel: bool = True):
         self.command_handler = CommandHandlerClient.from_channel(channel)
         self.query = QueryClient.from_channel(channel)
-        self.speculative = SpeculativeClient.from_channel(channel)
         self._channel = channel
         self._owns_channel = owns_channel
 
@@ -536,7 +370,6 @@ class DomainClient:
         cls,
         command_handler: CommandHandlerClient,
         query: QueryClient,
-        speculative: SpeculativeClient,
     ) -> DomainClient:
         """Compose a DomainClient from already-constructed wrapped clients.
 
@@ -552,7 +385,6 @@ class DomainClient:
         instance = cls.__new__(cls)
         instance.command_handler = command_handler
         instance.query = query
-        instance.speculative = speculative
         instance._channel = None
         instance._owns_channel = False
         return instance
@@ -593,26 +425,9 @@ class DomainClient:
     def execute(
         self, command: CommandBook, timeout: float | None = None
     ) -> CommandResponse:
-        """Execute a command with default async mode (fire-and-forget)."""
-        return self.execute_with_mode(
-            command, SyncMode.SYNC_MODE_ASYNC, timeout=timeout
-        )
-
-    def execute_with_mode(
-        self,
-        command: CommandBook,
-        sync_mode: SyncMode,
-        timeout: float | None = None,
-    ) -> CommandResponse:
-        """Execute a command with the specified sync mode.
-
-        Args:
-            command: The command to execute.
-            sync_mode: Execution mode (ASYNC, DECISION or SIMPLE).
-            timeout: Optional per-call deadline in seconds.
-        """
-        request = CommandRequest(command=command, sync_mode=sync_mode)
-        return self.command_handler.handle_command(request, timeout=timeout)
+        """Send a command and wait for its decision (see
+        :meth:`CommandHandlerClient.handle`)."""
+        return self.command_handler.handle(command, timeout=timeout)
 
     def get_event_book(self, query: Query, timeout: float | None = None) -> EventBook:
         """Retrieve a single EventBook for the query — unary RPC.

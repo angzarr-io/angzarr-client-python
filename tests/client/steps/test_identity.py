@@ -1,6 +1,7 @@
 """Step defs for parity/client/identity.feature: ``compute_root`` is
-uuid5(NAMESPACE_OID, domain + ":" + key), the client's only identity
-derivation, and ``to_proto_bytes`` is the UUID's 16 bytes."""
+uuid5(ANGZARR_ROOT_NAMESPACE, domain + ":" + key), the client's only identity
+derivation, refusing a domain containing ':'; ``to_proto_bytes`` is the
+UUID's 16 bytes."""
 
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ scenarios("parity/client/identity.feature")
 class IdentityWorld:
     uuids: list[UUID] = field(default_factory=list)
     bytes_: bytes | None = None
+    error: Exception | None = None
 
 
 @pytest.fixture
@@ -33,7 +35,10 @@ def identity_world() -> IdentityWorld:
     )
 )
 def _when_compute_root(identity_world: IdentityWorld, domain: str, key: str) -> None:
-    identity_world.uuids.append(ac.compute_root(domain, key))
+    try:
+        identity_world.uuids.append(ac.compute_root(domain, key))
+    except ac.ClientError as exc:
+        identity_world.error = exc
 
 
 @when(parsers.parse('I call compute_root with domain "{domain}" and key ""'))
@@ -81,3 +86,10 @@ def _then_len(identity_world: IdentityWorld) -> None:
 @then(parsers.parse('the bytes match the hex "{hex_str}"'))
 def _then_hex(identity_world: IdentityWorld, hex_str: str) -> None:
     assert identity_world.bytes_ == bytes.fromhex(hex_str)
+
+
+@then("the error should be an invalid argument error")
+def _then_invalid_argument(identity_world: IdentityWorld) -> None:
+    assert identity_world.error is not None
+    assert identity_world.error.is_invalid_argument()
+    assert identity_world.uuids == []

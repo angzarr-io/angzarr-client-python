@@ -127,6 +127,19 @@ def test_router_build_needs_the_router_submodule(monkeypatch, tmp_path):
         native_build.build_router_lib()
 
 
+def test_router_build_needs_the_routers_nested_proto_crate(monkeypatch, tmp_path):
+    # angzarr-router takes its wire types from its own angzarr-project
+    # submodule's angzarr-proto crate, so that nested submodule must be there.
+    monkeypatch.setattr(native_build.sys, "platform", "linux")
+    monkeypatch.setattr(native_build.shutil, "which", lambda name: "/usr/bin/cargo")
+    (tmp_path / "Cargo.toml").write_text("[workspace]\n")
+    monkeypatch.setattr(native_build, "ROUTER", tmp_path)
+    with pytest.raises(
+        native_build.NativeBuildError, match="git submodule update --init --recursive"
+    ):
+        native_build.build_router_lib()
+
+
 def test_generated_protos_import_under_the_package(tmp_path):
     files = native_build.generate_protos(tmp_path / "proto")
     names = {f.relative_to(tmp_path / "proto").as_posix() for f in files}

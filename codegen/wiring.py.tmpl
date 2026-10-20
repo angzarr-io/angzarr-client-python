@@ -35,7 +35,6 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.SagaDispatch:
 
 def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.AggregateDispatch:
     rebuilder = _az.Rebuilder(lambda: {{ typeRef $c.state }}())
-    rebuilder.with_snapshot(lambda state, payload: state.ParseFromString(payload.value))
 {{- include "py.appliers" $c }}
     dispatch = _az.AggregateDispatch({{ quote $c.name }}, {{ quote $c.domain }}, rebuilder)
 {{- range $c.handlers }}
@@ -46,15 +45,12 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.AggregateDisp
         events = handler.{{ snake .method }}(cmd, state, cctx)
         book = _t.EventBook()
         for ev in events:
-            book.pages.add().event.CopyFrom(_az.pack(ev))
+            book.pages.add().payload.CopyFrom(_az.pack(ev))
         return book
 {{- else }}
         return handler.{{ snake .method }}(cmd, state, cctx)
 {{- end }}
     dispatch.on_command({{ quote .message.full_name }}, _on_{{ snake .method }})
-{{- end }}
-{{- range $c.rejections }}
-    dispatch.on_rejected({{ quote .key }}, handler.{{ snake .method }})
 {{- end }}
 {{- range $c.facts }}
     def _fact_{{ snake .method }}(fact_any, state):
@@ -64,15 +60,11 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.AggregateDisp
         return rec if rec is not None else _az.FactRecord.as_received(fact_any)
     dispatch.on_fact({{ quote .message.full_name }}, _fact_{{ snake .method }})
 {{- end }}
-{{- range $c.undos }}
-    dispatch.on_undo({{ quote .command }}, handler.{{ snake .method }})
-{{- end }}
     return dispatch
 {{- else if eq $c.kind "PROCESS_MANAGER" }}
 
 def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.ProcessManagerDispatch:
     rebuilder = _az.Rebuilder(lambda: {{ typeRef $c.state }}())
-    rebuilder.with_snapshot(lambda state, payload: state.ParseFromString(payload.value))
 {{- include "py.appliers" $c }}
     dispatch = _az.ProcessManagerDispatch({{ quote $c.name }}, {{ quote $c.domain }}, rebuilder, targets=[{{ include "py.domains" $c.output_domains }}])
 {{- range $c.handlers }}
@@ -81,9 +73,6 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.ProcessManage
 {{- include "py.unpack" (dict "target" "event" "any" "event_any") }}
         return handler.{{ snake .method }}(event, state, trigger_cover)
     dispatch.on_event_with_cover({{ quote .source_domain }}, {{ quote .message.full_name }}, _on_{{ snake .method }})
-{{- end }}
-{{- range $c.rejections }}
-    dispatch.on_rejected({{ quote .key }}, handler.{{ snake .method }})
 {{- end }}
     return dispatch
 {{- else if eq $c.kind "PROJECTOR" }}
@@ -100,7 +89,6 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.ProjectorDisp
         handler.{{ snake .method }}(projection, event, ctx)
     dispatch.on_event_with_context({{ quote .message.full_name }}, _on_{{ snake .method }})
 {{- end }}
-    dispatch.finish(handler.{{ snake $c.finish_method }})
     return dispatch
 {{- end }}
 

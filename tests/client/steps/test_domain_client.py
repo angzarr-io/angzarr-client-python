@@ -53,7 +53,6 @@ class _World:
             .with_command(
                 order_type_url("AddItem"), GenericCommand(data="via-domain-client")
             )
-            .with_sequence(0)
             .execute()
         )
 
@@ -178,7 +177,7 @@ def _then_can_query(state: _World) -> None:
 def _then_can_send(state: _World) -> None:
     resp = state.send()
     assert len(resp.events.pages) == 1
-    assert "HandleCommand" in state.backend.rpc_names()
+    assert "Handle" in state.backend.rpc_names()
 
 
 @then("I should receive a command response")
@@ -203,7 +202,7 @@ def _then_same_connection(state: _World) -> None:
     assert {cid for _, cid in state.backend.rpcs} == {
         state.backend.channels[0].channel_id
     }
-    assert state.backend.rpc_names() == ["HandleCommand", "GetEventBook"]
+    assert state.backend.rpc_names() == ["Handle", "GetEventBook"]
 
 
 def _assert_severed(state: _World) -> None:
@@ -217,7 +216,7 @@ def _then_commands_fail(state: _World) -> None:
     result = _capture(state.send)
     assert isinstance(result, ClientError), f"command succeeded: {result!r}"
     assert result.is_connection_error(), result
-    assert "HandleCommand" not in state.backend.rpc_names()
+    assert "Handle" not in state.backend.rpc_names()
 
 
 @then("subsequent queries should fail with a connection error")

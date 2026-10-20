@@ -12,10 +12,11 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from angzarr_client.proto.io.angzarr.v1 import process_manager_pb2, types_pb2
 from angzarr_client.router import CodedError, Router
 
-from ..builders import FQ_INCREASED, FQ_RESERVE, assert_deferred, type_url
-from ..fixture import AUDIT_MARK, AuditProcessManager, OrderProcessManager
+from ..builders import FQ_INCREASED, type_url
+from ..fixture import AuditProcessManager, OrderProcessManager, recorded_states
 from ..gen.test.counter import (
     audit_process_manager_angzarr,
+    counter_pb2,
     order_process_manager_angzarr,
 )
 from . import CONFORMANCE_FEATURES
@@ -32,13 +33,21 @@ class _World:
         self.resp = None
         self.err: CodedError | None = None
 
-    def facts_marked(self, audit: bool) -> int:
-        """How many response facts the audit PM (``audit``) or the order PM
-        (not ``audit``) emitted, told apart by the audit cover mark."""
+    def order_counts(self) -> list[int]:
+        """The rebuilt count each reacting order PM recorded."""
         assert self.err is None, f"dispatch failed: {self.err}"
-        return sum(
-            1 for f in self.resp.facts if (f.cover.domain == AUDIT_MARK) == audit
-        )
+        return [
+            s.count
+            for s in recorded_states(self.resp, counter_pb2.OrderProcessManagerState)
+        ]
+
+    def audit_counts(self) -> list[int]:
+        """How many events each reacting audit PM's rebuilt state saw."""
+        assert self.err is None, f"dispatch failed: {self.err}"
+        return [
+            len(s.seen)
+            for s in recorded_states(self.resp, counter_pb2.AuditProcessManagerState)
+        ]
 
     def dispatch(self, request) -> None:
         try:
@@ -65,28 +74,11 @@ def _trigger(domain: str, fqs: list[str], state=None, newest_seq: int | None = N
     req = process_manager_pb2.ProcessManagerHandleRequest()
     req.trigger.cover.domain = domain
     for fq in fqs:
-        req.trigger.pages.add().event.type_url = type_url(fq)
+        req.trigger.pages.add().payload.type_url = type_url(fq)
     if newest_seq is not None:
-        req.trigger.pages[-1].header.sequence = newest_seq
+        req.trigger.pages[-1].sequence = newest_seq
     if state is not None:
         req.process_state.CopyFrom(state)
-    return req
-
-
-def _compensate(fq_command: str):
-    """A trigger in the order PM's own domain whose page is a Notification
-    carrying a Compensate for an executed ``fq_command``."""
-    compensate = types_pb2.Compensate(
-        command_type=fq_command, sequences=[0], reason="aborted"
-    )
-    notification = types_pb2.Notification()
-    notification.payload.type_url = type_url("io.angzarr.v1.Compensate")
-    notification.payload.value = compensate.SerializeToString()
-    req = process_manager_pb2.ProcessManagerHandleRequest()
-    req.trigger.cover.domain = "order-pm"
-    page = req.trigger.pages.add()
-    page.event.type_url = type_url("io.angzarr.v1.Notification")
-    page.event.value = notification.SerializeToString()
     return req
 
 
@@ -97,30 +89,8 @@ def _state_of(n: int, owner: str | None = None):
     if owner is not None:
         book.cover.domain = owner
     for _ in range(n):
-        book.pages.add().event.type_url = type_url(FQ_INCREASED)
+        book.pages.add().payload.type_url = type_url(FQ_INCREASED)
     return book
-
-
-def _rejection(fq_command: str, issuer: str | None = None):
-    """A rejection of fq_command delivered as a Notification trigger. With an
-    ``issuer`` the trigger cover is the issuer's domain and the rejected
-    command's angzarr_deferred header names the issuer as its source."""
-    rejection = types_pb2.RejectionNotification()
-    rejection.rejected_command.cover.domain = "inventory"
-    page = rejection.rejected_command.pages.add()
-    page.command.type_url = type_url(fq_command)
-    if issuer is not None:
-        page.header.angzarr_deferred.source.domain = issuer
-    notification = types_pb2.Notification()
-    notification.payload.type_url = type_url("io.angzarr.v1.RejectionNotification")
-    notification.payload.value = rejection.SerializeToString()
-
-    req = process_manager_pb2.ProcessManagerHandleRequest()
-    req.trigger.cover.domain = issuer if issuer is not None else "counter"
-    trigger_page = req.trigger.pages.add()
-    trigger_page.event.type_url = type_url("io.angzarr.v1.Notification")
-    trigger_page.event.value = notification.SerializeToString()
-    return req
 
 
 @given("an order process-manager")
@@ -147,11 +117,6 @@ def _co_resident_pms(world):
 )
 def _increased_at(world, domain, seq):
     world.dispatch(_trigger(domain, [FQ_INCREASED], newest_seq=int(seq)))
-
-
-@when("a Compensate for Reserve is dispatched to the order process-manager")
-def _compensate_for_reserve(world):
-    world.dispatch(_compensate(FQ_RESERVE))
 
 
 @when(parsers.re(r'an Increased trigger in domain "(?P<domain>[^"]*)" is dispatched$'))
@@ -194,31 +159,11 @@ def _empty_trigger(world):
     world.dispatch(req)
 
 
-@when("a rejection of Reserve is dispatched")
-def _rejection_reserve(world):
-    world.dispatch(_rejection(FQ_RESERVE))
-
-
-@when(parsers.re(r'a rejection of Reserve issued by "(?P<issuer>[^"]*)" is dispatched'))
-def _rejection_reserve_issued_by(world, issuer):
-    world.dispatch(_rejection(FQ_RESERVE, issuer))
-
-
 @then(parsers.re(r'the process-manager emits one command to "(?P<target>[^"]*)"'))
 def _emits_one_command(world, target):
     assert world.err is None, f"dispatch failed: {world.err}"
     assert len(world.resp.commands) == 1
     assert world.resp.commands[0].cover.domain == target
-
-
-@then(
-    parsers.re(
-        r"the command is deferred from source sequence (?P<seq>\d+) at command index (?P<index>\d+)"
-    )
-)
-def _command_is_deferred(world, seq, index):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    assert_deferred(world.resp.commands[0], "counter", int(seq), int(index))
 
 
 @then("the process-manager emits no commands")
@@ -229,51 +174,38 @@ def _emits_no_commands(world):
 
 @then(parsers.re(r"the process-manager rebuilt (?P<n>\d+) prior state events"))
 def _rebuilt_n(world, n):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    assert len(world.resp.facts) == int(n)
+    assert world.order_counts() == [int(n)]
 
 
 @then(parsers.re(r"the order process-manager rebuilt (?P<n>\d+) prior state events"))
 def _order_rebuilt_n(world, n):
-    assert world.facts_marked(audit=False) == int(n)
+    assert world.order_counts() == [int(n)]
 
 
 @then(parsers.re(r"the audit process-manager rebuilt (?P<n>\d+) prior state events"))
 def _audit_rebuilt_n(world, n):
-    assert world.facts_marked(audit=True) == int(n)
+    assert world.audit_counts() == [int(n)]
 
 
 @then("the order process-manager did not react")
 def _order_did_not_react(world):
-    assert world.facts_marked(audit=False) == 0
+    assert world.order_counts() == []
     assert len(world.resp.commands) == 0
 
 
-@then("only the audit process-manager compensates")
-def _only_audit_compensates(world):
+@then("the command carries no router-stamped provenance")
+def _no_stamped_provenance(world):
+    assert world.err is None, f"dispatch failed: {world.err}"
+    page = world.resp.commands[0].page
+    assert not page.HasField("command_id"), "the coordinator stamps the command id"
+    assert not page.HasField("correlation_id"), "the coordinator stamps the correlation"
+
+
+@then("the process event carries no cover")
+def _process_event_unaddressed(world):
     assert world.err is None, f"dispatch failed: {world.err}"
     assert len(world.resp.process_events) == 1
-    assert world.resp.process_events[0].cover.domain == AUDIT_MARK
-    assert not world.resp.HasField("notification")
-
-
-@then(parsers.re(r'the process event is addressed to "(?P<domain>[^"]*)"'))
-def _process_event_addressed_to(world, domain):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    assert len(world.resp.process_events) == 1
-    assert world.resp.process_events[0].cover.domain == domain
-
-
-@then("the process-manager emits one process event")
-def _emits_one_process_event(world):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    assert len(world.resp.process_events) == 1
-
-
-@then("the process-manager escalates")
-def _escalates(world):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    assert world.resp.HasField("notification")
+    assert not world.resp.process_events[0].HasField("cover")
 
 
 @then(parsers.re(r"the dispatch fails with (?P<code>[A-Z_]+)"))

@@ -5,24 +5,11 @@ from unittest.mock import Mock
 import grpc
 import pytest
 
-from angzarr_client._pb import (
-    CommandBook,
-    CommandRequest,
-    Query,
-    SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
-)
-from angzarr_client.client import (
-    CommandHandlerClient,
-    DomainClient,
-    QueryClient,
-    SpeculativeClient,
-)
+from angzarr_client._pb import CommandBook, Query
+from angzarr_client.client import CommandHandlerClient, DomainClient, QueryClient
 from angzarr_client.retry import RetryPolicy
 
-CHANNEL_CLIENTS = [QueryClient, CommandHandlerClient, SpeculativeClient, DomainClient]
+CHANNEL_CLIENTS = [QueryClient, CommandHandlerClient, DomainClient]
 
 
 class SingleAttempt(RetryPolicy):
@@ -75,14 +62,7 @@ def test_domain_client_from_channel_wires_sub_clients_to_channel() -> None:
 
     assert isinstance(client.command_handler, CommandHandlerClient)
     assert isinstance(client.query, QueryClient)
-    assert isinstance(client.speculative, SpeculativeClient)
     assert channel.unary_unary.called
-
-
-def test_domain_client_init_builds_speculative_client() -> None:
-    channel = Mock(spec=grpc.Channel)
-    client = DomainClient(channel)
-    assert isinstance(client.speculative, SpeculativeClient)
 
 
 @pytest.mark.parametrize("cls", CHANNEL_CLIENTS)
@@ -127,35 +107,21 @@ def test_query_client_from_stub_routes_rpcs_to_stub() -> None:
 
 def test_command_handler_client_from_stub_close_is_noop() -> None:
     stub = Mock()
-    stub.HandleCommand = RecordingRpc("resp")
+    stub.Handle = RecordingRpc("resp")
     client = CommandHandlerClient.from_stub(stub)
 
-    request = CommandRequest(command=CommandBook())
-    assert client.handle_command(request) == "resp"
-    client.close()
-
-
-def test_speculative_client_from_stubs_routes_each_method_to_its_stub() -> None:
-    ch = Mock(HandleSyncSpeculative=RecordingRpc("ch"))
-    saga = Mock(ExecuteSpeculative=RecordingRpc("saga"))
-    proj = Mock(HandleSpeculative=RecordingRpc("proj"))
-    pm = Mock(HandleSpeculative=RecordingRpc("pm"))
-    client = SpeculativeClient.from_stubs(ch, saga, proj, pm)
-
-    assert isinstance(client, SpeculativeClient)
-    assert client.command_handler(SpeculateCommandHandlerRequest()) == "ch"
-    assert client.saga(SpeculateSagaRequest()) == "saga"
-    assert client.projector(SpeculateProjectorRequest()) == "proj"
-    assert client.process_manager(SpeculatePmRequest()) == "pm"
+    command = CommandBook()
+    assert client.handle(command) == "resp"
+    assert stub.Handle.requests == [command]
     client.close()
 
 
 def test_domain_client_from_clients_exposes_given_clients() -> None:
-    ch, q, spec = object(), object(), object()
-    client = DomainClient.from_clients(ch, q, spec)
+    ch, q = object(), object()
+    client = DomainClient.from_clients(ch, q)
 
     assert isinstance(client, DomainClient)
     assert client.command_handler is ch
     assert client.query is q
-    assert client.speculative is spec
+    assert not hasattr(client, "speculative")
     client.close()

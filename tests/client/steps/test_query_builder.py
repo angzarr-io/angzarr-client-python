@@ -21,6 +21,8 @@ from angzarr_client._pb import EventBook, Query
 from angzarr_client.builder import QueryBuilder
 from angzarr_client.errors import InvalidTimestampError
 
+from ._fakes import correlation_for
+
 scenarios("parity/client/query_builder.feature")
 
 
@@ -165,7 +167,7 @@ def _when_set_as_of_time(state: _World, rfc3339: str) -> None:
 
 @when(parsers.parse('I set by_correlation_id to "{cid}"'))
 def _when_set_correlation_id(state: _World, cid: str) -> None:
-    state.builder = _ensure_builder(state).by_correlation_id(cid)
+    state.builder = _ensure_builder(state).by_correlation_id(correlation_for(cid))
     _try_build(state)
 
 
@@ -344,21 +346,21 @@ def _then_error_invalid_timestamp(state: _World) -> None:
 @then(parsers.parse('the built query should have correlation ID "{expected}"'))
 def _then_query_correlation_id(state: _World, expected: str) -> None:
     assert state.built is not None
-    assert state.built.cover.correlation_id == expected
+    assert state.built.correlation_id.value == correlation_for(expected).bytes
 
 
 @then(parsers.parse('the built query should have edition "{expected}"'))
 def _then_query_edition(state: _World, expected: str) -> None:
     assert state.built is not None
     assert state.built.cover.HasField("edition")
-    assert state.built.cover.edition.name == expected
+    assert state.built.cover.edition == expected
 
 
 @then("the built query should have no edition")
 def _then_query_no_edition(state: _World) -> None:
     assert state.built is not None
     has_edition = state.built.cover.HasField("edition") and bool(
-        state.built.cover.edition.name
+        state.built.cover.edition
     )
     assert not has_edition
 
@@ -377,7 +379,7 @@ def _then_query_build_succeeds(state: _World) -> None:
 @then("all chained query values should be preserved")
 def _then_chained_query_values(state: _World) -> None:
     assert state.built is not None
-    assert state.built.cover.edition.name == "test-branch"
+    assert state.built.cover.edition == "test-branch"
     assert state.built.HasField("range")
     assert state.built.range.lower == 10
 
@@ -451,5 +453,5 @@ def _then_receive_query_builder_no_root(state: _World) -> None:
 @then("I can chain by_correlation_id")
 def _then_can_chain_correlation(state: _World) -> None:
     assert state.builder is not None
-    rebuilt = state.builder.by_correlation_id("chain-test").build()
-    assert rebuilt.cover.correlation_id == "chain-test"
+    rebuilt = state.builder.by_correlation_id(correlation_for("chain-test")).build()
+    assert rebuilt.correlation_id.value == correlation_for("chain-test").bytes

@@ -10,7 +10,8 @@ Used by the wheel build hook (hatch_build.py) and the just recipes, so a
   imports rerooted under ``angzarr_client.proto``;
 - ``build_router_lib`` — the router-ffi cdylib from the angzarr-router
   submodule (cargo; grpcio-tools' protoc serves prost-build), copied into
-  angzarr_client/router/_lib/;
+  angzarr_client/router/_lib/; the router's own angzarr-project submodule
+  supplies its angzarr-proto crate, so it is initialised recursively;
 - ``wheel_platform_tag`` — the manylinux tag the built library supports,
   read from the ELF itself: the highest GLIBC symbol version it needs, and a
   refusal of any shared-library dependency outside the manylinux set.
@@ -34,6 +35,9 @@ LIB_NAME = "libangzarr_router_ffi.so"
 PROJECT_PROTO = ROOT / "angzarr-project" / "proto"
 ROUTER = ROOT / "angzarr-router"
 ROUTER_PROTO = ROUTER / "proto"
+# The crate angzarr-router takes its io.angzarr.v1 wire types from: its own
+# angzarr-project submodule's angzarr-proto (a path dependency).
+ROUTER_PROTO_CRATE = pathlib.Path("angzarr-project") / "rust" / "angzarr-proto"
 
 # Proto trees generated into the package, relative to their proto root.
 PROJECT_TREES = ("io/angzarr/v1", "io/angzarr/status", "sererr")
@@ -148,6 +152,11 @@ def build_router_lib(target_dir: pathlib.Path | None = None) -> pathlib.Path:
     if not (ROUTER / "Cargo.toml").is_file():
         raise NativeBuildError(
             f"{ROUTER} is missing: initialise the submodule (git submodule update --init angzarr-router)"
+        )
+    if not (ROUTER / ROUTER_PROTO_CRATE / "Cargo.toml").is_file():
+        raise NativeBuildError(
+            f"{ROUTER / ROUTER_PROTO_CRATE} is missing: initialise the router's own "
+            "submodule (git submodule update --init --recursive angzarr-router)"
         )
     target = target_dir or ROOT / ".router-target"
     with tempfile.TemporaryDirectory() as tools:

@@ -3,28 +3,19 @@
 from unittest.mock import Mock
 from uuid import UUID
 
-import grpc
 import pytest
 
-from angzarr_client._pb import (
-    CommandBook,
-    Cover,
-    Query,
-    SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
-    SyncMode,
-)
+from angzarr_client._pb import CommandBook, CommandPage, Cover, Query
 from angzarr_client.client import (
     CommandHandlerClient,
     DomainClient,
     QueryClient,
-    SpeculativeClient,
     _invoke,
 )
 from angzarr_client.errors import TransportError
-from angzarr_client.proto.io.angzarr.v1 import types_pb2
+from angzarr_client.helpers import uuid_to_proto
+
+CORRELATION = UUID("0192f0c1-0000-7000-8000-000000000001")
 
 
 class RecordingRpc:
@@ -40,7 +31,10 @@ class RecordingRpc:
 
 
 def _command(domain: str = "orders") -> CommandBook:
-    return CommandBook(cover=Cover(domain=domain, correlation_id="corr-1"))
+    return CommandBook(
+        cover=Cover(domain=domain),
+        page=CommandPage(correlation_id=uuid_to_proto(CORRELATION)),
+    )
 
 
 class TestInvoke:
@@ -85,17 +79,16 @@ class TestQueryClientCalls:
 
 
 class TestCommandHandlerClientCalls:
-    def test_handle_wraps_command_as_async_with_no_cascade_mode(self) -> None:
-        stub = Mock(HandleCommand=RecordingRpc("resp"))
+    def test_handle_sends_the_book_itself_to_handle(self) -> None:
+        # DECISION: the CommandBook is the request, with no wrapper.
+        stub = Mock(Handle=RecordingRpc("resp"))
         cmd = _command()
 
         result = CommandHandlerClient.from_stub(stub).handle(cmd, timeout=3.0)
 
         assert result == "resp"
-        request, timeout = stub.HandleCommand.calls[0]
-        assert request.command == cmd
-        assert request.sync_mode == SyncMode.SYNC_MODE_ASYNC
-        assert request.cascade_error_mode == types_pb2.CASCADE_ERROR_UNSPECIFIED
+        request, timeout = stub.Handle.calls[0]
+        assert request == cmd
         assert timeout == 3.0
 
     def test_offers_no_speculative_execution(self) -> None:
@@ -103,40 +96,15 @@ class TestCommandHandlerClientCalls:
         assert not hasattr(CommandHandlerClient, "handle_sync_speculative")
 
     def test_command_new_builder_executes_through_this_client(self) -> None:
-        stub = Mock(HandleCommand=RecordingRpc("resp"))
+        stub = Mock(Handle=RecordingRpc("resp"))
         client = CommandHandlerClient.from_stub(stub)
 
         builder = client.command_new("orders").with_type_url("t").with_payload(b"p")
         assert builder.execute() == "resp"
 
-        request = stub.HandleCommand.calls[0][0]
-        assert request.command.cover.domain == "orders"
-        assert UUID(bytes=request.command.cover.root.value).version == 4
-
-
-class TestSpeculativeClientDeadlines:
-    @pytest.fixture
-    def stubs(self):
-        return (
-            Mock(HandleSyncSpeculative=RecordingRpc()),
-            Mock(ExecuteSpeculative=RecordingRpc()),
-            Mock(HandleSpeculative=RecordingRpc()),
-            Mock(HandleSpeculative=RecordingRpc()),
-        )
-
-    def test_each_method_passes_deadline(self, stubs) -> None:
-        ch, saga, proj, pm = stubs
-        client = SpeculativeClient.from_stubs(ch, saga, proj, pm)
-
-        client.command_handler(SpeculateCommandHandlerRequest(), timeout=1.0)
-        client.saga(SpeculateSagaRequest(), timeout=2.0)
-        client.projector(SpeculateProjectorRequest(), timeout=3.0)
-        client.process_manager(SpeculatePmRequest(), timeout=4.0)
-
-        assert ch.HandleSyncSpeculative.calls[0][1] == 1.0
-        assert saga.ExecuteSpeculative.calls[0][1] == 2.0
-        assert proj.HandleSpeculative.calls[0][1] == 3.0
-        assert pm.HandleSpeculative.calls[0][1] == 4.0
+        request = stub.Handle.calls[0][0]
+        assert request.cover.domain == "orders"
+        assert UUID(bytes=request.cover.root.value).version == 4
 
 
 class RecordingQueryClient:
@@ -155,35 +123,22 @@ class RecordingQueryClient:
 class TestDomainClientDelegation:
     @pytest.fixture
     def handler_stub(self):
-        return Mock(HandleCommand=RecordingRpc("resp"))
+        return Mock(Handle=RecordingRpc("resp"))
 
     @pytest.fixture
     def client(self, handler_stub):
         return DomainClient.from_clients(
             CommandHandlerClient.from_stub(handler_stub),
             RecordingQueryClient(),
-            Mock(spec=grpc.Channel),
         )
 
-    def test_execute_sends_async_request(self, client, handler_stub) -> None:
+    def test_execute_sends_the_book_to_handle(self, client, handler_stub) -> None:
         cmd = _command()
         assert client.execute(cmd, timeout=6.0) == "resp"
 
-        request, timeout = handler_stub.HandleCommand.calls[0]
-        assert request.command == cmd
-        assert request.sync_mode == SyncMode.SYNC_MODE_ASYNC
-        assert request.cascade_error_mode == types_pb2.CASCADE_ERROR_UNSPECIFIED
+        request, timeout = handler_stub.Handle.calls[0]
+        assert request == cmd
         assert timeout == 6.0
-
-    def test_execute_with_mode_uses_requested_mode(self, client, handler_stub) -> None:
-        cmd = _command("inventory")
-        client.execute_with_mode(cmd, SyncMode.SYNC_MODE_SIMPLE, timeout=7.0)
-
-        request, timeout = handler_stub.HandleCommand.calls[0]
-        assert request.command == cmd
-        assert request.sync_mode == SyncMode.SYNC_MODE_SIMPLE
-        assert request.cascade_error_mode == types_pb2.CASCADE_ERROR_UNSPECIFIED
-        assert timeout == 7.0
 
     def test_get_event_book_delegates_query_and_deadline(self, client) -> None:
         query = Query(cover=Cover(domain="orders"))

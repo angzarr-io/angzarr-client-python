@@ -12,7 +12,7 @@ in-process fake of the coordinator gRPC services reached through
     returns canned responses (or raises canned errors) keyed by method
     name. Plug into the production wrapping clients via the new
     `from_stub` / `from_stubs` factories on
-    `CommandHandlerClient`, `QueryClient`, `SpeculativeClient`.
+    `CommandHandlerClient`, `QueryClient`.
 
   - :class:`StubRpcError` — a minimal `grpc.RpcError`-quacked exception
     that the wrapping clients can catch and wrap in the production
@@ -33,6 +33,7 @@ from typing import Any
 import grpc
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 from google.protobuf.any_pb2 import Any as ProtoAny
+from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import DecodeError
 from google.protobuf.timestamp_pb2 import Timestamp
 
@@ -40,31 +41,23 @@ from angzarr_client import client as client_module
 from angzarr_client._pb import (
     CommandBook,
     CommandPage,
-    CommandRequest,
     CommandResponse,
     Cover,
-    Edition,
     EventBook,
+    EventMeta,
     EventPage,
-    ProcessManagerHandleResponse,
     Projection,
     Query,
-    SagaResponse,
     Snapshot,
-    SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
-    SyncMode,
 )
-from angzarr_client.helpers import DEFAULT_EDITION, TYPE_URL_PREFIX
+from angzarr_client.helpers import TYPE_URL_PREFIX
 
 
 class StubRpcError(grpc.RpcError):
     """Minimal `grpc.RpcError` carrying a code() and details().
 
     The production code paths (`QueryClient.get_event_book`,
-    `CommandHandlerClient.handle_command`, etc.) catch
+    `CommandHandlerClient.handle`, etc.) catch
     `grpc.RpcError` and wrap it in `GRPCError(e)`. So this stand-in
     must inherit from `grpc.RpcError` and implement the same surface
     (`code()` and `details()`) as the real exception.
@@ -98,7 +91,7 @@ class RecordingStub:
 
         stub = RecordingStub()
         stub.responses["GetEventBook"] = EventBook(...)
-        stub.errors["HandleCommand"] = StubRpcError(
+        stub.errors["Handle"] = StubRpcError(
             grpc.StatusCode.FAILED_PRECONDITION, "stale sequence"
         )
         client = QueryClient.from_stub(stub)
@@ -155,13 +148,16 @@ class RecordingStub:
 #   :func:`event_name_for`;
 # - ``CreateOrder`` requires ``customer_id``;
 # - ``CancelOrder`` is refused once the history holds an ``OrderShipped``;
-# - every page carrying an explicit sequence must name the aggregate's next
-#   sequence (optimistic concurrency, FAILED_PRECONDITION otherwise).
+# - a command whose Handling sets expected_sequence must name the aggregate's
+#   next sequence (STRICT optimistic concurrency, ABORTED otherwise);
+# - the command page's correlation_id is copied onto every event it records
+#   (EventMeta.correlation_id).
 #
-# Sync modes: ``ASYNC`` returns immediately and queues the downstream work
-# (run it with :meth:`TestBackend.drain`), ``SIMPLE`` runs the configured
-# projectors before replying, ``CASCADE`` also runs the configured sagas
-# (which write to their target aggregate) before replying.
+# Command modes (command_handler.proto, command_modes): ``Handle`` (DECISION)
+# returns the persisted events and queues the projectors (run them with
+# :meth:`TestBackend.drain`), ``HandleAsync`` (ASYNC) queues the whole command
+# and returns Empty, ``HandleSync`` (SIMPLE) also runs the configured
+# projectors before replying, in ``outcome.projections``.
 
 ORDER_PACKAGE = "order"
 
@@ -233,13 +229,16 @@ def root_for(label: str) -> uuid.UUID:
         return uuid.uuid5(uuid.NAMESPACE_OID, label)
 
 
-def cover(
-    domain: str, root_label: str, edition: str | None = None, correlation: str = ""
-) -> Cover:
-    c = Cover(domain=domain, correlation_id=correlation)
+# Correlation IDs are UUIDs on the wire (CommandPage.correlation_id,
+# EventMeta.correlation_id); scenario labels map to one as roots do.
+correlation_for = root_for
+
+
+def cover(domain: str, root_label: str, edition: str | None = None) -> Cover:
+    c = Cover(domain=domain)
     c.root.value = root_for(root_label).bytes
     if edition is not None:
-        c.edition.CopyFrom(Edition(name=edition))
+        c.edition = edition
     return c
 
 
@@ -263,14 +262,12 @@ def short_type(any_msg: ProtoAny) -> str:
 
 def event_data(page: EventPage) -> str:
     """``data`` of a backend-emitted event page."""
-    return GenericEvent.FromString(page.event.value).data
+    return GenericEvent.FromString(page.payload.value).data
 
 
-def page_seq(page: EventPage | CommandPage) -> int | None:
-    """Explicit sequence of a page header, if any."""
-    if page.header.WhichOneof("sequence_type") == "sequence":
-        return page.header.sequence
-    return None
+def page_seq(page: EventPage) -> int:
+    """The page's sequence in its stream."""
+    return page.sequence
 
 
 def timestamp(rfc3339: str) -> Timestamp:
@@ -289,13 +286,8 @@ def _ts_key(ts: Timestamp) -> tuple[int, int]:
     return (ts.seconds, ts.nanos)
 
 
-def _edition_key(c: Cover) -> str:
-    name = c.edition.name if c.HasField("edition") else DEFAULT_EDITION
-    return "" if name in ("", DEFAULT_EDITION, "angzarr") else name
-
-
 def _key_of(c: Cover) -> tuple[str, str, bytes]:
-    return (_edition_key(c), c.domain, c.root.value)
+    return (c.edition if c.HasField("edition") else "", c.domain, c.root.value)
 
 
 def _status(code: grpc.StatusCode, details: str) -> StubRpcError:
@@ -307,11 +299,10 @@ class _Aggregate:
     cover: Cover
     pages: list[EventPage] = field(default_factory=list)
     snapshot: Snapshot | None = None
-    correlations: set[str] = field(default_factory=set)
 
     def next_sequence(self) -> int:
-        if self.pages and page_seq(self.pages[-1]) is not None:
-            return page_seq(self.pages[-1]) + 1
+        if self.pages:
+            return self.pages[-1].sequence + 1
         if self.snapshot is not None:
             return self.snapshot.sequence + 1
         return 0
@@ -328,16 +319,17 @@ class _Aggregate:
 def _decide(page: CommandPage, history: list[EventPage]) -> list[tuple[str, str]]:
     """Run the scripted aggregate for one command page against ``history``;
     returns the ``(event name, data)`` pairs it emits."""
-    if page.WhichOneof("payload") != "command":
+    if page.WhichOneof("body") != "command":
         raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing command payload")
-    name = short_type(page.command)
+    payload = page.command.payload
+    name = short_type(payload)
     if not name:
         raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing command type")
     try:
         if name == "CreateOrder":
-            create = CreateOrder.FromString(page.command.value)
+            create = CreateOrder.FromString(payload.value)
         else:
-            cmd = GenericCommand.FromString(page.command.value)
+            cmd = GenericCommand.FromString(payload.value)
     except DecodeError as e:
         raise _status(
             grpc.StatusCode.INVALID_ARGUMENT, f"malformed payload: {e}"
@@ -349,7 +341,7 @@ def _decide(page: CommandPage, history: list[EventPage]) -> list[tuple[str, str]
             )
         return [("OrderCreated", create.customer_id)]
     if name == "CancelOrder" and any(
-        short_type(p.event) == "OrderShipped" for p in history
+        short_type(p.payload) == "OrderShipped" for p in history
     ):
         raise _status(
             grpc.StatusCode.FAILED_PRECONDITION, "cannot cancel shipped order"
@@ -357,50 +349,39 @@ def _decide(page: CommandPage, history: list[EventPage]) -> list[tuple[str, str]
     return [(event_name_for(name), cmd.data)] * max(cmd.count, 1)
 
 
-def _build_pages(decided: list[tuple[str, str]], first_seq: int) -> list[EventPage]:
+def _build_pages(
+    decided: list[tuple[str, str]],
+    first_seq: int,
+    correlation_id: uuid.UUID | None = None,
+) -> list[EventPage]:
     pages = []
     for i, (name, data) in enumerate(decided):
-        p = EventPage()
-        p.header.sequence = first_seq + i
-        p.created_at.CopyFrom(_now())
-        p.event.CopyFrom(event_any(name, data))
-        pages.append(p)
+        meta = EventMeta(recorded_at=_now())
+        if correlation_id is not None:
+            meta.correlation_id.value = correlation_id.bytes
+        pages.append(
+            EventPage(payload=event_any(name, data), sequence=first_seq + i, meta=meta)
+        )
     return pages
 
 
-def _command_parts(book: CommandBook | None) -> tuple[Cover, CommandPage]:
-    if book is None:
-        raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing command book")
+def _command_parts(book: CommandBook) -> tuple[Cover, CommandPage]:
     if not book.HasField("cover"):
         raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing cover")
     if not book.cover.domain:
         raise _status(grpc.StatusCode.INVALID_ARGUMENT, "domain is required")
-    if not book.pages:
+    if not book.HasField("page"):
         raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing command page")
-    return book.cover, book.pages[0]
-
-
-def saga_command(source: Cover, page: EventPage, target: str) -> CommandBook:
-    """The command a backend saga emits for one source event: a
-    ``ReserveStock`` for ``target`` whose header records its provenance."""
-    book = CommandBook()
-    book.cover.CopyFrom(
-        Cover(domain=target, root=source.root, correlation_id=source.correlation_id)
-    )
-    cp = book.pages.add()
-    cp.header.angzarr_deferred.source.CopyFrom(source)
-    cp.header.angzarr_deferred.source_seq = page_seq(page) or 0
-    cp.command.CopyFrom(command_any("ReserveStock", source.domain, 1))
-    return book
+    return book.cover, book.page
 
 
 class TestBackend:
     """In-process fake of the coordinator gRPC services.
 
-    Serves ``CommandHandlerCoordinatorService``, ``EventQueryService`` and
-    the projector / saga / process-manager coordinators' speculative RPCs
-    to every :class:`FakeChannel` opened with :meth:`channel`. Requests and
-    responses cross the channel serialized, as they would over the wire.
+    Serves ``CommandHandlerCoordinatorService`` (Handle, HandleAsync,
+    HandleSync) and ``EventQueryService`` to every :class:`FakeChannel`
+    opened with :meth:`channel`. Requests and responses cross the channel
+    serialized, as they would over the wire.
     """
 
     __test__ = False  # not a pytest test class
@@ -412,38 +393,28 @@ class TestBackend:
         self.known_domains: set[str] | None = None
         self.response_delay: float | None = None
         self.projector_domains: set[str] = set()
-        self.sagas: dict[str, str] = {}
         self.projector_runs: list[tuple[str, str, int]] = []
-        self.sync_modes: list[int] = []
         self.rpcs: list[tuple[str, int]] = []
         self.pending: list[Callable[[], None]] = []
         self.channels: list[FakeChannel] = []
         self._routes: dict[str, tuple[type, Callable[[Any], Any]]] = {
-            "/io.angzarr.v1.CommandHandlerCoordinatorService/HandleCommand": (
-                CommandRequest,
-                self._handle_command,
+            "/io.angzarr.v1.CommandHandlerCoordinatorService/Handle": (
+                CommandBook,
+                self._handle,
             ),
-            "/io.angzarr.v1.CommandHandlerCoordinatorService/HandleSyncSpeculative": (
-                SpeculateCommandHandlerRequest,
-                self._handle_sync_speculative,
+            "/io.angzarr.v1.CommandHandlerCoordinatorService/HandleAsync": (
+                CommandBook,
+                self._handle_async,
+            ),
+            "/io.angzarr.v1.CommandHandlerCoordinatorService/HandleSync": (
+                CommandBook,
+                self._handle_sync,
             ),
             "/io.angzarr.v1.EventQueryService/GetEventBook": (
                 Query,
                 self._get_event_book,
             ),
             "/io.angzarr.v1.EventQueryService/GetEvents": (Query, self._select),
-            "/io.angzarr.v1.ProjectorCoordinatorService/HandleSpeculative": (
-                SpeculateProjectorRequest,
-                self._projector_speculative,
-            ),
-            "/io.angzarr.v1.SagaCoordinatorService/ExecuteSpeculative": (
-                SpeculateSagaRequest,
-                self._saga_speculative,
-            ),
-            "/io.angzarr.v1.ProcessManagerCoordinatorService/HandleSpeculative": (
-                SpeculatePmRequest,
-                self._pm_speculative,
-            ),
         }
 
     # -- connections ------------------------------------------------------
@@ -467,19 +438,20 @@ class TestBackend:
         if key not in self._store:
             stored = Cover()
             stored.CopyFrom(c)
-            stored.ClearField("correlation_id")
             self._store[key] = _Aggregate(cover=stored)
         return self._store[key]
 
-    def seed(self, c: Cover, name: str, count: int) -> None:
+    def seed(
+        self, c: Cover, name: str, count: int, correlation: uuid.UUID | None = None
+    ) -> None:
         """Append ``count`` events named ``name`` with data ``"<name>-<seq>"``."""
         with self._lock:
             agg = self._aggregate(c)
             for _ in range(count):
                 seq = agg.next_sequence()
-                agg.pages.extend(_build_pages([(name, f"{name}-{seq}")], seq))
-            if c.correlation_id:
-                agg.correlations.add(c.correlation_id)
+                agg.pages.extend(
+                    _build_pages([(name, f"{name}-{seq}")], seq, correlation)
+                )
 
     def seed_event(
         self, c: Cover, name: str, data: str, at: Timestamp | None = None
@@ -489,10 +461,8 @@ class TestBackend:
             agg = self._aggregate(c)
             (page,) = _build_pages([(name, data)], agg.next_sequence())
             if at is not None:
-                page.created_at.CopyFrom(at)
+                page.meta.recorded_at.CopyFrom(at)
             agg.pages.append(page)
-            if c.correlation_id:
-                agg.correlations.add(c.correlation_id)
 
     def seed_snapshot(self, c: Cover, sequence: int) -> None:
         with self._lock:
@@ -510,7 +480,7 @@ class TestBackend:
             return sum(len(a.pages) for a in self._store.values())
 
     def drain(self) -> None:
-        """Run the downstream work queued by fire-and-forget commands."""
+        """Run the work queued by DECISION and ASYNC commands."""
         while self.pending:
             self.pending.pop(0)()
 
@@ -536,23 +506,29 @@ class TestBackend:
         if self.known_domains is not None and domain not in self.known_domains:
             raise _status(grpc.StatusCode.NOT_FOUND, f"unknown domain: {domain}")
 
-    def _apply(self, book: CommandBook | None) -> EventBook:
+    def _apply(self, book: CommandBook) -> EventBook:
         """Validate, decide and persist one command; returns the new events."""
         c, page = _command_parts(book)
         self._check_domain(c.domain)
         with self._lock:
             agg = self._aggregate(c)
             nxt = agg.next_sequence()
-            seq = page_seq(page)
-            if seq is not None and seq != nxt:
+            handling = book.handling
+            if handling.HasField("expected_sequence") and (
+                handling.expected_sequence != nxt
+            ):
                 raise _status(
-                    grpc.StatusCode.FAILED_PRECONDITION,
-                    f"sequence mismatch: expected {nxt}, got {seq}",
+                    grpc.StatusCode.ABORTED,
+                    f"sequence mismatch: expected {handling.expected_sequence}, "
+                    f"stream at {nxt}",
                 )
-            pages = _build_pages(_decide(page, agg.pages), nxt)
+            correlation = (
+                uuid.UUID(bytes=page.correlation_id.value)
+                if page.HasField("correlation_id")
+                else None
+            )
+            pages = _build_pages(_decide(page, agg.pages), nxt, correlation)
             agg.pages.extend(pages)
-            if c.correlation_id:
-                agg.correlations.add(c.correlation_id)
             out = EventBook(next_sequence=agg.next_sequence())
             out.cover.CopyFrom(c)
             out.pages.extend(pages)
@@ -564,100 +540,73 @@ class TestBackend:
             return []
         out = []
         for page in events.pages:
-            seq = page_seq(page) or 0
-            self.projector_runs.append((f"{domain}-projector", domain, seq))
-            p = Projection(projector=f"{domain}-projector", sequence=seq)
+            self.projector_runs.append((f"{domain}-projector", domain, page.sequence))
+            p = Projection(
+                projector=f"{domain}-projector", next_sequence=page.sequence + 1
+            )
             p.cover.CopyFrom(events.cover)
             out.append(p)
         return out
 
-    def _run_sagas(self, events: EventBook) -> None:
-        target = self.sagas.get(events.cover.domain)
-        if target is None:
-            return
-        for page in events.pages:
-            self._apply(saga_command(events.cover, page, target))
+    def _handle(self, book: CommandBook) -> CommandResponse:
+        events = self._apply(book)
+        self.pending.append(lambda: self._run_projectors(events))
+        return CommandResponse(events=events)
 
-    def _handle_command(self, req: CommandRequest) -> CommandResponse:
-        self.sync_modes.append(req.sync_mode)
-        events = self._apply(req.command if req.HasField("command") else None)
-        resp = CommandResponse()
-        resp.events.CopyFrom(events)
-        if req.sync_mode == SyncMode.SYNC_MODE_SIMPLE:
-            resp.projections.extend(self._run_projectors(events))
-        elif req.sync_mode == SyncMode.SYNC_MODE_CASCADE:
-            resp.projections.extend(self._run_projectors(events))
-            self._run_sagas(events)
-        else:
+    def _handle_async(self, book: CommandBook) -> Empty:
+        _command_parts(book)
+        self._check_domain(book.cover.domain)
+        self.pending.append(lambda: self._run_projectors(self._apply(book)))
+        return Empty()
 
-            def downstream(book: EventBook = events) -> None:
-                self._run_projectors(book)
-                self._run_sagas(book)
-
-            self.pending.append(downstream)
-        return resp
-
-    def _handle_sync_speculative(
-        self, req: SpeculateCommandHandlerRequest
-    ) -> CommandResponse:
-        c, page = _command_parts(req.command if req.HasField("command") else None)
-        self._check_domain(c.domain)
-        with self._lock:
-            agg = self._store.get(_key_of(c))
-            history = list(agg.pages) if agg else []
-        point = (
-            req.point_in_time.WhichOneof("point_in_time")
-            if req.HasField("point_in_time")
-            else None
-        )
-        if point == "as_of_sequence":
-            cap = req.point_in_time.as_of_sequence
-            history = [p for p in history if (page_seq(p) or 0) <= cap]
-        elif point == "as_of_time":
-            cut = _ts_key(req.point_in_time.as_of_time)
-            history = [p for p in history if _ts_key(p.created_at) <= cut]
-        nxt = page_seq(history[-1]) + 1 if history else 0
-        pages = _build_pages(_decide(page, history), nxt)
-        resp = CommandResponse()
-        resp.events.cover.CopyFrom(c)
-        resp.events.pages.extend(pages)
-        resp.events.next_sequence = nxt + len(pages)
+    def _handle_sync(self, book: CommandBook) -> CommandResponse:
+        events = self._apply(book)
+        resp = CommandResponse(events=events)
+        resp.outcome.projections.extend(self._run_projectors(events))
         return resp
 
     def _select(self, query: Query) -> list[EventBook]:
         if not query.HasField("cover"):
             raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing cover")
         c = query.cover
+        if not c.domain:
+            raise _status(grpc.StatusCode.INVALID_ARGUMENT, "domain is required")
+        correlation = (
+            query.correlation_id.value if query.HasField("correlation_id") else None
+        )
+        selection = query.WhichOneof("selection")
+
+        def keep(p: EventPage) -> bool:
+            if correlation is not None and p.meta.correlation_id.value != correlation:
+                return False
+            seq = p.sequence
+            if selection == "range":
+                r = query.range
+                return seq >= r.lower and (not r.HasField("upper") or seq <= r.upper)
+            if selection == "sequences":
+                return seq in query.sequences.values
+            if selection == "temporal":
+                t = query.temporal
+                which = t.WhichOneof("point_in_time")
+                if which == "as_of_sequence":
+                    return seq <= t.as_of_sequence
+                if which == "as_of_time":
+                    return _ts_key(p.meta.recorded_at) <= _ts_key(t.as_of_time)
+            return True
+
         with self._lock:
-            if not c.HasField("root") and c.correlation_id:
-                return [
-                    a.book()
-                    for a in self._store.values()
-                    if c.correlation_id in a.correlations
-                ]
-            if not c.domain:
-                raise _status(grpc.StatusCode.INVALID_ARGUMENT, "domain is required")
+            if not c.HasField("root"):
+                # By correlation: every stream of the domain is searched,
+                # one EventBook per matching stream.
+                books = []
+                for agg in self._store.values():
+                    if agg.cover.domain != c.domain:
+                        continue
+                    pages = [p for p in agg.pages if keep(p)]
+                    if pages:
+                        books.append(agg.book(pages))
+                return books
             agg = self._store.get(_key_of(c)) or _Aggregate(cover=c)
-            selection = query.WhichOneof("selection")
-
-            def keep(p: EventPage) -> bool:
-                seq = page_seq(p) or 0
-                if selection == "range":
-                    r = query.range
-                    return seq >= r.lower and (
-                        not r.HasField("upper") or seq <= r.upper
-                    )
-                if selection == "sequences":
-                    return seq in query.sequences.values
-                if selection == "temporal":
-                    t = query.temporal
-                    which = t.WhichOneof("point_in_time")
-                    if which == "as_of_sequence":
-                        return seq <= t.as_of_sequence
-                    if which == "as_of_time":
-                        return _ts_key(p.created_at) <= _ts_key(t.as_of_time)
-                return True
-
             book = agg.book([p for p in agg.pages if keep(p)])
             book.cover.CopyFrom(c)
             return [book]
@@ -665,49 +614,6 @@ class TestBackend:
     def _get_event_book(self, query: Query) -> EventBook:
         books = self._select(query)
         return books[0] if books else EventBook()
-
-    def _projector_speculative(self, req: SpeculateProjectorRequest) -> Projection:
-        """The ``order-summary`` projector: projects the sequences it saw,
-        in order, without recording a projector run."""
-        if not req.HasField("events"):
-            raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing events")
-        seqs = [page_seq(p) for p in req.events.pages if page_seq(p) is not None]
-        p = Projection(projector="order-summary", sequence=seqs[-1] if seqs else 0)
-        p.cover.CopyFrom(req.events.cover)
-        p.projection.CopyFrom(event_any("OrderSummary", ",".join(map(str, seqs))))
-        return p
-
-    def _saga_speculative(self, req: SpeculateSagaRequest) -> SagaResponse:
-        """Sagas translate every source event into a ``ReserveStock`` for
-        ``inventory`` (from ``orders``) or ``orders`` (from anything else),
-        without delivering it."""
-        if not (req.HasField("request") and req.request.HasField("source")):
-            raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing saga source")
-        source = req.request.source
-        if not source.HasField("cover"):
-            raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing source cover")
-        target = "inventory" if source.cover.domain == "orders" else "orders"
-        resp = SagaResponse()
-        resp.commands.extend(
-            saga_command(source.cover, p, target) for p in source.pages
-        )
-        return resp
-
-    def _pm_speculative(self, req: SpeculatePmRequest) -> ProcessManagerHandleResponse:
-        """The ``order-workflow`` PM: requires a correlation id and emits one
-        ``shipping`` command per trigger event."""
-        if not (req.HasField("request") and req.request.HasField("trigger")):
-            raise _status(grpc.StatusCode.INVALID_ARGUMENT, "missing trigger")
-        trigger = req.request.trigger
-        if not trigger.cover.correlation_id:
-            raise _status(
-                grpc.StatusCode.INVALID_ARGUMENT, "correlation_id is required"
-            )
-        resp = ProcessManagerHandleResponse()
-        resp.commands.extend(
-            saga_command(trigger.cover, p, "shipping") for p in trigger.pages
-        )
-        return resp
 
 
 class FakeChannel:

@@ -84,25 +84,10 @@ def _given_derived_root(state: _State, name: str) -> None:
     state.derived_root = uuid_for(name)
 
 
-@when(
-    parsers.parse(
-        'I call make_cover with domain "{domain}" and correlation_id "{corr_id}"'
-    )
-)
-def _when_make_cover(state: _State, domain: str, corr_id: str) -> None:
-    assert state.derived_root is not None
-    state.cover = make_cover(domain, state.derived_root, corr_id)
-
-
 @then(parsers.parse('the cover\'s domain is "{domain}"'))
 def _then_cover_domain(state: _State, domain: str) -> None:
     assert state.cover is not None
     assert state.cover.domain == domain
-
-
-@then(parsers.parse('the cover\'s correlation_id is "{corr_id}"'))
-def _then_cover_corr_id(state: _State, corr_id: str) -> None:
-    assert state.cover.correlation_id == corr_id
 
 
 @then("the cover's root bytes match the derived root")
@@ -113,7 +98,7 @@ def _then_cover_root_matches(state: _State) -> None:
 @given(parsers.parse('a cover with domain "{domain}" for that root'))
 def _given_cover_for_root(state: _State, domain: str) -> None:
     assert state.derived_root is not None
-    state.cover = make_cover(domain, state.derived_root, "")
+    state.cover = make_cover(domain, state.derived_root)
 
 
 @when("I call make_event_book with that cover, no pages, and no explicit next_sequence")

@@ -8,10 +8,10 @@ from __future__ import annotations
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.proto.io.angzarr.v1 import saga_pb2, types_pb2
+from angzarr_client.proto.io.angzarr.v1 import types_pb2
 from angzarr_client.router import CodedError, Router
 
-from ..builders import FQ_INCREASED, FQ_RESERVE, assert_deferred, type_url
+from ..builders import FQ_INCREASED, FQ_RESERVE, type_url
 from ..fixture import OrderSaga
 from ..gen.test.counter import order_saga_angzarr
 from . import CONFORMANCE_FEATURES
@@ -59,34 +59,15 @@ def world():
 
 
 def _event_source(fq: str, seq: int | None = None):
-    """A SagaHandleRequest carrying one event of fq in the "order" domain, at
+    """A source EventBook carrying one event of fq in the "order" domain, at
     explicit sequence ``seq`` when given."""
-    req = saga_pb2.SagaHandleRequest()
-    req.source.cover.domain = "order"
-    page = req.source.pages.add()
-    page.event.type_url = type_url(fq)
+    source = types_pb2.EventBook()
+    source.cover.domain = "order"
+    page = source.pages.add()
+    page.payload.type_url = type_url(fq)
     if seq is not None:
-        page.header.sequence = seq
-    return req
-
-
-def _rejection_source(fq_command: str):
-    """A SagaHandleRequest whose source is a rejection Notification for
-    fq_command (sagas receive no rejections, so it emits nothing)."""
-    rejection = types_pb2.RejectionNotification()
-    rejection.rejected_command.cover.domain = "inventory"
-    rejection.rejected_command.pages.add().command.type_url = type_url(fq_command)
-
-    notification = types_pb2.Notification()
-    notification.payload.type_url = type_url("io.angzarr.v1.RejectionNotification")
-    notification.payload.value = rejection.SerializeToString()
-
-    req = saga_pb2.SagaHandleRequest()
-    req.source.cover.domain = "order"
-    page = req.source.pages.add()
-    page.event.type_url = type_url("io.angzarr.v1.Notification")
-    page.event.value = notification.SerializeToString()
-    return req
+        page.sequence = seq
+    return source
 
 
 @given(parsers.re(r'an order saga delivering to "(?P<target>[^"]*)"'))
@@ -107,19 +88,7 @@ def _reserve_event(world):
 
 @when("a source with no pages is dispatched")
 def _empty_source(world):
-    req = saga_pb2.SagaHandleRequest()
-    req.source.SetInParent()
-    world.dispatch(req)
-
-
-@when("a request with no source is dispatched")
-def _missing_source(world):
-    world.dispatch(saga_pb2.SagaHandleRequest())
-
-
-@when("a rejection of Reserve is dispatched")
-def _rejection_reserve(world):
-    world.dispatch(_rejection_source(FQ_RESERVE))
+    world.dispatch(types_pb2.EventBook())
 
 
 @then(parsers.re(r'the saga emits one command to "(?P<target>[^"]*)"'))
@@ -129,14 +98,12 @@ def _emits_one_command(world, target):
     assert world.resp.commands[0].cover.domain == target
 
 
-@then(
-    parsers.re(
-        r"the command is deferred from source sequence (?P<seq>\d+) at command index (?P<index>\d+)"
-    )
-)
-def _command_is_deferred(world, seq, index):
+@then("the command carries no router-stamped provenance")
+def _no_stamped_provenance(world):
     assert world.err is None, f"dispatch failed: {world.err}"
-    assert_deferred(world.resp.commands[0], "order", int(seq), int(index))
+    page = world.resp.commands[0].page
+    assert not page.HasField("command_id"), "the coordinator stamps the command id"
+    assert not page.HasField("correlation_id"), "the coordinator stamps the correlation"
 
 
 @then(parsers.re(r"the saga handler saw source sequence (?P<seq>\d+)"))
@@ -149,12 +116,6 @@ def _handler_saw_sequence(world, seq):
 def _emits_no_commands(world):
     assert world.err is None, f"dispatch failed: {world.err}"
     assert len(world.resp.commands) == 0
-
-
-@then("the saga injects no events")
-def _injects_no_events(world):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    assert len(world.resp.events) == 0
 
 
 @then(parsers.re(r"the dispatch fails with (?P<code>[A-Z_]+)"))

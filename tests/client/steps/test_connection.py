@@ -33,27 +33,24 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client._pb import (
+    Command,
     CommandBook,
     CommandPage,
-    CommandRequest,
     Cover,
     EventBook,
-    EventPage,
     EventQueryServiceStub,
     Query,
-    SpeculateProjectorRequest,
 )
 from angzarr_client.client import (
     CommandHandlerClient,
     DomainClient,
     QueryClient,
-    SpeculativeClient,
 )
 from angzarr_client.errors import GRPCError
+from angzarr_client.helpers import uuid_to_proto
 
 from ._grpc_backend import (
     HTTP2_PREFACE,
-    SPECULATIVE_PROJECTOR,
     GrpcBackend,
     TlsProbe,
     is_tls_client_hello,
@@ -78,7 +75,6 @@ class _World:
     channels: list[grpc.Channel] = field(default_factory=list)
     query: QueryClient | None = None
     command: CommandHandlerClient | None = None
-    speculative: SpeculativeClient | None = None
     domain: DomainClient | None = None
     channel: grpc.Channel | None = None
     channel_peer: str | None = None
@@ -151,7 +147,6 @@ class _World:
         for c in (
             self.query,
             self.command,
-            self.speculative,
             self.domain,
             self.failed_client,
         ):
@@ -179,13 +174,11 @@ def query_ok(client: QueryClient) -> EventBook:
 
 
 def command_ok(client: CommandHandlerClient) -> None:
-    request = CommandRequest(
-        command=CommandBook(
-            cover=Cover(domain=DOMAIN, correlation_id=str(uuid.uuid4())),
-            pages=[CommandPage()],
-        )
+    command = CommandBook(
+        cover=Cover(domain=DOMAIN),
+        page=CommandPage(command=Command(), correlation_id=uuid_to_proto(uuid.uuid4())),
     )
-    resp = client.handle_command(request, timeout=RPC_TIMEOUT_S)
+    resp = client.handle(command, timeout=RPC_TIMEOUT_S)
     assert resp.events.cover.domain == DOMAIN
     assert len(resp.events.pages) == 1
 
@@ -409,7 +402,7 @@ def _then_clients_share_connection(state: _World) -> None:
     query_ok(state.connected_query())
     command_ok(state.command)
     rpcs = state.tcp_backend().rpcs()
-    assert [r.method for r in rpcs] == ["GetEventBook", "GetEventBook", "HandleCommand"]
+    assert [r.method for r in rpcs] == ["GetEventBook", "GetEventBook", "Handle"]
     assert rpcs[1].peer == rpcs[2].peer == state.channel_peer
 
 
@@ -444,25 +437,7 @@ def _when_create_command_handler_client(state: _World, endpoint: str) -> None:
 def _then_client_can_execute(state: _World) -> None:
     assert state.command is not None
     command_ok(state.command)
-    assert state.tcp_backend().methods() == ["HandleCommand"]
-
-
-@when(parsers.parse('I create a SpeculativeClient connected to "{endpoint}"'))
-def _when_create_speculative_client(state: _World, endpoint: str) -> None:
-    state.speculative = SpeculativeClient.connect(state.resolve(endpoint))
-
-
-@then("the client should be able to perform speculative operations")
-def _then_client_can_speculate(state: _World) -> None:
-    assert state.speculative is not None
-    events = EventBook(cover=Cover(domain=DOMAIN), pages=[EventPage(), EventPage()])
-    projection = state.speculative.projector(
-        SpeculateProjectorRequest(events=events), timeout=RPC_TIMEOUT_S
-    )
-    assert projection.projector == SPECULATIVE_PROJECTOR
-    assert projection.cover.domain == DOMAIN
-    assert projection.sequence == 2
-    assert state.tcp_backend().methods() == ["HandleSpeculative"]
+    assert state.tcp_backend().methods() == ["Handle"]
 
 
 @when(parsers.parse('I create a DomainClient connected to "{endpoint}"'))
@@ -481,7 +456,7 @@ def _then_client_has_sub_clients(state: _World) -> None:
 def _then_both_share_connection(state: _World) -> None:
     assert state.domain is not None
     rpcs = state.tcp_backend().rpcs()
-    assert [r.method for r in rpcs] == ["HandleCommand", "GetEventBook"]
+    assert [r.method for r in rpcs] == ["Handle", "GetEventBook"]
     assert len({r.peer for r in rpcs}) == 1, [r.peer for r in rpcs]
     # One channel, owned by the DomainClient, underlies both sub-clients.
     assert state.domain.command_handler._channel is state.domain._channel
@@ -491,17 +466,6 @@ def _then_both_share_connection(state: _World) -> None:
 @when(parsers.parse('I create a Client connected to "{endpoint}"'))
 def _when_create_full_client(state: _World, endpoint: str) -> None:
     _when_create_domain_client(state, endpoint)
-
-
-@then("the client should have aggregate, query, and speculative sub-clients")
-def _then_client_has_all_sub_clients(state: _World) -> None:
-    _then_client_has_sub_clients(state)
-    assert state.domain is not None
-    projection = state.domain.speculative.projector(
-        SpeculateProjectorRequest(events=EventBook(cover=Cover(domain=DOMAIN))),
-        timeout=RPC_TIMEOUT_S,
-    )
-    assert projection.projector == SPECULATIVE_PROJECTOR
 
 
 # ---------------------------------------------------------------------------

@@ -2,31 +2,27 @@
 
 import os
 from unittest.mock import Mock, patch
+from uuid import UUID
 
 import grpc
 import pytest
 
 from angzarr_client._pb import (
     CommandBook,
-    CommandRequest,
+    CommandPage,
     CommandResponse,
     EventBook,
-    ProcessManagerHandleResponse,
-    Projection,
     Query,
-    SagaResponse,
-    SpeculateCommandHandlerRequest,
-    SpeculatePmRequest,
-    SpeculateProjectorRequest,
-    SpeculateSagaRequest,
 )
 from angzarr_client.client import (
     CommandHandlerClient,
     DomainClient,
     QueryClient,
-    SpeculativeClient,
 )
 from angzarr_client.errors import GRPCError
+from angzarr_client.helpers import uuid_to_proto
+
+TRACE = "0192f0c1-0000-7000-8000-00000000c0de"
 
 
 class MockRpcError(grpc.RpcError):
@@ -180,182 +176,33 @@ class TestCommandHandlerClient:
         CommandHandlerClient.from_env("AGG_ENDPOINT", "default:8000")
         mock_channel.assert_called_once_with("agg-host:9000")
 
-    def test_handle_command_success(self) -> None:
-        """handle_command returns CommandResponse on success."""
+    def test_handle_success(self) -> None:
+        """handle returns the CommandResponse of Handle (DECISION)."""
         channel = self._mock_channel()
         client = CommandHandlerClient(channel)
         expected_resp = CommandResponse()
-        client._stub.HandleCommand = Mock(return_value=expected_resp)
+        client._stub.Handle = Mock(return_value=expected_resp)
 
-        cmd = CommandRequest()
-        result = client.handle_command(cmd)
+        cmd = CommandBook()
+        result = client.handle(cmd)
 
-        client._stub.HandleCommand.assert_called_once_with(
-            cmd, timeout=None, metadata=[]
-        )
-        assert result is not None
+        client._stub.Handle.assert_called_once_with(cmd, timeout=None, metadata=[])
+        assert result is expected_resp
 
-    def test_handle_command_raises_grpc_error(self) -> None:
-        """handle_command raises GRPCError on RpcError."""
+    def test_handle_raises_grpc_error(self) -> None:
+        """handle raises GRPCError on RpcError."""
         channel = self._mock_channel()
         client = CommandHandlerClient(channel)
         rpc_error = MockRpcError(grpc.StatusCode.INTERNAL)
-        client._stub.HandleCommand = Mock(side_effect=rpc_error)
+        client._stub.Handle = Mock(side_effect=rpc_error)
 
-        cmd = CommandRequest()
         with pytest.raises(GRPCError):
-            client.handle_command(cmd)
+            client.handle(CommandBook())
 
     def test_close_closes_channel(self) -> None:
         """close closes the underlying channel."""
         channel = self._mock_channel()
         client = CommandHandlerClient(channel)
-        client.close()
-        channel.close.assert_called_once()
-
-
-class TestSpeculativeClient:
-    """Tests for SpeculativeClient."""
-
-    def _mock_channel(self) -> Mock:
-        """Create a mock gRPC channel."""
-        return Mock(spec=grpc.Channel)
-
-    def test_init_creates_stubs(self) -> None:
-        """Constructor creates stubs from channel."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        assert client._channel is channel
-        assert client._command_handler_stub is not None
-        assert client._saga_stub is not None
-        assert client._projector_stub is not None
-        assert client._pm_stub is not None
-
-    @patch("angzarr_client.client.grpc.insecure_channel")
-    def test_connect(self, mock_channel: Mock) -> None:
-        """connect creates client from endpoint."""
-        mock_channel.return_value = Mock(spec=grpc.Channel)
-        SpeculativeClient.connect("localhost:9000")
-        mock_channel.assert_called_once_with("localhost:9000")
-
-    @patch.dict(os.environ, {"SPEC_ENDPOINT": "spec-host:9000"})
-    @patch("angzarr_client.client.grpc.insecure_channel")
-    def test_from_env_uses_env_var(self, mock_channel: Mock) -> None:
-        """from_env uses environment variable."""
-        mock_channel.return_value = Mock(spec=grpc.Channel)
-        SpeculativeClient.from_env("SPEC_ENDPOINT", "default:8000")
-        mock_channel.assert_called_once_with("spec-host:9000")
-
-    def test_aggregate_success(self) -> None:
-        """aggregate returns CommandResponse on success."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        expected_resp = CommandResponse()
-        client._command_handler_stub.HandleSyncSpeculative = Mock(
-            return_value=expected_resp
-        )
-
-        request = SpeculateCommandHandlerRequest()
-        result = client.command_handler(request)
-
-        client._command_handler_stub.HandleSyncSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
-        )
-        assert result is not None
-
-    def test_aggregate_raises_grpc_error(self) -> None:
-        """aggregate raises GRPCError on RpcError."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        rpc_error = MockRpcError(grpc.StatusCode.INTERNAL)
-        client._command_handler_stub.HandleSyncSpeculative = Mock(side_effect=rpc_error)
-
-        request = SpeculateCommandHandlerRequest()
-        with pytest.raises(GRPCError):
-            client.command_handler(request)
-
-    def test_projector_success(self) -> None:
-        """projector returns Projection on success."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        expected_proj = Projection()
-        client._projector_stub.HandleSpeculative = Mock(return_value=expected_proj)
-
-        request = SpeculateProjectorRequest()
-        result = client.projector(request)
-
-        client._projector_stub.HandleSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
-        )
-        assert result is not None
-
-    def test_projector_raises_grpc_error(self) -> None:
-        """projector raises GRPCError on RpcError."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        rpc_error = MockRpcError(grpc.StatusCode.INTERNAL)
-        client._projector_stub.HandleSpeculative = Mock(side_effect=rpc_error)
-
-        request = SpeculateProjectorRequest()
-        with pytest.raises(GRPCError):
-            client.projector(request)
-
-    def test_saga_success(self) -> None:
-        """saga returns SagaResponse on success."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        expected_resp = SagaResponse()
-        client._saga_stub.ExecuteSpeculative = Mock(return_value=expected_resp)
-
-        request = SpeculateSagaRequest()
-        result = client.saga(request)
-
-        client._saga_stub.ExecuteSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
-        )
-        assert result is not None
-
-    def test_saga_raises_grpc_error(self) -> None:
-        """saga raises GRPCError on RpcError."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        rpc_error = MockRpcError(grpc.StatusCode.INTERNAL)
-        client._saga_stub.ExecuteSpeculative = Mock(side_effect=rpc_error)
-
-        request = SpeculateSagaRequest()
-        with pytest.raises(GRPCError):
-            client.saga(request)
-
-    def test_process_manager_success(self) -> None:
-        """process_manager returns ProcessManagerHandleResponse on success."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        expected_resp = ProcessManagerHandleResponse()
-        client._pm_stub.HandleSpeculative = Mock(return_value=expected_resp)
-
-        request = SpeculatePmRequest()
-        result = client.process_manager(request)
-
-        client._pm_stub.HandleSpeculative.assert_called_once_with(
-            request, timeout=None, metadata=[]
-        )
-        assert result is not None
-
-    def test_process_manager_raises_grpc_error(self) -> None:
-        """process_manager raises GRPCError on RpcError."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
-        rpc_error = MockRpcError(grpc.StatusCode.INTERNAL)
-        client._pm_stub.HandleSpeculative = Mock(side_effect=rpc_error)
-
-        request = SpeculatePmRequest()
-        with pytest.raises(GRPCError):
-            client.process_manager(request)
-
-    def test_close_closes_channel(self) -> None:
-        """close closes the underlying channel."""
-        channel = self._mock_channel()
-        client = SpeculativeClient(channel)
         client.close()
         channel.close.assert_called_once()
 
@@ -393,12 +240,12 @@ class TestDomainClient:
         mock_channel.assert_called_once_with("domain-host:9000")
 
     def test_execute_delegates_to_command_handler(self) -> None:
-        """execute builds CommandRequest and delegates to command_handler.handle_command."""
+        """execute delegates the book to command_handler.handle."""
         channel = self._mock_channel()
         client = DomainClient(channel)
         expected_resp = CommandResponse()
         expected_resp.events.next_sequence = 10
-        client.command_handler._stub.HandleCommand = Mock(return_value=expected_resp)
+        client.command_handler._stub.Handle = Mock(return_value=expected_resp)
 
         cmd = CommandBook()
         result = client.execute(cmd)
@@ -415,8 +262,9 @@ class TestDomainClient:
 
 class TestCorrelationIdMetadataPropagation:
     """Audit #69 stage (b): every outbound RPC method attaches
-    ``x-correlation-id`` metadata sourced from the canonical
-    ``Cover.correlation_id`` field on the request data structure.
+    ``x-correlation-id`` metadata sourced from the request's canonical
+    correlation field (``Query.correlation_id``,
+    ``CommandPage.correlation_id``), in its UUID text form.
 
     Send-only — receivers don't read it. The header is for OTel
     exporters / mesh sidecars / external observability filtering.
@@ -436,123 +284,28 @@ class TestCorrelationIdMetadataPropagation:
     def test_query_client_get_event_book_attaches_metadata(self) -> None:
         client = QueryClient(self._channel())
         client._stub.GetEventBook = Mock(return_value=EventBook())
-        from angzarr_client._pb import Cover, Query
 
-        query = Query(cover=Cover(correlation_id="trace-q-01"))
+        query = Query(correlation_id=uuid_to_proto(UUID(TRACE)))
         client.get_event_book(query)
-        assert (self.HEADER, "trace-q-01") in self._captured_metadata(
+        assert (self.HEADER, TRACE) in self._captured_metadata(
             client._stub.GetEventBook
         )
 
     def test_query_client_get_events_attaches_metadata(self) -> None:
         client = QueryClient(self._channel())
         client._stub.GetEvents = Mock(return_value=iter([]))
-        from angzarr_client._pb import Cover, Query
 
-        query = Query(cover=Cover(correlation_id="trace-q-02"))
+        query = Query(correlation_id=uuid_to_proto(UUID(TRACE)))
         client.get_events(query)
-        assert (self.HEADER, "trace-q-02") in self._captured_metadata(
-            client._stub.GetEvents
-        )
+        assert (self.HEADER, TRACE) in self._captured_metadata(client._stub.GetEvents)
 
-    def test_command_handler_handle_command_attaches_metadata(self) -> None:
+    def test_command_handler_handle_attaches_metadata(self) -> None:
         client = CommandHandlerClient(self._channel())
-        client._stub.HandleCommand = Mock(return_value=CommandResponse())
-        from angzarr_client._pb import (
-            CommandBook,
-            CommandRequest,
-            Cover,
-        )
+        client._stub.Handle = Mock(return_value=CommandResponse())
 
-        req = CommandRequest(
-            command=CommandBook(cover=Cover(correlation_id="trace-ch-01"))
-        )
-        client.handle_command(req)
-        assert (self.HEADER, "trace-ch-01") in self._captured_metadata(
-            client._stub.HandleCommand
-        )
-
-    def test_speculative_client_command_handler_attaches_metadata(self) -> None:
-        client = SpeculativeClient(self._channel())
-        client._command_handler_stub.HandleSyncSpeculative = Mock(
-            return_value=CommandResponse()
-        )
-        from angzarr_client._pb import (
-            CommandBook,
-            Cover,
-            SpeculateCommandHandlerRequest,
-        )
-
-        req = SpeculateCommandHandlerRequest(
-            command=CommandBook(cover=Cover(correlation_id="spec-ch-1"))
-        )
-        client.command_handler(req)
-        assert (self.HEADER, "spec-ch-1") in self._captured_metadata(
-            client._command_handler_stub.HandleSyncSpeculative
-        )
-
-    def test_speculative_client_projector_attaches_metadata(self) -> None:
-        client = SpeculativeClient(self._channel())
-        client._projector_stub.HandleSpeculative = Mock(return_value=Projection())
-        from angzarr_client._pb import (
-            Cover,
-            EventBook,
-            SpeculateProjectorRequest,
-        )
-
-        req = SpeculateProjectorRequest(
-            events=EventBook(cover=Cover(correlation_id="spec-prj-1"))
-        )
-        client.projector(req)
-        assert (self.HEADER, "spec-prj-1") in self._captured_metadata(
-            client._projector_stub.HandleSpeculative
-        )
-
-    def test_speculative_client_saga_attaches_metadata(self) -> None:
-        client = SpeculativeClient(self._channel())
-        client._saga_stub.ExecuteSpeculative = Mock(return_value=SagaResponse())
-        from angzarr_client._pb import (
-            Cover,
-            EventBook,
-            SagaHandleRequest,
-            SpeculateSagaRequest,
-        )
-
-        req = SpeculateSagaRequest(
-            request=SagaHandleRequest(
-                source=EventBook(cover=Cover(correlation_id="spec-saga-1"))
-            )
-        )
-        client.saga(req)
-        assert (self.HEADER, "spec-saga-1") in self._captured_metadata(
-            client._saga_stub.ExecuteSpeculative
-        )
-
-    def test_speculative_client_pm_attaches_metadata(self) -> None:
-        client = SpeculativeClient(self._channel())
-        client._pm_stub.HandleSpeculative = Mock(
-            return_value=ProcessManagerHandleResponse()
-        )
-        # ProcessManagerHandleRequest isn't re-exported from
-        # angzarr_client.proto.angzarr; reach through the pb2 module.
-        from angzarr_client._pb import (
-            Cover,
-            EventBook,
-            SpeculatePmRequest,
-        )
-        from angzarr_client.proto.io.angzarr.v1.process_manager_pb2 import (
-            ProcessManagerHandleRequest,
-        )
-
-        req = SpeculatePmRequest(
-            request=ProcessManagerHandleRequest(
-                trigger=EventBook(cover=Cover(correlation_id="spec-pm-1"))
-            )
-        )
-        client.process_manager(req)
-        assert (self.HEADER, "spec-pm-1") in self._captured_metadata(
-            client._pm_stub.HandleSpeculative
-        )
+        cmd = CommandBook(page=CommandPage(correlation_id=uuid_to_proto(UUID(TRACE))))
+        client.handle(cmd)
+        assert (self.HEADER, TRACE) in self._captured_metadata(client._stub.Handle)
 
     def test_empty_correlation_id_skips_header(self) -> None:
         # The header is omitted entirely (not sent as a blank value)

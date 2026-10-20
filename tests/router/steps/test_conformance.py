@@ -10,7 +10,7 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.proto.io.angzarr.v1 import types_pb2
-from angzarr_client.router import CodedError, Router
+from angzarr_client.router import CodedError, GrpcCode, Router
 
 from .. import builders
 from ..fixture import CounterAggregate, Observation
@@ -103,13 +103,6 @@ def _increase_by(world, n):
 
 
 @when(
-    parsers.parse("the operator increases the counter by {n:d} on behalf of a parent")
-)
-def _increase_on_behalf(world, n):
-    world.dispatch(builders.increase_command_with_linkage(n))
-
-
-@when(
     parsers.re(
         r'the operator increases the counter by (?P<n>\d+) under the "(?P<prefix>[^"]*)" type-URL prefix'
     )
@@ -145,41 +138,22 @@ def _no_payload(world):
     world.dispatch(builders.command_missing_payload())
 
 
-@when("a Reserve command is rejected")
-def _reserve_rejected(world):
-    world.dispatch(builders.rejection_command("test.counter.Reserve"))
-
-
-@when("an unregistered command is rejected")
-def _unregistered_rejected(world):
-    world.dispatch(builders.rejection_command("test.counter.Undeclared"))
-
-
 # --- Then: assert the outcome ---
 
 
-def _assert_recorded(world, count: int, start: int) -> None:
+@then(parsers.parse("{count:d} increases are recorded"))
+def _recorded(world, count):
     assert world.err is None, f"dispatch failed: {world.err}"
     pages = world.resp.events.pages
     assert len(pages) == count, f"recorded {len(pages)} events, want {count}"
-    for i, page in enumerate(pages):
-        assert (
-            page.header.sequence == start + i
-        ), f"event {i} at sequence {page.header.sequence}"
 
 
-@then(parsers.parse("{count:d} increases are recorded, starting at sequence {start:d}"))
-def _recorded_starting(world, count, start):
-    _assert_recorded(world, count, start)
-
-
-@then(
-    parsers.parse(
-        "{count:d} increases are recorded, continuing from sequence {start:d}"
-    )
-)
-def _recorded_continuing(world, count, start):
-    _assert_recorded(world, count, start)
+@then("the recorded events carry no router-stamped sequence")
+def _no_stamped_sequence(world):
+    assert world.err is None, f"dispatch failed: {world.err}"
+    for i, page in enumerate(world.resp.events.pages):
+        assert page.sequence == 0, f"event {i} passes through unsequenced"
+        assert not page.HasField("meta"), f"event {i} passes through with no meta"
 
 
 @then(parsers.parse("the command is rejected as {code}"))
@@ -202,26 +176,13 @@ def _no_events(world):
     assert len(pages) == 0
 
 
-@then("the recorded events carry the parent linkage")
-def _carry_parent_linkage(world):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    ext = world.resp.events.cover.ext
-    assert ext == builders.parent_linkage(), f"cover ext = {ext}, want parent linkage"
-
-
-@then("the compensations run first then second")
-def _compensations_in_order(world):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    pages = world.resp.events.pages
-    want = ["test.counter.CompensatedFirst", "test.counter.CompensatedSecond"]
-    got = [builders.fq_from_url(p.event.type_url) for p in pages]
-    assert got == want, f"compensations = {got}, want {want}"
-
-
-@then("no compensation is recorded")
-def _no_compensation(world):
-    assert world.err is None, f"dispatch failed: {world.err}"
-    assert len(world.resp.events.pages) == 0
+@then(
+    parsers.re(r'the refusal is INVALID_ARGUMENT naming the type URL "(?P<url>[^"]*)"')
+)
+def _refused_naming(world, url):
+    assert world.err is not None, "expected a refusal"
+    assert world.err.grpc == GrpcCode.INVALID_ARGUMENT
+    assert world.err.message == f"no handler for type URL {url}"
 
 
 @then(parsers.parse("the handler saw no prior history, at next sequence {seq:d}"))

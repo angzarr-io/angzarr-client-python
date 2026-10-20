@@ -18,7 +18,7 @@ ffi = cffi.FFI()
 ffi.cdef("""
     typedef struct { uint8_t* data; size_t len; } angzarr_buf;
 
-    typedef int32_t (*angzarr_cb)(void* host_ctx, uint64_t callback_id,
+    typedef int32_t (*angzarr_cb)(uint64_t callback_id,
         const uint8_t* type_url, size_t type_url_len,
         const uint8_t* payload,  size_t payload_len,
         const uint8_t* aux,      size_t aux_len,
@@ -32,33 +32,28 @@ ffi.cdef("""
     int32_t  angzarr_router_register_aggregate(void* r,
                  const uint8_t* descriptor, size_t descriptor_len,
                  angzarr_cb cb);
-    int32_t  angzarr_router_dispatch(void* r, void* host_ctx,
+    int32_t  angzarr_router_dispatch(void* r,
                  const uint8_t* request, size_t request_len,
                  angzarr_buf* out);
     int32_t  angzarr_router_register_projector(void* r,
                  const uint8_t* descriptor, size_t descriptor_len,
                  angzarr_cb cb);
-    int32_t  angzarr_router_dispatch_projector(void* r, void* host_ctx,
+    int32_t  angzarr_router_dispatch_projector(void* r,
                  const uint8_t* request, size_t request_len,
                  angzarr_buf* out);
     int32_t  angzarr_router_register_saga(void* r,
                  const uint8_t* descriptor, size_t descriptor_len,
                  angzarr_cb cb);
-    int32_t  angzarr_router_dispatch_saga(void* r, void* host_ctx,
+    int32_t  angzarr_router_dispatch_saga(void* r,
                  const uint8_t* request, size_t request_len,
                  angzarr_buf* out);
     int32_t  angzarr_router_register_process_manager(void* r,
                  const uint8_t* descriptor, size_t descriptor_len,
                  angzarr_cb cb);
-    int32_t  angzarr_router_dispatch_process_manager(void* r, void* host_ctx,
+    int32_t  angzarr_router_dispatch_process_manager(void* r,
                  const uint8_t* request, size_t request_len,
                  angzarr_buf* out);
-    int32_t  angzarr_router_dispatch_fact(void* r, void* host_ctx,
-                 const uint8_t* request, size_t request_len,
-                 angzarr_buf* out);
-    int32_t  angzarr_router_dispatch_replay(void* r, void* host_ctx,
-                 const uint8_t* request, size_t request_len,
-                 angzarr_buf* out);
+    int32_t  angzarr_router_component_descriptors(void* r, angzarr_buf* out);
     """)
 
 
@@ -92,7 +87,7 @@ def _library_path() -> str:
 
 # The router-ffi ABI version this binding is written against
 # (crates/router-ffi/src/abi.rs ABI_VERSION).
-EXPECTED_ABI_VERSION = 3
+EXPECTED_ABI_VERSION = 4
 
 
 class AbiVersionError(ImportError):

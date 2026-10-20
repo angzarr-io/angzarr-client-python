@@ -1,19 +1,13 @@
-"""The hand-written registration APIs for undo, facts, replay and handler
-context: the cover a handler is handling (CommandContext.cover, the PM trigger
-cover, the projector page context, and the ``current_cover``/``current_page``
-accessors generated handlers reach it through), undo handlers for Compensate
-notifications, fact handlers, and Replay state packing."""
+"""The hand-written registration APIs for facts and handler context: the
+cover a handler is handling (CommandContext.cover, the PM trigger cover, the
+projector page context, and the ``current_cover``/``current_page`` accessors
+generated handlers reach it through) and fact handlers."""
 
 from __future__ import annotations
 
 import pytest
 
-from angzarr_client.proto.io.angzarr.v1 import (
-    command_handler_pb2,
-    process_manager_pb2,
-    saga_pb2,
-    types_pb2,
-)
+from angzarr_client.proto.io.angzarr.v1 import process_manager_pb2, types_pb2
 from angzarr_client.router import (
     AggregateDispatch,
     CodedError,
@@ -38,54 +32,23 @@ def _ledger_rebuilder() -> Rebuilder:
     def apply_increased(state, _event):
         state.count += 1
 
-    def load_snapshot(state, snapshot):
-        state.ParseFromString(snapshot.value)
-
-    return (
-        Rebuilder(factory=counter_pb2.CounterState)
-        .apply(builders.FQ_INCREASED, apply_increased)
-        .with_snapshot(load_snapshot)
+    return Rebuilder(factory=counter_pb2.CounterState).apply(
+        builders.FQ_INCREASED, apply_increased
     )
 
 
 def _increased_page(seq: int):
     page = types_pb2.EventPage()
-    page.header.sequence = seq
-    page.event.CopyFrom(pack(counter_pb2.Increased()))
+    page.sequence = seq
+    page.payload.CopyFrom(pack(counter_pb2.Increased()))
     return page
 
 
 def _ledger_command(label: str):
     cc = types_pb2.ContextualCommand()
     cc.command.cover.CopyFrom(builders.cover_of("ledger", label))
-    cc.command.pages.add().command.CopyFrom(pack(counter_pb2.IncreaseBy(n=1)))
+    cc.command.page.command.payload.CopyFrom(pack(counter_pb2.IncreaseBy(n=1)))
     return cc
-
-
-def _notification_command(domain: str, payload, prior_next: int | None = None):
-    notification = types_pb2.Notification()
-    notification.payload.CopyFrom(payload)
-    cc = types_pb2.ContextualCommand()
-    cc.command.cover.domain = domain
-    cc.command.pages.add().command.CopyFrom(pack(notification))
-    if prior_next is not None:
-        cc.events.next_sequence = prior_next
-        page = cc.events.pages.add()
-        page.header.sequence = prior_next - 1
-        page.event.type_url = builders.type_url("test.counter.Unrelated")
-    return cc
-
-
-def _compensate(fq_command: str):
-    return pack(
-        types_pb2.Compensate(command_type=fq_command, sequences=[0], reason="aborted")
-    )
-
-
-def _one_event(name: str):
-    resp = command_handler_pb2.BusinessResponse()
-    resp.events.pages.add().event.type_url = builders.type_url("test.counter." + name)
-    return resp
 
 
 # --- CommandContext.cover and current_cover() ---
@@ -117,124 +80,36 @@ def test_current_cover_outside_a_handler_raises():
         current_page()
 
 
-def test_compensator_context_carries_the_aggregate_cover():
-    seen = []
-
-    def compensate(notification, rejection, state, cctx):
-        seen.append(cctx.cover.domain)
-        return _one_event("FundsReleased")
-
-    rejection = types_pb2.RejectionNotification()
-    rejection.rejected_command.cover.domain = "inventory"
-    rejection.rejected_command.pages.add().command.type_url = builders.type_url(
-        builders.FQ_RESERVE
-    )
-    dispatch = AggregateDispatch("Payment", "payment", Rebuilder(factory=lambda: None))
-    dispatch.on_rejected("inventory:" + builders.FQ_RESERVE, compensate)
-    with Router() as router:
-        router.register_aggregate(dispatch)
-        resp = router.dispatch(_notification_command("payment", pack(rejection)))
-
-    assert seen == ["payment"]
-    assert [builders.fq_from_url(p.event.type_url) for p in resp.events.pages] == [
-        "test.counter.FundsReleased"
-    ]
-
-
-# --- undo ---
-
-
-def _inventory(calls: list) -> AggregateDispatch:
-    def undo_adjust(notification, compensate, state, cctx):
-        calls.append((compensate.command_type, cctx.next_sequence, cctx.cover.domain))
-        return _one_event("StockAdjustmentReverted")
-
-    def undo_reserve(notification, compensate, state, cctx):
-        calls.append((compensate.command_type, cctx.next_sequence, cctx.cover.domain))
-
-    return (
-        AggregateDispatch("Inventory", "inventory", Rebuilder(factory=lambda: None))
-        .on_undo("test.counter.AdjustStock", undo_adjust)
-        .on_undo(builders.FQ_RESERVE, undo_reserve)
-    )
-
-
-def test_compensate_routes_to_the_undo_handler_for_its_command_type():
-    calls: list = []
-    with Router() as router:
-        router.register_aggregate(_inventory(calls))
-        resp = router.dispatch(
-            _notification_command(
-                "inventory", _compensate("test.counter.AdjustStock"), 7
-            )
-        )
-
-    assert calls == [("test.counter.AdjustStock", 7, "inventory")]
-    pages = resp.events.pages
-    assert [builders.fq_from_url(p.event.type_url) for p in pages] == [
-        "test.counter.StockAdjustmentReverted"
-    ]
-    assert pages[0].header.sequence == 7
-
-
-def test_undo_handler_returning_nothing_records_nothing():
-    calls: list = []
-    with Router() as router:
-        router.register_aggregate(_inventory(calls))
-        resp = router.dispatch(
-            _notification_command("inventory", _compensate(builders.FQ_RESERVE))
-        )
-
-    assert calls == [(builders.FQ_RESERVE, 0, "inventory")]
-    assert len(resp.events.pages) == 0
-
-
-def test_compensate_without_an_undo_handler_is_unimplemented():
-    calls: list = []
-    with Router() as router:
-        router.register_aggregate(_inventory(calls))
-        with pytest.raises(CodedError) as exc:
-            router.dispatch(
-                _notification_command(
-                    "inventory", _compensate("test.counter.CountStock")
-                )
-            )
-
-    assert calls == []
-    assert exc.value.code == "NO_UNDO_HANDLER"
-    assert exc.value.grpc == GrpcCode.UNIMPLEMENTED
-
-
 # --- facts ---
 
 
-def _fact_request(fq: str, facts: int, prior: int):
-    req = command_handler_pb2.FactRequest()
-    req.facts.cover.domain = "ledger"
-    for _ in range(facts):
-        req.facts.pages.add().event.type_url = builders.type_url(fq)
+def _fact_command(fq: str, prior: int):
+    """A ``fq`` fact for the ledger over ``prior`` Increased events."""
+    cc = types_pb2.ContextualCommand()
+    cc.command.cover.domain = "ledger"
+    cc.command.page.fact.payload.type_url = builders.type_url(fq)
     for i in range(prior):
-        req.prior_events.pages.append(_increased_page(i))
-    req.prior_events.next_sequence = prior
-    return req
+        cc.events.pages.append(_increased_page(i))
+    cc.events.next_sequence = prior
+    return cc
 
 
 def _recorded(book) -> list:
     def one(page):
-        name = builders.fq_from_url(page.event.type_url)
+        name = builders.fq_from_url(page.payload.type_url)
         if name == "test.counter.CounterState":
-            return name, counter_pb2.CounterState.FromString(page.event.value).count
+            return name, counter_pb2.CounterState.FromString(page.payload.value).count
         return name, None
 
     return [one(p) for p in book.pages]
 
 
-def _handle_facts(handler, req):
+def _handle_fact(handler, cc):
     dispatch = AggregateDispatch("Ledger", "ledger", _ledger_rebuilder())
     dispatch.on_fact(builders.FQ_INCREASED, handler)
     with Router() as router:
         router.register_aggregate(dispatch)
-        return router.dispatch_fact(req)
+        return router.dispatch(cc).events
 
 
 def test_a_fact_record_annotates_the_fact_and_flags_it_with_messages_or_anys():
@@ -254,18 +129,14 @@ def test_a_fact_record_annotates_the_fact_and_flags_it_with_messages_or_anys():
         )
 
     for handler in (annotate_with_messages, annotate_with_anys):
-        book = _handle_facts(handler, _fact_request(builders.FQ_INCREASED, 2, 3))
+        book = _handle_fact(handler, _fact_command(builders.FQ_INCREASED, 3))
 
-        # Each Increased flag folds, so the second fact sees one more event.
         assert _recorded(book) == [
             ("test.counter.CounterState", 3),
             (builders.FQ_INCREASED, None),
             ("test.counter.CounterState", 13),
-            ("test.counter.CounterState", 4),
-            (builders.FQ_INCREASED, None),
-            ("test.counter.CounterState", 14),
         ]
-        assert not book.pages[1].HasField("header"), "a flag carries no header"
+        assert not book.pages[1].HasField("meta"), "a flag carries no meta"
 
 
 def test_a_fact_record_as_received_records_the_fact_with_no_flags():
@@ -275,7 +146,7 @@ def test_a_fact_record_as_received_records_the_fact_with_no_flags():
         seen.append(builders.fq_from_url(fact.type_url))
         return FactRecord.as_received(fact)
 
-    book = _handle_facts(observe, _fact_request(builders.FQ_INCREASED, 1, 0))
+    book = _handle_fact(observe, _fact_command(builders.FQ_INCREASED, 0))
 
     assert seen == [builders.FQ_INCREASED]
     assert _recorded(book) == [(builders.FQ_INCREASED, None)]
@@ -287,7 +158,7 @@ def test_a_fact_handler_returning_anything_but_a_fact_record_is_an_unhandled_err
         return fact
 
     with pytest.raises(CodedError) as exc:
-        _handle_facts(bare_any, _fact_request(builders.FQ_INCREASED, 1, 0))
+        _handle_fact(bare_any, _fact_command(builders.FQ_INCREASED, 0))
 
     assert exc.value.code == "UNHANDLED_HANDLER_ERROR"
     assert exc.value.grpc == GrpcCode.INTERNAL
@@ -300,48 +171,12 @@ def test_an_undeclared_fact_is_refused_before_any_fact_handler_runs():
         seen.append(fact.type_url)
         return FactRecord.as_received(fact)
 
-    req = _fact_request(builders.FQ_INCREASED, 1, 2)
-    req.facts.pages.add().event.type_url = builders.type_url(builders.FQ_RESERVE)
     with pytest.raises(CodedError) as exc:
-        _handle_facts(observe, req)
+        _handle_fact(observe, _fact_command(builders.FQ_RESERVE, 2))
 
     assert exc.value.code == "NO_FACT_HANDLER"
     assert exc.value.grpc == GrpcCode.INVALID_ARGUMENT
     assert seen == []
-
-
-# --- replay ---
-
-
-def _replay_request(count: int, events: int):
-    req = command_handler_pb2.ReplayRequest()
-    req.base_snapshot.sequence = 1
-    req.base_snapshot.state.CopyFrom(pack(counter_pb2.CounterState(count=count)))
-    for i in range(events):
-        req.events.append(_increased_page(2 + i))
-    return req
-
-
-def test_replay_packs_the_rebuilt_state():
-    with Router() as router:
-        router.register_aggregate(
-            AggregateDispatch("Ledger", "ledger", _ledger_rebuilder())
-        )
-        resp = router.dispatch_replay("ledger", _replay_request(10, 2))
-
-    assert resp.state.type_url == "/test.counter.CounterState"
-    assert counter_pb2.CounterState.FromString(resp.state.value).count == 12
-
-
-def test_replay_of_an_aggregate_with_non_message_state_is_not_supported():
-    with Router() as router:
-        router.register_aggregate(
-            AggregateDispatch("Payment", "payment", Rebuilder(factory=lambda: None))
-        )
-        with pytest.raises(CodedError) as exc:
-            router.dispatch_replay("payment", _replay_request(1, 0))
-
-    assert exc.value.code == "NO_HANDLER_REGISTERED"
 
 
 # --- applier page context ---
@@ -368,8 +203,8 @@ def test_appliers_read_each_event_cover_and_sequence_by_argument_and_accessor():
     cc.events.cover.CopyFrom(builders.cover_of("ledger", "history-1"))
     cc.events.pages.append(_increased_page(4))
     reserve = cc.events.pages.add()
-    reserve.header.sequence = 5
-    reserve.event.CopyFrom(pack(counter_pb2.Reserve()))
+    reserve.sequence = 5
+    reserve.payload.CopyFrom(pack(counter_pb2.Reserve()))
     cc.events.next_sequence = 6
     with Router() as router:
         router.register_aggregate(dispatch)
@@ -377,41 +212,6 @@ def test_appliers_read_each_event_cover_and_sequence_by_argument_and_accessor():
 
     history = builders.root_of("history-1")
     assert seen == [("rich", history, 4), ("plain", history, 5)]
-
-
-def test_process_manager_replays_its_state_by_its_own_domain():
-    def apply_increased(state, _event):
-        state.count += 1
-
-    pm = ProcessManagerDispatch(
-        "Reserving",
-        "reserving-pm",
-        Rebuilder(factory=counter_pb2.CounterState).apply(
-            builders.FQ_INCREASED, apply_increased
-        ),
-        ["inventory"],
-    )
-    req = command_handler_pb2.ReplayRequest()
-    for i in range(3):
-        req.events.append(_increased_page(i))
-    with Router() as router:
-        router.register_process_manager(pm)
-        resp = router.dispatch_replay("reserving-pm", req)
-
-    assert resp.state.type_url == "/test.counter.CounterState"
-    assert counter_pb2.CounterState.FromString(resp.state.value).count == 3
-
-
-def test_replay_of_a_process_manager_with_non_message_state_is_not_supported():
-    pm = ProcessManagerDispatch(
-        "Reserving", "reserving-pm", Rebuilder(factory=lambda: None), ["inventory"]
-    )
-    with Router() as router:
-        router.register_process_manager(pm)
-        with pytest.raises(CodedError) as exc:
-            router.dispatch_replay("reserving-pm", command_handler_pb2.ReplayRequest())
-
-    assert exc.value.code == "NO_HANDLER_REGISTERED"
 
 
 # --- process-manager trigger cover ---
@@ -467,17 +267,17 @@ def test_saga_handler_reaches_the_source_cover_through_the_accessor():
 
     def translate(event, source_cover):
         seen.append((source_cover.root.value, current_cover().root.value))
-        return [], []
+        return []
 
     saga = SagaDispatch("order-saga", "order").on_event(
         builders.FQ_INCREASED, translate
     )
-    req = saga_pb2.SagaHandleRequest()
-    req.source.cover.CopyFrom(builders.cover_of("order", "order-1"))
-    req.source.pages.append(_increased_page(0))
+    source = types_pb2.EventBook()
+    source.cover.CopyFrom(builders.cover_of("order", "order-1"))
+    source.pages.append(_increased_page(0))
     with Router() as router:
         router.register_saga(saga)
-        router.dispatch_saga(req)
+        router.dispatch_saga(source)
 
     root = builders.root_of("order-1")
     assert seen == [(root, root)]
@@ -488,26 +288,26 @@ def test_saga_handlers_read_the_source_cover_and_sequence_by_argument_and_access
 
     def translate_rich(event, source: PageContext):
         seen.append(("rich", source.cover.root.value, source.sequence))
-        return [], []
+        return []
 
     def translate_plain(event, source_cover):
         page = current_page()
         seen.append(("plain", page.cover.root.value, page.sequence))
-        return [], []
+        return []
 
     saga = (
         SagaDispatch("order-saga", "order")
         .on_event_with_context(builders.FQ_INCREASED, translate_rich)
         .on_event("test.counter.Reserve", translate_plain)
     )
-    rich = saga_pb2.SagaHandleRequest()
-    rich.source.cover.CopyFrom(builders.cover_of("order", "order-1"))
-    rich.source.pages.append(_increased_page(7))
-    plain = saga_pb2.SagaHandleRequest()
-    plain.source.cover.CopyFrom(builders.cover_of("order", "order-2"))
-    reserve = plain.source.pages.add()
-    reserve.header.sequence = 9
-    reserve.event.CopyFrom(pack(counter_pb2.Reserve()))
+    rich = types_pb2.EventBook()
+    rich.cover.CopyFrom(builders.cover_of("order", "order-1"))
+    rich.pages.append(_increased_page(7))
+    plain = types_pb2.EventBook()
+    plain.cover.CopyFrom(builders.cover_of("order", "order-2"))
+    reserve = plain.pages.add()
+    reserve.sequence = 9
+    reserve.payload.CopyFrom(pack(counter_pb2.Reserve()))
     with Router() as router:
         router.register_saga(saga)
         router.dispatch_saga(rich)
@@ -545,7 +345,7 @@ def test_projector_fold_reads_each_event_root_and_sequence():
         lambda p: p.on_event_with_context(builders.FQ_INCREASED, fold_rich),
         lambda p: p.on_event(builders.FQ_INCREASED, fold_plain),
     ):
-        projector = ProjectorDispatch("Tracker", lambda: None)
+        projector = ProjectorDispatch("Tracker", counter_pb2.CounterState)
         register(projector)
         with Router() as router:
             router.register_projector(projector)

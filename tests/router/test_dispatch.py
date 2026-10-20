@@ -1,6 +1,6 @@
 """P2 targeted marshaling/error tests — what the Rust ABI consumer test pins,
-re-confirmed across the cffi seam: the command round trip and sequence
-stamping, the coded-rejection and unclassified-failure error model, and the
+re-confirmed across the cffi seam: the command round trip (events pass
+through unsequenced: the coordinator stamps them), the coded-rejection and unclassified-failure error model, and the
 CommandContextAux decode with applier execution during rebuild."""
 
 import pytest
@@ -11,12 +11,14 @@ from . import builders
 from .fixture import Observation
 
 
-def test_increase_by_emits_sequenced_events(router):
-    """A command emits one event per unit and the core stamps consecutive
-    sequences — the full round trip across the seam."""
+def test_increase_by_emits_unsequenced_events(router):
+    """A command emits one event per unit, passed through as the handler
+    emitted them — the full round trip across the seam."""
     resp = router.dispatch(builders.increase_command(3))
-    seqs = [p.header.sequence for p in resp.events.pages]
-    assert seqs == [0, 1, 2]
+    assert [p.sequence for p in resp.events.pages] == [0, 0, 0]
+    assert [builders.fq_from_url(p.payload.type_url) for p in resp.events.pages] == [
+        builders.FQ_INCREASED
+    ] * 3
 
 
 def test_increase_by_zero_is_coded(router):

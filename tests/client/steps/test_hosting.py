@@ -87,7 +87,7 @@ def _aggregate(world: _World, domain: str, block: bool = False) -> AggregateDisp
             world.entered.set()
             world.release.wait(timeout=10)
         book = types_pb2.EventBook()
-        book.pages.add().event.CopyFrom(pack(wrappers_pb2.Int64Value(value=1)))
+        book.pages.add().payload.CopyFrom(pack(wrappers_pb2.Int64Value(value=1)))
         return book
 
     dispatch.on_command("google.protobuf.StringValue", handle)
@@ -98,9 +98,7 @@ def _command(domain: str, text: str) -> types_pb2.ContextualCommand:
     cc = types_pb2.ContextualCommand()
     cc.command.cover.domain = domain
     cc.command.cover.root.value = bytes(16)
-    page = cc.command.pages.add()
-    page.header.sequence = 0
-    page.command.CopyFrom(pack(wrappers_pb2.StringValue(value=text)))
+    cc.command.page.command.payload.CopyFrom(pack(wrappers_pb2.StringValue(value=text)))
     return cc
 
 

@@ -27,6 +27,9 @@ ANY_DECODE_FAILED = "failed to decode Any payload into expected message type"
 PROTO_UUID_INVALID = "proto UUID bytes are not a valid 16-byte UUID"
 TIMESTAMP_PARSE_FAILED = "failed to parse RFC3339 timestamp"
 
+# Identity
+DOMAIN_CONTAINS_COLON = "domain must not contain ':'"
+
 # Transport / connection
 ENDPOINT_PARSE_FAILED = "failed to parse fallback endpoint"
 ENDPOINT_INVALID_URI = "endpoint URI is invalid"

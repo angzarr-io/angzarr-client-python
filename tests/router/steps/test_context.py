@@ -1,20 +1,16 @@
-"""Facts, replay and handler-context harness — runs the shared
+"""Facts and handler-context harness — runs the shared
 ``conformance/features/context.feature`` against the ledger aggregate, the
 reserving process-manager and the tracking projector built through the
-binding's hand-written APIs (``on_fact``, ``dispatch_fact``,
-``dispatch_replay``, ``apply_with_context``, ``CommandContext.cover``, ``on_event_with_cover``, a
-full-response PM compensator, ``on_event_with_context``)."""
+binding's hand-written APIs (``on_fact``, ``apply_with_context``,
+``CommandContext.cover``, ``on_event_with_cover``,
+``on_event_with_context``)."""
 
 from __future__ import annotations
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client.proto.io.angzarr.v1 import (
-    command_handler_pb2,
-    process_manager_pb2,
-    types_pb2,
-)
+from angzarr_client.proto.io.angzarr.v1 import process_manager_pb2, types_pb2
 from angzarr_client.router import (
     AggregateDispatch,
     CodedError,
@@ -31,8 +27,6 @@ from angzarr_client.router import (
 from ..builders import (
     FQ_INCREASE_BY,
     FQ_INCREASED,
-    FQ_RESERVE,
-    assert_deferred,
     cover_of,
     fq_from_url,
     root_of,
@@ -47,16 +41,9 @@ scenarios(str(CONFORMANCE_FEATURES / "context.feature"))
 def _increased_page(seq: int | None = None):
     page = types_pb2.EventPage()
     if seq is not None:
-        page.header.sequence = seq
-    page.event.CopyFrom(pack(counter_pb2.Increased()))
+        page.sequence = seq
+    page.payload.CopyFrom(pack(counter_pb2.Increased()))
     return page
-
-
-def _reserve_to(domain: str, fq: str = FQ_RESERVE):
-    cmd = types_pb2.CommandBook()
-    cmd.cover.domain = domain
-    cmd.pages.add().command.type_url = type_url(fq)
-    return cmd
 
 
 # --- the hand-built components ---
@@ -64,7 +51,7 @@ def _reserve_to(domain: str, fq: str = FQ_RESERVE):
 
 def _ledger_aggregate(covers: list, applied: list) -> AggregateDispatch:
     """The ledger aggregate (domain "ledger") over CounterState: Increased
-    folds count += 1 and records the page sequence it applied; a snapshot loads CounterState; IncreaseBy records the
+    folds count += 1 and records the page sequence it applied; IncreaseBy records the
     handled cover and emits nothing; the only declared fact, Increased, is
     recorded as received and flagged by a CounterState carrying the count it
     brings the ledger to."""
@@ -73,19 +60,14 @@ def _ledger_aggregate(covers: list, applied: list) -> AggregateDispatch:
         state.count += 1
         applied.append(ctx.sequence)
 
-    def load_snapshot(state, snapshot):
-        state.ParseFromString(snapshot.value)
-
     def increase_by(_cmd, _state, cctx):
         covers.append(cctx.cover)
 
     def record_increased(fact, state):
         return FactRecord(fact, [counter_pb2.CounterState(count=state.count + 1)])
 
-    rebuilder = (
-        Rebuilder(factory=counter_pb2.CounterState)
-        .apply_with_context(FQ_INCREASED, apply_increased)
-        .with_snapshot(load_snapshot)
+    rebuilder = Rebuilder(factory=counter_pb2.CounterState).apply_with_context(
+        FQ_INCREASED, apply_increased
     )
     return (
         AggregateDispatch("Ledger", "ledger", rebuilder)
@@ -98,8 +80,7 @@ def _reserving_pm(covers: list) -> ProcessManagerDispatch:
     """The reserving process-manager (domain "reserving-pm", target
     "inventory") over CounterState (Increased folds count += 1): an Increased
     trigger from "counter" records
-    the trigger cover and emits nothing; a rejected Reserve is compensated
-    with a Release command to "inventory"."""
+    the trigger cover and emits nothing."""
 
     def apply_increased(state, _event):
         state.count += 1
@@ -107,11 +88,6 @@ def _reserving_pm(covers: list) -> ProcessManagerDispatch:
     def on_increased(_event, _state, trigger_cover):
         covers.append(trigger_cover)
         return process_manager_pb2.ProcessManagerHandleResponse()
-
-    def on_reserve_rejected(_notification, _rejection, _state):
-        resp = process_manager_pb2.ProcessManagerHandleResponse()
-        resp.commands.append(_reserve_to("inventory", "test.counter.Release"))
-        return resp
 
     return (
         ProcessManagerDispatch(
@@ -122,9 +98,7 @@ def _reserving_pm(covers: list) -> ProcessManagerDispatch:
             ),
             ["inventory"],
         )
-        .on_event_with_cover("counter", FQ_INCREASED, on_increased)
-        .on_rejected(FQ_RESERVE, on_reserve_rejected)
-    )
+    ).on_event_with_cover("counter", FQ_INCREASED, on_increased)
 
 
 def _tracking_projector(pages: list) -> ProjectorDispatch:
@@ -135,7 +109,7 @@ def _tracking_projector(pages: list) -> ProjectorDispatch:
         root = ctx.cover.root.value if ctx.cover is not None else b""
         pages.append((root, ctx.sequence))
 
-    return ProjectorDispatch("Tracker", lambda: None).on_event_with_context(
+    return ProjectorDispatch("Tracker", counter_pb2.CounterState).on_event_with_context(
         FQ_INCREASED, fold
     )
 
@@ -143,37 +117,27 @@ def _tracking_projector(pages: list) -> ProjectorDispatch:
 # --- requests ---
 
 
-def _fact_request(fact: str, facts: int, prior: int):
-    req = command_handler_pb2.FactRequest()
-    req.facts.cover.domain = "ledger"
-    for _ in range(facts):
-        req.facts.pages.add().event.type_url = type_url("test.counter." + fact)
-    for i in range(prior):
-        req.prior_events.pages.append(_increased_page(i))
-    req.prior_events.next_sequence = prior
-    return req
-
-
-def _replay_request(count: int, events: int):
-    req = command_handler_pb2.ReplayRequest()
-    req.base_snapshot.sequence = 1
-    req.base_snapshot.state.CopyFrom(pack(counter_pb2.CounterState(count=count)))
-    for i in range(events):
-        req.events.append(_increased_page(2 + i))
-    return req
-
-
-def _events_replay_request(events: int):
-    req = command_handler_pb2.ReplayRequest()
-    for i in range(events):
-        req.events.append(_increased_page(i))
-    return req
-
-
-def _ledger_command(label: str):
+def _ledger_command(label: str, sequences: list[int] | None = None):
+    """An IncreaseBy(1) for the ledger root ``label``, over prior Increased
+    events at ``sequences`` when given."""
     cc = types_pb2.ContextualCommand()
     cc.command.cover.CopyFrom(cover_of("ledger", label))
-    cc.command.pages.add().command.CopyFrom(pack(counter_pb2.IncreaseBy(n=1)))
+    cc.command.page.command.payload.CopyFrom(pack(counter_pb2.IncreaseBy(n=1)))
+    if sequences:
+        cc.events.pages.extend(_increased_page(seq) for seq in sequences)
+        cc.events.next_sequence = sequences[-1] + 1
+    return cc
+
+
+def _ledger_fact(fact: str, prior: int):
+    """A ``test.counter.<fact>`` fact (empty payload) for the ledger,
+    delivered in the Fact arm over ``prior`` Increased events."""
+    cc = _ledger_command("ledger-1")
+    cc.command.page.ClearField("command")
+    cc.command.page.fact.payload.type_url = type_url("test.counter." + fact)
+    if prior:
+        cc.events.pages.extend(_increased_page(i) for i in range(prior))
+        cc.events.next_sequence = prior
     return cc
 
 
@@ -181,19 +145,6 @@ def _reserving_trigger(label: str, seq: int):
     req = process_manager_pb2.ProcessManagerHandleRequest()
     req.trigger.cover.CopyFrom(cover_of("counter", label))
     req.trigger.pages.append(_increased_page(seq))
-    return req
-
-
-def _reserving_rejection(target_domain: str, seq: int):
-    rejection = types_pb2.RejectionNotification()
-    rejection.rejected_command.CopyFrom(_reserve_to(target_domain))
-    notification = types_pb2.Notification()
-    notification.payload.CopyFrom(pack(rejection))
-    req = process_manager_pb2.ProcessManagerHandleRequest()
-    req.trigger.cover.domain = "reserving-pm"
-    page = req.trigger.pages.add()
-    page.header.sequence = seq
-    page.event.CopyFrom(pack(notification))
     return req
 
 
@@ -214,9 +165,8 @@ class _World:
         self.covers: list = []
         self.applied: list = []
         self.pages: list = []
-        self.facts = None
+        self.fact = None
         self.refusal = None
-        self.replayed = None
         self.pm = None
 
     def close(self) -> None:
@@ -247,46 +197,15 @@ def _tracking(world):
 
 @when(
     parsers.re(
-        r"(?P<facts>\d+) Increased facts are handled over (?P<prior>\d+) prior Increased events"
+        r"an? (?P<fact>\w+) fact is handled over (?P<prior>\d+|no) prior (?:Increased )?events"
     )
 )
-def _increased_facts(world, facts, prior):
-    world.facts = world.router.dispatch_fact(
-        _fact_request("Increased", int(facts), int(prior))
-    )
-
-
-@when("a Reserve fact is handled over no prior events")
-def _reserve_fact(world):
-    with pytest.raises(CodedError) as exc:
-        world.router.dispatch_fact(_fact_request("Reserve", 1, 0))
-    world.refusal = exc.value
-
-
-@when(
-    parsers.re(
-        r"the ledger replays a snapshot of (?P<count>\d+) then (?P<events>\d+) Increased events"
-    )
-)
-def _replay(world, count, events):
-    resp = world.router.dispatch_replay(
-        "ledger", _replay_request(int(count), int(events))
-    )
-    assert fq_from_url(resp.state.type_url) == "test.counter.CounterState"
-    world.replayed = counter_pb2.CounterState.FromString(resp.state.value)
-
-
-@when(
-    parsers.re(
-        r"the reserving process-manager replays (?P<events>\d+) Increased events"
-    )
-)
-def _pm_replay(world, events):
-    resp = world.router.dispatch_replay(
-        "reserving-pm", _events_replay_request(int(events))
-    )
-    assert fq_from_url(resp.state.type_url) == "test.counter.CounterState"
-    world.replayed = counter_pb2.CounterState.FromString(resp.state.value)
+def _fact_handled(world, fact, prior):
+    request = _ledger_fact(fact, 0 if prior == "no" else int(prior))
+    try:
+        world.fact = world.router.dispatch(request)
+    except CodedError as exc:
+        world.refusal = exc
 
 
 @then(
@@ -300,11 +219,21 @@ def _applied_at(world, first, second):
 
 @when(
     parsers.re(
-        r'an IncreaseBy command for ledger root "(?P<label>[^"]*)" is dispatched'
+        r'an IncreaseBy command for ledger root "(?P<label>[^"]*)" is dispatched$'
     )
 )
 def _ledger_command_step(world, label):
     world.router.dispatch(_ledger_command(label))
+
+
+@when(
+    parsers.re(
+        r'an IncreaseBy command for ledger root "(?P<label>[^"]*)" is dispatched '
+        r"over Increased events at sequences (?P<first>\d+) and (?P<second>\d+)"
+    )
+)
+def _ledger_command_over_step(world, label, first, second):
+    world.router.dispatch(_ledger_command(label, [int(first), int(second)]))
 
 
 @when(
@@ -321,18 +250,6 @@ def _reserving_trigger_step(world, label, seq):
 
 @when(
     parsers.re(
-        r'a rejection of Reserve sent to "(?P<domain>[^"]*)" at sequence (?P<seq>\d+) '
-        r"is dispatched to the reserving process-manager"
-    )
-)
-def _reserving_rejection_step(world, domain, seq):
-    world.pm = world.router.dispatch_process_manager(
-        _reserving_rejection(domain, int(seq))
-    )
-
-
-@when(
-    parsers.re(
         r'Increased events of counter root "(?P<label>[^"]*)" at sequences (?P<first>\d+) '
         r"and (?P<second>\d+) are projected"
     )
@@ -342,34 +259,28 @@ def _projected(world, label, first, second):
 
 
 @then(
-    parsers.re(
-        r"each Increased fact is recorded, flagged by the counts (?P<first>\d+) and (?P<second>\d+)"
-    )
+    parsers.re(r"the Increased fact is recorded, flagged by the count (?P<count>\d+)")
 )
-def _recorded_and_flagged(world, first, second):
+def _recorded_and_flagged(world, count):
+    assert world.refusal is None, f"fact refused: {world.refusal}"
+
     def recorded(page):
-        name = fq_from_url(page.event.type_url)
+        name = fq_from_url(page.payload.type_url)
         if name == "test.counter.CounterState":
-            return name, counter_pb2.CounterState.FromString(page.event.value).count
+            return name, counter_pb2.CounterState.FromString(page.payload.value).count
         return name, None
 
-    assert [recorded(p) for p in world.facts.pages] == [
+    assert [recorded(p) for p in world.fact.events.pages] == [
         (FQ_INCREASED, None),
-        ("test.counter.CounterState", int(first)),
-        (FQ_INCREASED, None),
-        ("test.counter.CounterState", int(second)),
+        ("test.counter.CounterState", int(count)),
     ]
 
 
-@then(parsers.re(r"the facts are refused with (?P<code>[A-Z_]+) as INVALID_ARGUMENT"))
-def _facts_refused(world, code):
+@then(parsers.re(r"the fact is refused with (?P<code>[A-Z_]+) as INVALID_ARGUMENT"))
+def _fact_refused(world, code):
+    assert world.refusal is not None, "expected a refusal"
     assert world.refusal.code == code
     assert world.refusal.grpc == GrpcCode.INVALID_ARGUMENT
-
-
-@then(parsers.re(r"the replayed state has a count of (?P<count>\d+)"))
-def _replayed(world, count):
-    assert world.replayed.count == int(count)
 
 
 def _single_root(covers: list) -> bytes:
@@ -386,19 +297,6 @@ def _ledger_saw(world, label):
 @then(parsers.re(r'the reserving process-manager saw trigger root "(?P<label>[^"]*)"'))
 def _pm_saw(world, label):
     assert _single_root(world.covers) == root_of(label)
-
-
-@then(
-    parsers.re(
-        r"the reserving process-manager emits one Release command "
-        r"deferred from source sequence (?P<seq>\d+)"
-    )
-)
-def _release(world, seq):
-    assert len(world.pm.commands) == 1
-    command = world.pm.commands[0]
-    assert fq_from_url(command.pages[0].command.type_url) == "test.counter.Release"
-    assert_deferred(command, "reserving-pm", int(seq), 0)
 
 
 @then(

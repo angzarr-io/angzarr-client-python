@@ -12,12 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from angzarr_client.proto.io.angzarr.v1 import (
-    command_handler_pb2,
-    process_manager_pb2,
-    types_pb2,
-)
-from angzarr_client.router import CommandContext, reject
+from angzarr_client.proto.io.angzarr.v1 import process_manager_pb2, types_pb2
+from angzarr_client.router import CommandContext, pack, reject
 
 from .builders import FQ_RESERVE, type_url
 from .gen.test.counter import counter_pb2
@@ -26,7 +22,8 @@ from .gen.test.counter import counter_pb2
 @dataclass
 class Observation:
     """One record of what a command handler saw: the context and rebuilt
-    state count."""
+        state count. State is router-owned: every handler receives a decoded
+    copy."""
 
     cctx: CommandContext
     count: int
@@ -36,10 +33,9 @@ class Observation:
 
 
 class CounterAggregate:
-    """Implements counter_aggregate_angzarr.CounterAggregateHandler. The rebuilder
-    (generated) folds Increased via apply_increased and seeds snapshots
-    generically; the typed-emit handler returns Increased events the wiring
-    packs into the EventBook."""
+    """Implements counter_aggregate_angzarr.CounterAggregateHandler. The
+    generated rebuilder folds Increased via apply_increased; the typed-emit
+    handler returns Increased events the wiring packs into the EventBook."""
 
     def __init__(self, observed: list[Observation] | None = None):
         self.observed = observed
@@ -57,14 +53,6 @@ class CounterAggregate:
     def apply_increased(self, state, event, ctx) -> None:
         state.count += 1
 
-    def on_reserve_rejected(self, notification, rejection, state, cctx: CommandContext):
-        # Within-component fan-out collapses to one compensator (subscriber =
-        # component): append both ordered markers in one response.
-        resp = command_handler_pb2.BusinessResponse()
-        for name in ("CompensatedFirst", "CompensatedSecond"):
-            resp.events.pages.add().event.type_url = type_url("test.counter." + name)
-        return resp
-
 
 # --- OrderSaga ---
 
@@ -73,87 +61,85 @@ class OrderSaga:
     """Implements order_saga_angzarr.OrderSagaHandler."""
 
     def increased(self, event, source):
-        return [_reserve_command()], []
+        return [reserve_command()]
 
 
 # --- CounterProjector ---
 
 
 class CounterProjector:
-    """Implements counter_projector_angzarr.CounterProjectorHandler."""
+    """Implements counter_projector_angzarr.CounterProjectorHandler. The
+    router answers the Projection, carrying the folded projection."""
 
     def increased(self, projection, event, ctx) -> None:
         projection.count += 1
-
-    def finish(self, projection, events):
-        proj = types_pb2.Projection()
-        if events.HasField("cover"):
-            proj.cover.CopyFrom(events.cover)
-        proj.projector = "counter-projector"
-        proj.sequence = projection.count
-        return proj
 
 
 # --- OrderProcessManager ---
 
 
 class OrderProcessManager:
-    """Implements order_process_manager_angzarr.OrderProcessManagerHandler."""
+    """Implements order_process_manager_angzarr.OrderProcessManagerHandler.
+    Reacts with a Reserve command for "inventory" and one unaddressed process
+    event recording the count its rebuilt state held."""
 
     def increased(self, event, state, trigger_cover):
         resp = process_manager_pb2.ProcessManagerHandleResponse()
-        resp.commands.append(_reserve_command())
-        for _ in range(state.count):
-            resp.facts.add().pages.add()
+        resp.commands.append(reserve_command())
+        resp.process_events.append(
+            process_event(counter_pb2.OrderProcessManagerState(count=state.count))
+        )
         return resp
 
     def apply_increased(self, state, event, ctx) -> None:
         state.count += 1
 
-    def on_reserve_rejected(self, notification, rejection, state):
-        resp = process_manager_pb2.ProcessManagerHandleResponse()
-        resp.process_events.append(_one_fact())
-        resp.notification.cover.domain = "escalated"
-        return resp
-
 
 # --- AuditProcessManager ---
-
-# Cover domain the AuditProcessManager stamps on its facts and process events,
-# so scenarios can tell its reactions from the order PM's.
-AUDIT_MARK = "audit"
 
 
 class AuditProcessManager:
     """Implements audit_process_manager_angzarr.AuditProcessManagerHandler.
-    Co-resident with the order PM over the same "counter" Increased trigger and
-    the same rejected Reserve, but over its own state type: it reacts with one
-    "audit" fact per prior state event and no commands, and compensates with
-    one "audit" process event and no escalation."""
+    Co-resident with the order PM over the same "counter" Increased trigger,
+    but over its own state type: it reacts with one unaddressed process event
+    recording what its rebuilt state saw, and no commands."""
 
     def increased(self, event, state, trigger_cover):
         resp = process_manager_pb2.ProcessManagerHandleResponse()
-        for _ in state.seen:
-            resp.facts.add().cover.domain = AUDIT_MARK
+        resp.process_events.append(
+            process_event(counter_pb2.AuditProcessManagerState(seen=state.seen))
+        )
         return resp
 
     def apply_increased(self, state, event, ctx) -> None:
         state.seen.append("Increased")
 
-    def on_reserve_rejected(self, notification, rejection, state):
-        resp = process_manager_pb2.ProcessManagerHandleResponse()
-        resp.process_events.add().cover.domain = AUDIT_MARK
-        return resp
 
-
-def _reserve_command():
+def reserve_command():
+    """One Reserve command for "inventory", payload only."""
     cmd = types_pb2.CommandBook()
     cmd.cover.domain = "inventory"
-    cmd.pages.add().command.type_url = type_url(FQ_RESERVE)
+    cmd.page.command.payload.type_url = type_url(FQ_RESERVE)
     return cmd
 
 
-def _one_fact():
-    event = types_pb2.EventBook()
-    event.pages.add()
-    return event
+def process_event(state):
+    """One unaddressed process-event book whose single page carries
+    ``state``."""
+    book = types_pb2.EventBook()
+    book.pages.add().payload.CopyFrom(pack(state))
+    return book
+
+
+def recorded_states(resp, message_type) -> list:
+    """The states the reacting PMs of ``message_type`` recorded in ``resp``'s
+    process events, one per reacting PM."""
+    out = []
+    for book in resp.process_events:
+        for page in book.pages:
+            if (
+                page.payload.type_url.rsplit("/", 1)[-1]
+                == message_type.DESCRIPTOR.full_name
+            ):
+                out.append(message_type.FromString(page.payload.value))
+    return out

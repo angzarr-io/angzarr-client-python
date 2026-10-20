@@ -18,12 +18,14 @@ from angzarr_client.builder import (
 from angzarr_client.errors import InvalidArgumentError, InvalidTimestampError
 from angzarr_client.helpers import proto_to_uuid
 
+CORR = PyUUID("0192f0c1-0000-7000-8000-00000000c0de")
+
 
 class TestCommandBuilder:
     """Tests for CommandBuilder."""
 
     def _mock_aggregate_client(self) -> Mock:
-        """Create a mock AggregateClient."""
+        """Create a mock CommandHandlerClient."""
         client = Mock()
         client.handle = Mock(return_value=CommandResponse())
         return client
@@ -35,16 +37,17 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = CommandBuilder(client, "orders", root)
-        builder.with_sequence(0)
         builder.with_command("/test.CreateOrder", msg)
         book = builder.build()
 
         assert book.cover.domain == "orders"
         assert proto_to_uuid(book.cover.root) == root
-        assert len(book.pages) == 1
-        assert book.pages[0].header.sequence == 0
-        # Auto-generated correlation ID
-        assert book.cover.correlation_id != ""
+        assert book.page.WhichOneof("body") == "command"
+        assert book.page.command.payload.type_url == "/test.CreateOrder"
+        # No Handling: the coordinator stamps the expected sequence.
+        assert not book.HasField("handling")
+        # Auto-generated correlation ID, a UUID v4.
+        assert proto_to_uuid(book.page.correlation_id).version == 4
 
     def test_command_new_generates_uuid_v4_root(self) -> None:
         """``command_new`` materializes a client-side UUID v4 root.
@@ -58,7 +61,6 @@ class TestCommandBuilder:
         msg = StringValue(value="test")
 
         builder = CommandBuilder(client, "orders", uuid4())
-        builder.with_sequence(0)
         builder.with_command("/test.CreateOrder", msg)
         book = builder.build()
 
@@ -84,72 +86,44 @@ class TestCommandBuilder:
         client = self._mock_aggregate_client()
         msg = StringValue(value="test")
 
-        a = (
+        a = CommandBuilder(client, "orders", uuid4()).with_command("type/Cmd", msg)
+        b = CommandBuilder(client, "orders", uuid4()).with_command("type/Cmd", msg)
+        assert a.build().cover.root.value != b.build().cover.root.value
+
+    def test_with_correlation_id_uuid(self) -> None:
+        """An explicit correlation ID is the page's correlation_id."""
+        client = self._mock_aggregate_client()
+        book = (
             CommandBuilder(client, "orders", uuid4())
-            .with_sequence(0)
-            .with_command("type/Cmd", msg)
+            .with_correlation_id(CORR)
+            .with_command("type/Cmd", StringValue(value="test"))
             .build()
         )
-        b = (
+
+        assert proto_to_uuid(book.page.correlation_id) == CORR
+
+    def test_with_correlation_id_accepts_uuid_text(self) -> None:
+        client = self._mock_aggregate_client()
+        book = (
             CommandBuilder(client, "orders", uuid4())
-            .with_sequence(0)
-            .with_command("type/Cmd", msg)
+            .with_correlation_id(str(CORR))
+            .with_command("type/Cmd", StringValue(value="test"))
             .build()
         )
-        assert a.cover.root.value != b.cover.root.value
 
-    def test_build_without_sequence_defaults_to_zero(self) -> None:
-        """Build without with_sequence() uses sequence 0."""
-        client = self._mock_aggregate_client()
-        msg = StringValue(value="test")
+        assert proto_to_uuid(book.page.correlation_id) == CORR
 
-        builder = CommandBuilder(client, "orders", uuid4())
-        builder.with_command("/test.CreateOrder", msg)
-        book = builder.build()
+    def test_with_correlation_id_refuses_non_uuid_text(self) -> None:
+        """Correlation IDs are UUIDs on the wire (CommandPage.correlation_id)."""
+        builder = CommandBuilder(self._mock_aggregate_client(), "orders", uuid4())
 
-        assert book.pages[0].header.WhichOneof("sequence_type") == "sequence"
-        assert book.pages[0].header.sequence == 0
-
-    def test_build_sequence_zero_valid(self) -> None:
-        """with_sequence(0) is valid for new aggregates."""
-        client = self._mock_aggregate_client()
-        msg = StringValue(value="test")
-
-        builder = CommandBuilder(client, "orders", uuid4())
-        builder.with_sequence(0)
-        builder.with_command("/test.CreateOrder", msg)
-        book = builder.build()
-
-        assert book.pages[0].header.sequence == 0
-
-    def test_with_correlation_id(self) -> None:
-        """Build with explicit correlation ID."""
-        client = self._mock_aggregate_client()
-        msg = StringValue(value="test")
-
-        builder = (
-            CommandBuilder(client, "orders", uuid4())
-            .with_correlation_id("my-corr-123")
-            .with_sequence(0)
-            .with_command("type/Cmd", msg)
-        )
-        book = builder.build()
-
-        assert book.cover.correlation_id == "my-corr-123"
-
-    def test_with_sequence(self) -> None:
-        """Build with specific sequence number."""
-        client = self._mock_aggregate_client()
-        msg = StringValue(value="test")
-
-        builder = (
-            CommandBuilder(client, "orders", uuid4())
-            .with_sequence(5)
-            .with_command("type/Cmd", msg)
-        )
-        book = builder.build()
-
-        assert book.pages[0].header.sequence == 5
+        with pytest.raises(InvalidArgumentError) as exc_info:
+            builder.with_correlation_id("my-corr-123")
+        assert exc_info.value.code == "PROTO_UUID_INVALID"
+        assert exc_info.value.details == {
+            "field": "correlation_id",
+            "input": "my-corr-123",
+        }
 
     def test_build_without_type_url_raises(self) -> None:
         """Build without type_url raises InvalidArgumentError."""
@@ -183,26 +157,26 @@ class TestCommandBuilder:
             .build()
         )
 
-        assert book.pages[0].command.type_url == "/google.protobuf.StringValue"
-        assert book.pages[0].command.value == payload
+        assert book.page.command.payload.type_url == "/google.protobuf.StringValue"
+        assert book.page.command.payload.value == payload
 
-    def test_execute_calls_handle_command(self) -> None:
-        """Execute builds and calls client.handle_command."""
+    def test_execute_sends_the_built_book_through_handle(self) -> None:
+        """Execute builds and calls client.handle (DECISION)."""
         client = self._mock_aggregate_client()
         expected_response = CommandResponse()
-        # CommandResponse contains events field, not correlation_id
         expected_response.events.next_sequence = 5
-        client.handle_command.return_value = expected_response
+        client.handle.return_value = expected_response
 
-        msg = StringValue(value="test")
-        builder = (
+        response = (
             CommandBuilder(client, "orders", uuid4())
-            .with_sequence(0)
-            .with_command("type/Cmd", msg)
+            .with_correlation_id(CORR)
+            .with_command("type/Cmd", StringValue(value="test"))
+            .execute()
         )
-        response = builder.execute()
 
-        client.handle_command.assert_called_once()
+        client.handle.assert_called_once()
+        (sent,) = client.handle.call_args.args
+        assert proto_to_uuid(sent.page.correlation_id) == CORR
         assert response.events.next_sequence == 5
 
     def test_fluent_chaining(self) -> None:
@@ -213,8 +187,7 @@ class TestCommandBuilder:
 
         result = (
             CommandBuilder(client, "orders", root)
-            .with_correlation_id("corr")
-            .with_sequence(5)
+            .with_correlation_id(CORR)
             .with_command("type/Cmd", msg)
         )
 
@@ -249,10 +222,10 @@ class TestQueryBuilder:
         client = self._mock_query_client()
 
         builder = QueryBuilder(client, "orders")
-        builder.by_correlation_id("corr-abc")
+        builder.by_correlation_id(CORR)
         query = builder.build()
 
-        assert query.cover.correlation_id == "corr-abc"
+        assert proto_to_uuid(query.correlation_id) == CORR
         assert not query.cover.HasField("root")
 
     def test_by_correlation_id_clears_root(self) -> None:
@@ -261,11 +234,17 @@ class TestQueryBuilder:
         root = PyUUID("12345678-1234-5678-1234-567812345678")
 
         builder = QueryBuilder(client, "orders", root)
-        builder.by_correlation_id("corr-abc")
+        builder.by_correlation_id(str(CORR))
         query = builder.build()
 
-        assert query.cover.correlation_id == "corr-abc"
+        assert proto_to_uuid(query.correlation_id) == CORR
         assert not query.cover.HasField("root")
+
+    def test_by_correlation_id_refuses_non_uuid_text(self) -> None:
+        builder = QueryBuilder(self._mock_query_client(), "orders")
+        with pytest.raises(InvalidArgumentError) as exc_info:
+            builder.by_correlation_id("corr-abc")
+        assert exc_info.value.code == "PROTO_UUID_INVALID"
 
     def test_with_edition(self) -> None:
         """Build query with specific edition."""
@@ -275,7 +254,7 @@ class TestQueryBuilder:
         builder.with_edition("branch-a")
         query = builder.build()
 
-        assert query.cover.edition.name == "branch-a"
+        assert query.cover.edition == "branch-a"
 
     def test_range_lower_only(self) -> None:
         """Build query with lower bound range."""
@@ -375,22 +354,18 @@ class TestQueryBuilder:
 
     def test_get_pages(self) -> None:
         """get_pages extracts pages from book."""
-        from angzarr_client._pb import PageHeader
-
         client = self._mock_query_client()
         book = EventBook()
-        page1 = book.pages.add()
-        page1.header.CopyFrom(PageHeader(sequence=1))
-        page2 = book.pages.add()
-        page2.header.CopyFrom(PageHeader(sequence=2))
+        book.pages.add().sequence = 1
+        book.pages.add().sequence = 2
         client.get_event_book.return_value = book
 
         builder = QueryBuilder(client, "orders")
         result = builder.get_pages()
 
         assert len(result) == 2
-        assert result[0].header.sequence == 1
-        assert result[1].header.sequence == 2
+        assert result[0].sequence == 1
+        assert result[1].sequence == 2
 
     def test_fluent_chaining(self) -> None:
         """Methods return self for chaining."""

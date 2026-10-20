@@ -13,7 +13,7 @@ from angzarr_client.router import WILDCARD_DOMAIN, CodedError, Router
 
 from ..builders import FQ_INCREASED, type_url
 from ..fixture import CounterProjector
-from ..gen.test.counter import counter_projector_angzarr
+from ..gen.test.counter import counter_pb2, counter_projector_angzarr
 from . import CONFORMANCE_FEATURES
 
 scenarios(str(CONFORMANCE_FEATURES / "projector.feature"))
@@ -55,7 +55,7 @@ def _delivery(domain: str, n: int):
     book = types_pb2.EventBook()
     book.cover.domain = domain
     for _ in range(n):
-        book.pages.add().event.type_url = type_url(FQ_INCREASED)
+        book.pages.add().payload.type_url = type_url(FQ_INCREASED)
     return book
 
 
@@ -87,16 +87,23 @@ def _delivery_no_cover(world):
     world.dispatch(book)
 
 
+def _count(projection) -> int:
+    """The count the router-built Projection's folded projection holds."""
+    return counter_pb2.CounterProjectorState.FromString(
+        projection.projection.value
+    ).count
+
+
 @then(parsers.re(r"the projection records (?P<n>\d+) events?"))
 def _records(world, n):
     assert world.err is None, f"dispatch failed: {world.err}"
-    assert world.proj.sequence == int(n)
+    assert _count(world.proj) == int(n)
 
 
 @then("the projection records nothing")
 def _records_nothing(world):
     assert world.err is None, f"dispatch failed: {world.err}"
-    assert world.proj.sequence == 0
+    assert _count(world.proj) == 0
 
 
 @then(parsers.re(r"the delivery fails with (?P<code>[A-Z_]+)"))

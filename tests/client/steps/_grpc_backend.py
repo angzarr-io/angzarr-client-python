@@ -29,15 +29,11 @@ from angzarr_client._pb import (
     CommandResponse,
     EventBook,
     EventPage,
-    Projection,
 )
 from angzarr_client.proto.io.angzarr.v1 import (
     command_handler_pb2_grpc,
-    projector_pb2_grpc,
     query_pb2_grpc,
 )
-
-SPECULATIVE_PROJECTOR = "order-summary"
 
 
 @dataclass(frozen=True)
@@ -75,25 +71,12 @@ class _CommandHandlerCoordinator(
     def __init__(self, recorder: _Recorder) -> None:
         self._rec = recorder
 
-    def HandleCommand(self, request, context):
-        self._rec.record("HandleCommand", context)
-        book = EventBook(cover=request.command.cover)
-        for _ in request.command.pages:
+    def Handle(self, request, context):
+        self._rec.record("Handle", context)
+        book = EventBook(cover=request.cover)
+        if request.HasField("page"):
             book.pages.append(EventPage())
         return CommandResponse(events=book)
-
-
-class _ProjectorCoordinator(projector_pb2_grpc.ProjectorCoordinatorServiceServicer):
-    def __init__(self, recorder: _Recorder) -> None:
-        self._rec = recorder
-
-    def HandleSpeculative(self, request, context):
-        self._rec.record("HandleSpeculative", context)
-        return Projection(
-            cover=request.events.cover,
-            projector=SPECULATIVE_PROJECTOR,
-            sequence=len(request.events.pages),
-        )
 
 
 class GrpcBackend:
@@ -118,9 +101,6 @@ class GrpcBackend:
         query_pb2_grpc.add_EventQueryServiceServicer_to_server(_EventQuery(rec), server)
         command_handler_pb2_grpc.add_CommandHandlerCoordinatorServiceServicer_to_server(
             _CommandHandlerCoordinator(rec), server
-        )
-        projector_pb2_grpc.add_ProjectorCoordinatorServiceServicer_to_server(
-            _ProjectorCoordinator(rec), server
         )
         return server, rec
 

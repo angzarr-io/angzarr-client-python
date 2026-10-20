@@ -1,9 +1,11 @@
 """Step defs for features/client/aggregate_client.feature.
 
-Drives a real :class:`CommandHandlerClient` (through the fluent
+Drives a real :class:`CommandHandlerClient` (commands built with the fluent
 :class:`CommandBuilder`) against the test backend
 (``_fakes.TestBackend``), and reads history back with a real
-:class:`QueryClient`.
+:class:`QueryClient`. The expected sequence travels in the built book's
+``Handling`` (types.proto), set on the proto: the builder has no sender
+Handling API yet.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ import grpc
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client._pb import CommandRequest, CommandResponse, EventBook, SyncMode
+from angzarr_client._pb import CommandBook, CommandResponse, EventBook
 from angzarr_client.builder import CommandBuilder
 from angzarr_client.client import CommandHandlerClient, QueryClient
 from angzarr_client.errors import ClientError, GRPCError
@@ -25,6 +27,7 @@ from ._fakes import (
     CreateOrder,
     GenericCommand,
     TestBackend,
+    correlation_for,
     cover,
     order_type_url,
     page_seq,
@@ -62,29 +65,38 @@ class _World:
     def query_client(self) -> QueryClient:
         return QueryClient.connect(self.backend.endpoint)
 
-    def builder(self, sequence: int, correlation: str | None = None) -> CommandBuilder:
-        b = self.client.command(self.domain, self.root).with_sequence(sequence)
-        return b.with_correlation_id(correlation) if correlation else b
+    def builder(self, correlation: str | None = None) -> CommandBuilder:
+        b = self.client.command(self.domain, self.root)
+        return b.with_correlation_id(correlation_for(correlation)) if correlation else b
+
+    def send(
+        self, builder: CommandBuilder, sequence: int, timeout: float | None = None
+    ) -> Outcome:
+        """Build, expect ``sequence`` (Handling.expected_sequence), send."""
+        try:
+            book = at_sequence(builder.build(), sequence)
+            return self.client.handle(book, timeout=timeout)
+        except ClientError as e:
+            return e
 
     def send_generic(
         self,
         name: str,
         sequence: int,
         count: int = 1,
-        mode: SyncMode = SyncMode.SYNC_MODE_ASYNC,
         correlation: str | None = None,
     ) -> Outcome:
-        builder = self.builder(sequence, correlation).with_command(
+        builder = self.builder(correlation).with_command(
             order_type_url(name), GenericCommand(data=f"{name}-data", count=count)
         )
-        return _capture(lambda: builder.execute(sync_mode=mode))
+        return self.send(builder, sequence)
 
     def send_create(self, customer_id: str, sequence: int) -> Outcome:
-        builder = self.builder(sequence).with_command(
+        builder = self.builder().with_command(
             order_type_url("CreateOrder"),
             CreateOrder(order_id="o-1", customer_id=customer_id),
         )
-        return _capture(builder.execute)
+        return self.send(builder, sequence)
 
     def ok(self) -> CommandResponse:
         assert isinstance(
@@ -99,11 +111,10 @@ class _World:
         return self.result
 
 
-def _capture(fn) -> Outcome:
-    try:
-        return fn()
-    except ClientError as e:
-        return e
+def at_sequence(book: CommandBook, sequence: int) -> CommandBook:
+    """``book`` expecting the stream at ``sequence``."""
+    book.handling.expected_sequence = sequence
+    return book
 
 
 def _seqs(book: EventBook) -> list[int]:
@@ -160,11 +171,6 @@ def _given_no_aggregate(state: _World, domain: str, root: str) -> None:
 @given(parsers.parse('projectors are configured for "{domain}" domain'))
 def _given_projectors(state: _World, domain: str) -> None:
     state.backend.projector_domains.add(domain)
-
-
-@given(parsers.parse('sagas are configured for "{domain}" domain'))
-def _given_sagas(state: _World, domain: str) -> None:
-    state.backend.sagas[domain] = "inventory"
 
 
 @given("the aggregate service is unavailable")
@@ -226,28 +232,13 @@ def _when_retry(state: _World) -> None:
     state.result = state.send_generic("AddItem", state.looked_up_sequence)
 
 
-@when("I send a command without waiting for downstream work")
-def _when_send_async(state: _World) -> None:
-    state.result = state.send_generic("AddItem", 0, mode=SyncMode.SYNC_MODE_ASYNC)
-
-
-@when("I send a command and wait for projectors")
-def _when_send_simple(state: _World) -> None:
-    state.result = state.send_generic("AddItem", 0, mode=SyncMode.SYNC_MODE_SIMPLE)
-
-
-@when("I send a command and wait for downstream sagas")
-def _when_send_cascade(state: _World) -> None:
-    state.result = state.send_generic("AddItem", 0, mode=SyncMode.SYNC_MODE_CASCADE)
-
-
 @when("I send a command with a malformed payload")
 def _when_send_malformed(state: _World) -> None:
-    builder = state.builder(0).with_command(
+    builder = state.builder().with_command(
         order_type_url("CreateOrder"),
         _TruncatedPayload(),  # type: ignore[arg-type]
     )
-    state.result = _capture(builder.execute)
+    state.result = state.send(builder, 0)
 
 
 @when("I send a command missing required fields")
@@ -281,13 +272,10 @@ def _when_attempt(state: _World) -> None:
 
 @when("I send a command with a short timeout")
 def _when_short_timeout(state: _World) -> None:
-    book = (
-        state.builder(0)
-        .with_command(order_type_url("AddItem"), GenericCommand(data="slow"))
-        .build()
+    builder = state.builder().with_command(
+        order_type_url("AddItem"), GenericCommand(data="slow")
     )
-    request = CommandRequest(command=book, sync_mode=SyncMode.SYNC_MODE_ASYNC)
-    state.result = _capture(lambda: state.client.handle_command(request, timeout=0.2))
+    state.result = state.send(builder, 0, timeout=0.2)
 
 
 @when(parsers.parse('I send a "{name}" command for root "{root}" at sequence {seq:d}'))
@@ -311,7 +299,7 @@ def _then_accepted(state: _World) -> None:
 def _then_single_event(state: _World, name: str) -> None:
     book = state.ok().events
     assert len(book.pages) == 1
-    assert short_type(book.pages[0].event) == name
+    assert short_type(book.pages[0].payload) == name
     assert len(state.backend.stored_pages(book.cover)) == 1
 
 
@@ -322,13 +310,16 @@ def _then_continue_from(state: _World, seq: int) -> None:
 
 @then(parsers.parse('the resulting events carry correlation ID "{cid}"'))
 def _then_correlation(state: _World, cid: str) -> None:
-    assert state.ok().events.cover.correlation_id == cid
+    expected = correlation_for(cid).bytes
+    pages = state.ok().events.pages
+    assert pages and all(p.meta.correlation_id.value == expected for p in pages)
 
 
 @then("the command is refused because the aggregate has moved on")
 def _then_refused_moved_on(state: _World) -> None:
     err = state.err()
-    assert err.is_precondition_failed(), f"expected FAILED_PRECONDITION, got {err!r}"
+    assert isinstance(err, GRPCError), err
+    assert err.grpc_code == grpc.StatusCode.ABORTED, f"expected ABORTED, got {err!r}"
 
 
 @then("one command is accepted")
@@ -341,35 +332,8 @@ def _then_one_accepted(state: _World) -> None:
 def _then_other_refused(state: _World) -> None:
     refused = [r for r in state.concurrent if isinstance(r, ClientError)]
     assert len(refused) == 1, state.concurrent
-    assert refused[0].is_precondition_failed(), refused[0]
-
-
-@then("the response returns before any projectors have caught up")
-def _then_returns_before_projectors(state: _World) -> None:
-    resp = state.ok()
-    assert len(resp.projections) == 0, "fire-and-forget response carried projections"
-    assert state.backend.projector_runs == [], "projector ran before the response"
-    assert state.backend.sync_modes[-1] == SyncMode.SYNC_MODE_ASYNC
-    state.backend.drain()
-    assert [run[2] for run in state.backend.projector_runs] == _seqs(resp.events)
-
-
-@then("the response reflects the projectors having processed the event")
-def _then_projectors_processed(state: _World) -> None:
-    resp = state.ok()
-    projected = [p.sequence for p in resp.projections]
-    assert projected, "no projections in the response"
-    assert projected == _seqs(resp.events)
-    assert state.backend.sync_modes[-1] == SyncMode.SYNC_MODE_SIMPLE
-
-
-@then("the response reflects the downstream sagas having completed")
-def _then_sagas_completed(state: _World) -> None:
-    state.ok()
-    downstream = state.query_client().query("inventory", state.root).get_event_book()
-    assert len(downstream.pages) == 1, "saga command not applied before return"
-    assert short_type(downstream.pages[0].event) == "StockReserved"
-    assert state.backend.sync_modes[-1] == SyncMode.SYNC_MODE_CASCADE
+    assert isinstance(refused[0], GRPCError), refused[0]
+    assert refused[0].grpc_code == grpc.StatusCode.ABORTED, refused[0]
 
 
 @then("the command is refused as invalid")

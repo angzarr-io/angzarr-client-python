@@ -86,7 +86,9 @@ path = "hatch_build.py"
 
 [tool.hatch.build.targets.sdist]
 # Everything a wheel build needs: the package, the build hook and scripts,
-# the spec protos and the router sources at their pinned revisions.
+# the spec protos and the router workspace at their pinned revisions (every
+# workspace member's manifest, and the angzarr-proto crate from the router's
+# own angzarr-project submodule).
 include = [
     "angzarr_client/**/*.py",
     "codegen/",
@@ -100,6 +102,8 @@ include = [
     "angzarr-router/Cargo.lock",
     "angzarr-router/crates/",
     "angzarr-router/proto/",
+    "angzarr-router/tools/archlint/",
+    "angzarr-router/angzarr-project/rust/angzarr-proto/",
 ]
 exclude = ["angzarr_client/proto/io", "angzarr_client/proto/sererr"]
 

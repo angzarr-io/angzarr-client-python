@@ -18,6 +18,7 @@ from angzarr_client.errors import ClientError, GRPCError
 
 from ._fakes import (
     TestBackend,
+    correlation_for,
     cover,
     event_data,
     page_seq,
@@ -38,7 +39,7 @@ class _World:
     books: list[EventBook] | None = None
     cutoff: Timestamp | None = None
     expected_edition_data: list[str] = field(default_factory=list)
-    correlated_domains: list[str] = field(default_factory=list)
+    correlated_roots: list[bytes] = field(default_factory=list)
 
     def ok(self) -> EventBook:
         assert isinstance(self.book, EventBook), f"query failed: {self.book!r}"
@@ -146,12 +147,18 @@ def _given_edition_n(
 
 @given(parsers.parse('events with correlation ID "{cid}" exist in multiple aggregates'))
 def _given_correlated(state: _World, cid: str) -> None:
+    # A Query's correlation selector searches every stream of its domain
+    # (types.proto, Query); the correlated aggregates live in "orders".
     b = state.backend
-    b.seed(cover("orders", "corr-order", correlation=cid), "OrderCreated", 1)
-    b.seed(cover("inventory", "corr-stock", correlation=cid), "StockReserved", 1)
-    b.seed(cover("shipping", "corr-ship", correlation=cid), "ShipmentCreated", 1)
-    b.seed(cover("orders", "unrelated", correlation="other-flow"), "OrderCreated", 1)
-    state.correlated_domains = ["inventory", "orders", "shipping"]
+    flow, other = correlation_for(cid), correlation_for("other-flow")
+    b.seed(cover("orders", "corr-order"), "OrderCreated", 1, flow)
+    b.seed(cover("orders", "corr-cart"), "ItemAdded", 1, flow)
+    b.seed(cover("orders", "corr-ship"), "OrderShipped", 1, flow)
+    b.seed(cover("orders", "unrelated"), "OrderCreated", 1, other)
+    b.seed(cover("inventory", "corr-stock"), "StockReserved", 1, flow)
+    state.correlated_roots = sorted(
+        root_for(r).bytes for r in ("corr-order", "corr-cart", "corr-ship")
+    )
 
 
 @given(
@@ -217,7 +224,9 @@ def _when_query_edition(state: _World, domain: str, root: str, edition: str) -> 
 @when(parsers.parse('I query events by correlation ID "{cid}"'))
 def _when_query_correlation(state: _World, cid: str) -> None:
     state.books = (
-        state.client.query_domain("orders").by_correlation_id(cid).get_events()
+        state.client.query_domain("orders")
+        .by_correlation_id(correlation_for(cid))
+        .get_events()
     )
 
 
@@ -255,7 +264,7 @@ def _then_order(state: _World, lo: int, hi: int) -> None:
 
 @then(parsers.parse('the first event has type "{name}"'))
 def _then_first_type(state: _World, name: str) -> None:
-    assert short_type(state.ok().pages[0].event) == name
+    assert short_type(state.ok().pages[0].payload) == name
 
 
 @then(parsers.parse('the first event has payload "{data}"'))
@@ -286,7 +295,9 @@ def _then_up_to_time(state: _World) -> None:
     pages = state.ok().pages
     assert [event_data(p) for p in pages] == ["t0", "t1", "t2"]
     cutoff = (state.cutoff.seconds, state.cutoff.nanos)
-    assert all((p.created_at.seconds, p.created_at.nanos) <= cutoff for p in pages)
+    assert all(
+        (p.meta.recorded_at.seconds, p.meta.recorded_at.nanos) <= cutoff for p in pages
+    )
 
 
 @then("I receive events from that edition only")
@@ -297,7 +308,8 @@ def _then_edition_only(state: _World) -> None:
 @then("I receive events from all correlated aggregates")
 def _then_correlated(state: _World) -> None:
     assert state.books is not None
-    assert sorted(b.cover.domain for b in state.books) == state.correlated_domains
+    assert all(b.cover.domain == "orders" for b in state.books)
+    assert sorted(b.cover.root.value for b in state.books) == state.correlated_roots
     assert all(len(b.pages) == 1 for b in state.books)
 
 

@@ -7,9 +7,9 @@ from angzarr_client.router import AbiVersionError, abi_version
 from angzarr_client.router._abi import EXPECTED_ABI_VERSION, check_abi_version
 
 
-def test_abi_version_is_three():
-    assert abi_version() == 3
-    assert EXPECTED_ABI_VERSION == 3
+def test_abi_version_is_four():
+    assert abi_version() == 4
+    assert EXPECTED_ABI_VERSION == 4
 
 
 def test_matching_abi_version_is_accepted():

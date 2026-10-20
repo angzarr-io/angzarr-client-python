@@ -16,7 +16,7 @@ pip install angzarr-client
 
 ## Where to start in the reference
 
-- **Clients** — `DomainClient`, `CommandHandlerClient`, `QueryClient`, `SpeculativeClient`
+- **Clients** — `DomainClient`, `CommandHandlerClient`, `QueryClient`
 - **Router binding** — `angzarr_client.router`: `Router`, the `*Dispatch` tables the generated wiring populates, `CommandContext`, `PageContext`, `FactRecord`, `CodedError`
 - **Errors** — `ClientError` hierarchy with `is_*` predicate methods
 - **Retry** — `ExponentialBackoffRetry` with `execute()` and `on_retry` callback

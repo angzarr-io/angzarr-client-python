@@ -5,15 +5,16 @@ The home of [Angzarr](https://angzarr.io) for Python:
 - **`angzarr_client.router`** — the router binding. Components (aggregates,
   sagas, process managers, projectors) are hosted by the shared Rust router
   ([angzarr-router](https://github.com/angzarr-io/angzarr-router)'s
-  `router-ffi` cdylib), loaded in-process through cffi. Dispatch, state
-  rebuild, rejection and compensation routing run in the router; Python holds
-  the business handlers.
+  `router-ffi` cdylib, C ABI 4), loaded in-process through cffi. Dispatch,
+  state rebuild and conflict resolution run in the router, which owns every
+  component's state; Python holds the business handlers, called statelessly
+  over decoded protobuf messages.
 - **`codegen/`** — the templates `angzarr codegen python` / `angzarr scaffold
   python` render from your proto component declarations: a typed
   `<Component>Handler` protocol plus the dispatch wiring (regenerated), and a
   handler stub (written once).
-- **Coordinator clients** — `CommandHandlerClient`, `QueryClient`,
-  `SpeculativeClient`, `DomainClient` and the `CommandBuilder` /
+- **Coordinator clients** — `CommandHandlerClient`, `QueryClient`, `DomainClient`
+  and the `CommandBuilder` /
   `QueryBuilder` fluent builders, for code that talks to a running
   coordinator.
 - **`ComponentHost`** — a generic gRPC host for the registered components:
@@ -92,9 +93,7 @@ Health reports `NOT_SERVING` until the server listens, and again once shutdown
 begins; in-flight calls then finish within the
 grace period. A coded failure from a handler travels as its gRPC status, with
 a `google.rpc.Status` / `ErrorInfo` (reason = the error code) in
-`grpc-status-details-bin`; the coordinator hands that code to compensation
-handlers as `RejectionNotification.code` (branch on it, never on
-`rejection_reason`, which is the human-readable message).
+`grpc-status-details-bin`.
 
 ## Coordinator clients
 

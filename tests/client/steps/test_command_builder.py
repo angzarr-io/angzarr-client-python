@@ -17,7 +17,7 @@ from google.protobuf.message import Message
 from google.protobuf.wrappers_pb2 import StringValue
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from angzarr_client._pb import CommandBook, CommandResponse, EventBook, MergeStrategy
+from angzarr_client._pb import CommandBook, CommandResponse, EventBook
 from angzarr_client.builder import CommandBuilder
 from angzarr_client.client import CommandHandlerClient
 from angzarr_client.error_codes import codes
@@ -25,7 +25,7 @@ from angzarr_client.errors import ClientError
 from angzarr_client.helpers import full_type_url
 from tests.fixtures import CreateOrder
 
-from ._fakes import RecordingStub
+from ._fakes import RecordingStub, correlation_for
 
 scenarios("parity/client/command_builder.feature")
 
@@ -53,9 +53,8 @@ class _Recipe:
     domain: str = ""
     # None -> client.command_new (auto-generated root).
     root: uuid.UUID | None = None
+    # A scenario label, sent as its UUID (correlation_for).
     correlation_id: str | None = None
-    sequence: int | None = None
-    merge: int | None = None
     # (type_url, message) passed to with_command.
     command: tuple[str, Message] | None = None
     # Type URL set on its own via with_type_url.
@@ -71,11 +70,7 @@ def _apply(client: CommandHandlerClient, r: _Recipe) -> CommandBuilder:
         else client.command_new(r.domain)
     )
     if r.correlation_id is not None:
-        b = b.with_correlation_id(r.correlation_id)
-    if r.sequence is not None:
-        b = b.with_sequence(r.sequence)
-    if r.merge is not None:
-        b = b.with_merge_strategy(r.merge)
+        b = b.with_correlation_id(correlation_for(r.correlation_id))
     if r.command is not None:
         b = b.with_command(*r.command)
     if r.type_url is not None:
@@ -136,7 +131,7 @@ def _root_bytes(book: CommandBook) -> bytes:
 @given("a mock CommandHandlerClient for testing")
 def _given_mock_client(state: _World) -> None:
     state.stub = RecordingStub()
-    state.stub.responses["HandleCommand"] = _canned_response()
+    state.stub.responses["Handle"] = _canned_response()
     state.client = CommandHandlerClient.from_stub(state.stub)
 
 
@@ -196,11 +191,6 @@ def _when_set_correlation_id(state: _World, cid: str) -> None:
     state.recipe.correlation_id = cid
 
 
-@when(parsers.parse("I set sequence to {seq:d}"))
-def _when_set_sequence(state: _World, seq: int) -> None:
-    state.recipe.sequence = seq
-
-
 @when("I do NOT set the command type")
 def _when_not_set_type(state: _World) -> None:
     state.recipe.command = None
@@ -213,39 +203,6 @@ def _when_not_set_type(state: _World) -> None:
 def _when_not_set_payload(state: _World) -> None:
     state.recipe.command = None
     state.recipe.payload = None
-    state.build()
-
-
-@when("I build a command without specifying merge strategy")
-def _when_build_no_merge_strategy(state: _World) -> None:
-    state.recipe = _Recipe(
-        domain="orders",
-        root=uuid.uuid4(),
-        command=(TEST_COMMAND_URL, _test_command()),
-    )
-    state.build()
-
-
-@when("I build a command with merge strategy STRICT")
-def _when_build_strict(state: _World) -> None:
-    state.recipe = _Recipe(
-        domain="orders",
-        root=uuid.uuid4(),
-        merge=MergeStrategy.MERGE_STRICT,
-        command=(TEST_COMMAND_URL, _test_command()),
-    )
-    state.build()
-
-
-@when("I build a command using fluent chaining:")
-def _when_fluent_chaining(state: _World) -> None:
-    state.recipe = _Recipe(
-        domain="orders",
-        root=_root_for("order-chained"),
-        correlation_id="trace-456",
-        sequence=3,
-        command=(full_type_url(CreateOrder), _create_order()),
-    )
     state.build()
 
 
@@ -336,31 +293,24 @@ def _then_auto_root_is_valid_uuid(state: _World) -> None:
 
 @then(parsers.parse('the built command should have type URL containing "{needle}"'))
 def _then_type_url_contains(state: _World, needle: str) -> None:
-    type_url = state.book().pages[0].command.type_url
+    type_url = state.book().page.command.payload.type_url
     assert needle in type_url, f"type_url: {type_url}"
     assert type_url.startswith("/"), f"type_url: {type_url}"
 
 
 @then("the built command should have a non-empty correlation ID")
 def _then_nonempty_correlation(state: _World) -> None:
-    assert state.book().cover.correlation_id != ""
+    assert state.book().page.HasField("correlation_id")
 
 
 @then("the correlation ID should be a valid UUID")
 def _then_correlation_is_uuid(state: _World) -> None:
-    uuid.UUID(state.book().cover.correlation_id)
+    uuid.UUID(bytes=state.book().page.correlation_id.value)
 
 
 @then(parsers.parse('the built command should have correlation ID "{expected}"'))
 def _then_correlation_id(state: _World, expected: str) -> None:
-    assert state.book().cover.correlation_id == expected
-
-
-@then(parsers.parse("the built command should have sequence {seq:d}"))
-def _then_sequence(state: _World, seq: int) -> None:
-    header = state.book().pages[0].header
-    assert header.WhichOneof("sequence_type") == "sequence"
-    assert header.sequence == seq
+    assert state.book().page.correlation_id.value == correlation_for(expected).bytes
 
 
 @then("building should fail")
@@ -386,34 +336,17 @@ def _then_build_succeeds(state: _World) -> None:
     state.book()
 
 
-@then("all chained values should be preserved")
-def _then_chained_preserved(state: _World) -> None:
-    book = state.book()
-    assert book.cover.domain == "orders"
-    assert _root_bytes(book) == _root_for("order-chained").bytes
-    assert book.cover.correlation_id == "trace-456"
-    assert book.pages[0].header.sequence == 3
-    any_cmd = book.pages[0].command
-    assert any_cmd.type_url == full_type_url(CreateOrder)
-    decoded = CreateOrder()
-    decoded.ParseFromString(any_cmd.value)
-    assert decoded.customer_id == "c-1"
-
-
 @then("the command should be sent to the gateway")
 def _then_sent_to_gateway(state: _World) -> None:
-    call = state.stub.last_call("HandleCommand")
-    assert call is not None, "gateway received HandleCommand"
-    sent = call[0].command
+    call = state.stub.last_call("Handle")
+    assert call is not None, "gateway received Handle"
+    sent = call[0]
     built = state.book()
     # build() and execute() each mint a fresh correlation id, so compare
     # the addressing and the command itself.
-    assert sent.cover.domain == built.cover.domain
-    assert sent.cover.root == built.cover.root
-    assert sent.cover.correlation_id != ""
-    assert len(sent.pages) == 1
-    assert sent.pages[0].command == built.pages[0].command
-    assert sent.pages[0].header.sequence == built.pages[0].header.sequence
+    assert sent.cover == built.cover
+    assert sent.page.HasField("correlation_id")
+    assert sent.page.command == built.page.command
 
 
 @then("the response should be returned")
@@ -424,19 +357,9 @@ def _then_response_returned(state: _World) -> None:
 @then("the command should be built and executed in one call")
 def _then_built_and_executed(state: _World) -> None:
     assert state.executed == _canned_response()
-    calls = [c for c in state.stub.calls if c[0] == "HandleCommand"]
+    calls = [c for c in state.stub.calls if c[0] == "Handle"]
     assert len(calls) == 1
-    assert calls[0][1].command.pages[0].command.type_url == full_type_url(CreateOrder)
-
-
-@then("the command page should have MERGE_COMMUTATIVE strategy")
-def _then_merge_commutative(state: _World) -> None:
-    assert state.book().pages[0].merge_strategy == MergeStrategy.MERGE_COMMUTATIVE
-
-
-@then("the command page should have MERGE_STRICT strategy")
-def _then_merge_strict(state: _World) -> None:
-    assert state.book().pages[0].merge_strategy == MergeStrategy.MERGE_STRICT
+    assert calls[0][1].page.command.payload.type_url == full_type_url(CreateOrder)
 
 
 @then("each command should have its own root")
@@ -448,11 +371,11 @@ def _then_each_command_own_root(state: _World) -> None:
 @then("builder reuse should not cause cross-contamination")
 def _then_no_cross_contamination(state: _World) -> None:
     assert len(state.built_pair) == 2
-    a, b = (book.cover for book in state.built_pair)
-    assert a.domain == state.recipe.domain
-    assert b.domain == state.recipe.domain
+    a, b = state.built_pair
+    assert a.cover.domain == state.recipe.domain
+    assert b.cover.domain == state.recipe.domain
     assert (
-        a.correlation_id != b.correlation_id
+        a.page.correlation_id != b.page.correlation_id
     ), "each build gets its own correlation id"
 
 

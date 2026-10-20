@@ -65,34 +65,17 @@ def cover_of(domain: str, label: str):
     return cover
 
 
-def assert_deferred(
-    command_book, source_domain: str, source_seq: int, index: int
-) -> None:
-    """Every page of ``command_book`` carries angzarr_deferred provenance from
-    ``source_domain`` at ``source_seq``, emitted at position ``index``, and no
-    explicit sequence."""
-    assert command_book.pages, "the command has no pages"
-    for page in command_book.pages:
-        assert (
-            page.header.WhichOneof("sequence_type") == "angzarr_deferred"
-        ), f"command page is not deferred: {page.header}"
-        deferred = page.header.angzarr_deferred
-        assert deferred.source_seq == source_seq, "source_seq is the triggering page's"
-        assert deferred.command_index == index, "command_index is the emission position"
-        assert (
-            deferred.source.domain == source_domain
-        ), "the source cover is the trigger's"
-
-
 def with_type_url_prefix(cc, prefix: str):
     """Rewrite every Any type URL in ``cc``'s command and prior events to
     ``prefix`` + the fully-qualified name."""
-    for page in cc.command.pages:
-        if page.HasField("command"):
-            page.command.type_url = prefix + fq_from_url(page.command.type_url)
-    for page in cc.events.pages:
-        if page.HasField("event"):
-            page.event.type_url = prefix + fq_from_url(page.event.type_url)
+    page = cc.command.page
+    if page.HasField("command"):
+        page.command.payload.type_url = prefix + fq_from_url(
+            page.command.payload.type_url
+        )
+    for event in cc.events.pages:
+        if event.HasField("payload"):
+            event.payload.type_url = prefix + fq_from_url(event.payload.type_url)
     return cc
 
 
@@ -105,7 +88,7 @@ def _load_skeleton(name: str, message):
 
 
 def _inner_command_any(cc) -> any_pb2.Any:
-    return cc.command.pages[0].command
+    return cc.command.page.command.payload
 
 
 def increase_command(n: int):
@@ -131,43 +114,6 @@ def unhandled_command():
     return _load_skeleton("command_unhandled.txtpb", types_pb2.ContextualCommand())
 
 
-def parent_linkage() -> any_pb2.Any:
-    """An opaque fill-only ext stamped on a command's cover, to prove ext
-    propagation onto emitted events."""
-    return any_pb2.Any(type_url=type_url("test.counter.Parent"), value=bytes([1, 2, 3]))
-
-
-def increase_command_with_linkage(n: int):
-    """Set parent linkage on a parsed command's cover."""
-    cc = increase_command(n)
-    cc.command.cover.ext.CopyFrom(parent_linkage())
-    return cc
-
-
-def rejection_command(fq_command: str, code: str = "", reason: str = ""):
-    """Wrap a rejection Notification for ``fq_command`` (with the rejecting
-    handler's ``code`` and human-readable ``reason``) into a
-    ContextualCommand, routed through the same dispatch entry — the core
-    detects the notification type and takes the compensation path. Built by
-    field; the envelope nests Notification -> RejectionNotification -> the
-    rejected book."""
-    rejection = types_pb2.RejectionNotification(code=code, rejection_reason=reason)
-    rejection.rejected_command.cover.domain = "counter"
-    page = rejection.rejected_command.pages.add()
-    page.command.type_url = type_url(fq_command)
-
-    notification = types_pb2.Notification()
-    notification.payload.type_url = type_url("io.angzarr.v1.RejectionNotification")
-    notification.payload.value = rejection.SerializeToString()
-
-    cc = types_pb2.ContextualCommand()
-    cc.command.cover.domain = "counter"
-    cmd_page = cc.command.pages.add()
-    cmd_page.command.type_url = type_url("io.angzarr.v1.Notification")
-    cmd_page.command.value = notification.SerializeToString()
-    return cc
-
-
 # Envelope-guard negatives: a well-formed parsed command with exactly one
 # structural field cleared, so the guard fires regardless of the rest.
 
@@ -180,20 +126,20 @@ def command_missing_book():
 
 def command_missing_page():
     cc = increase_command(1)
-    cc.command.ClearField("pages")
+    cc.command.ClearField("page")
     return cc
 
 
 def command_missing_payload():
     cc = increase_command(1)
-    cc.command.pages[0].ClearField("payload")
+    cc.command.page.command.ClearField("payload")
     return cc
 
 
 def _increased_page_at(seq: int):
     """Parse the Increased event skeleton and stamp a sequence."""
     page = _load_skeleton("event_increased.txtpb", types_pb2.EventPage())
-    page.header.sequence = seq
+    page.sequence = seq
     return page
 
 
@@ -210,9 +156,10 @@ def prior_increases(n: int):
 
 def corrupt_history():
     """One parsed Increased page whose payload is overwritten with an
-    undecodable varint, so the fold fails (PERSISTED_EVENT_CORRUPT)."""
+    undecodable varint, so the fold fails (a handler bug,
+    UNHANDLED_HANDLER_ERROR)."""
     page = _increased_page_at(0)
-    page.event.value = bytes([0xFF, 0xFF, 0xFF])
+    page.payload.value = bytes([0xFF, 0xFF, 0xFF])
     return types_pb2.EventBook(pages=[page], next_sequence=1)
 
 

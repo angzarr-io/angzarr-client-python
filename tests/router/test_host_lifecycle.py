@@ -44,9 +44,7 @@ _NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
 _LOOP_THREAD = "angzarr-component-host"
 
 _RESPONSES = {
-    "dispatch": command_handler_pb2.BusinessResponse,
-    "dispatch_fact": types_pb2.EventBook,
-    "dispatch_replay": command_handler_pb2.ReplayResponse,
+    "dispatch": command_handler_pb2.CommandHandlerResponse,
     "dispatch_saga": saga_pb2.SagaResponse,
     "dispatch_process_manager": process_manager_pb2.ProcessManagerHandleResponse,
     "dispatch_projector": types_pb2.Projection,
@@ -82,12 +80,6 @@ class _ScriptedRouter:
 
     def dispatch(self, request):
         return self._run("dispatch", request)
-
-    def dispatch_fact(self, request):
-        return self._run("dispatch_fact", request)
-
-    def dispatch_replay(self, domain, request):
-        return self._run("dispatch_replay", domain, request)
 
     def dispatch_saga(self, request):
         return self._run("dispatch_saga", request)
@@ -245,7 +237,9 @@ def test_max_workers_bounds_concurrent_dispatches(hosts, kwargs, calls, bound):
         assert (gate.active, gate.peak) == (bound, bound)
     finally:
         gate.release.set()
-    assert all(f.result() == command_handler_pb2.BusinessResponse() for f in futures)
+    assert all(
+        f.result() == command_handler_pb2.CommandHandlerResponse() for f in futures
+    )
     assert gate.peak == bound
 
 
@@ -283,7 +277,7 @@ def test_stop_lets_an_in_flight_call_finish_and_stays_not_serving(monkeypatch, h
     stopper.start()
     time.sleep(0.3)
     gate.release.set()
-    assert future.result() == command_handler_pb2.BusinessResponse()
+    assert future.result() == command_handler_pb2.CommandHandlerResponse()
     stopper.join(10)
     assert not stopper.is_alive()
     during_stop = host.health_history("")[before:]
@@ -404,16 +398,10 @@ _CALLS = {
             _command(), timeout=5
         ),
     ),
-    "handle_fact": (
-        "aggregate",
-        lambda ch: command_handler_pb2_grpc.CommandHandlerServiceStub(ch).HandleFact(
-            command_handler_pb2.FactRequest(), timeout=5
-        ),
-    ),
     "saga": (
         "saga",
         lambda ch: saga_pb2_grpc.SagaServiceStub(ch).Handle(
-            saga_pb2.SagaHandleRequest(), timeout=5
+            types_pb2.EventBook(), timeout=5
         ),
     ),
     "process_manager": (
@@ -477,9 +465,7 @@ def test_a_saga_acknowledges_an_event_from_a_domain_it_does_not_consume(hosts):
     host = ComponentHost(Router())
     host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
     stub = saga_pb2_grpc.SagaServiceStub(hosts(host))
-    resp = stub.Handle(
-        saga_pb2.SagaHandleRequest(source=_increased_book("elsewhere")), timeout=5
-    )
+    resp = stub.Handle(_increased_book("elsewhere"), timeout=5)
     assert resp == saga_pb2.SagaResponse()
 
 

@@ -20,7 +20,6 @@ from angzarr_client.host import (
     PROJECTOR_SERVICE,
     SAGA_SERVICE,
     UPCASTER_SERVICE,
-    _attach_routine_snapshot,
     grpc_status_code,
 )
 from angzarr_client.proto.io.angzarr.v1 import (
@@ -118,8 +117,8 @@ def _unconsumed_book(domain: str) -> types_pb2.EventBook:
     book = types_pb2.EventBook()
     book.cover.CopyFrom(builders.cover_of(domain, f"{domain}-1"))
     page = book.pages.add()
-    page.header.sequence = 0
-    page.event.type_url = builders.type_url("test.counter.NotConsumed")
+    page.sequence = 0
+    page.payload.type_url = builders.type_url("test.counter.NotConsumed")
     return book
 
 
@@ -130,7 +129,7 @@ def test_handle_returns_the_routers_response(started):
     channel = started(_counter_host())
     stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
     resp = stub.Handle(builders.increase_command(2), timeout=5)
-    assert [builders.fq_from_url(p.event.type_url) for p in resp.events.pages] == [
+    assert [builders.fq_from_url(p.payload.type_url) for p in resp.events.pages] == [
         builders.FQ_INCREASED,
         builders.FQ_INCREASED,
     ]
@@ -156,174 +155,18 @@ def test_an_unclassified_handler_failure_is_a_coded_internal_error(started):
     assert _error_info(err.value).reason == "UNHANDLED_HANDLER_ERROR"
 
 
-def test_handle_fact_without_a_fact_handler_is_refused(started):
+def test_a_fact_without_a_fact_handler_is_refused(started):
     channel = started(_counter_host())
     stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
-    request = command_handler_pb2.FactRequest(facts=_increased_book("counter"))
+    request = builders.increase_command(1)
+    request.command.page.ClearField("command")
+    request.command.page.fact.payload.type_url = builders.type_url(
+        builders.FQ_INCREASED
+    )
     with pytest.raises(grpc.RpcError) as err:
-        stub.HandleFact(request, timeout=5)
+        stub.Handle(request, timeout=5)
     assert err.value.code() == grpc.StatusCode.INVALID_ARGUMENT
-    assert _error_info(err.value).reason
-
-
-def test_replay_is_not_served(started):
-    # The latest spec has no Replay RPC; the host leaves it unimplemented.
-    channel = started(_counter_host())
-    stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
-    request = command_handler_pb2.ReplayRequest(
-        events=builders.prior_increases(3).pages
-    )
-    with pytest.raises(grpc.RpcError) as err:
-        stub.Replay(request, timeout=5)
-    assert err.value.code() == grpc.StatusCode.UNIMPLEMENTED
-
-
-# --- routine snapshots (snapshot_every) ---------------------------------------
-#
-# A deployment asks for a routine snapshot every N events
-# (ANGZARR_SNAPSHOT_EVERY on the component). The coordinator persists only the
-# snapshot a handler returns, so the host attaches one, with the aggregate's
-# state after the new events, whenever the stream crosses a multiple of N.
-
-
-def _handled_book(channel, prior, n):
-    stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
-    request = builders.increase_command(n)
-    request.events.Clear()
-    if prior is not None:
-        request.events.CopyFrom(prior)
-    return stub.Handle(request, timeout=5).events
-
-
-def _snapshot_count(book) -> int:
-    state = counter_pb2.CounterState()
-    assert book.snapshot.state.Unpack(state)
-    return state.count
-
-
-def test_crossing_a_multiple_of_the_interval_attaches_a_routine_snapshot(started):
-    # Events 0..1 stored, two more make the stream 4 long: it crosses 3.
-    channel = started(_counter_host(snapshot_every=3))
-    book = _handled_book(channel, builders.prior_increases(2), 2)
-    assert len(book.pages) == 2
-    assert _snapshot_count(book) == 4
-    assert book.snapshot.retention == types_pb2.SnapshotRetention.RETENTION_DEFAULT
-
-
-def test_landing_exactly_on_a_multiple_attaches_a_routine_snapshot(started):
-    channel = started(_counter_host(snapshot_every=3))
-    book = _handled_book(channel, builders.prior_increases(2), 1)
-    assert _snapshot_count(book) == 3
-
-
-def test_staying_within_an_interval_attaches_no_snapshot(started):
-    # 3 stored + 2 new = 5: still short of 6.
-    channel = started(_counter_host(snapshot_every=3))
-    book = _handled_book(channel, builders.prior_increases(3), 2)
-    assert len(book.pages) == 2
-    assert not book.HasField("snapshot")
-
-
-def test_the_routine_snapshot_folds_from_the_loaded_snapshot(started):
-    # Snapshot count 10 at sequence 10, pages 10 (covered) and 11: the
-    # aggregate holds 11 over a stream of 12; one more event crosses 12 at 13.
-    channel = started(_counter_host(snapshot_every=13))
-    book = _handled_book(channel, builders.snapshot_history(), 1)
-    assert _snapshot_count(book) == 12
-
-
-def test_without_an_interval_no_snapshot_is_attached(started, monkeypatch):
-    monkeypatch.delenv("ANGZARR_SNAPSHOT_EVERY", raising=False)
-    channel = started(_counter_host())
-    book = _handled_book(channel, builders.prior_increases(2), 5)
-    assert not book.HasField("snapshot")
-
-
-def test_the_interval_defaults_to_angzarr_snapshot_every(started, monkeypatch):
-    monkeypatch.setenv("ANGZARR_SNAPSHOT_EVERY", "2")
-    channel = started(_counter_host())
-    book = _handled_book(channel, builders.prior_increases(1), 1)
-    assert _snapshot_count(book) == 2
-
-
-def test_an_interval_of_one_snapshots_every_event(started):
-    channel = started(_counter_host(snapshot_every=1))
-    book = _handled_book(channel, builders.prior_increases(1), 1)
-    assert _snapshot_count(book) == 2
-
-
-def test_a_blank_interval_variable_means_no_interval(started, monkeypatch):
-    monkeypatch.setenv("ANGZARR_SNAPSHOT_EVERY", "  ")
-    channel = started(_counter_host())
-    book = _handled_book(channel, builders.prior_increases(2), 5)
-    assert not book.HasField("snapshot")
-
-
-def test_the_stream_length_comes_from_the_pages_without_a_next_sequence(started):
-    # Pages 0..1 with no next_sequence: a stream of 2; one more event makes
-    # 3, a multiple of 3.
-    prior = builders.prior_increases(2)
-    prior.next_sequence = 0
-    channel = started(_counter_host(snapshot_every=3))
-    assert _snapshot_count(_handled_book(channel, prior, 1)) == 3
-
-
-def test_the_stream_length_comes_from_a_lone_snapshot(started):
-    # Only a snapshot at sequence 10 (count 10): a stream of 11; one more
-    # event makes 12, a multiple of 12.
-    prior = builders.snapshot_history()
-    del prior.pages[:]
-    prior.next_sequence = 0
-    channel = started(_counter_host(snapshot_every=12))
-    assert _snapshot_count(_handled_book(channel, prior, 1)) == 11
-
-
-def test_several_hosted_aggregates_get_no_routine_snapshot(started):
-    host = _counter_host(snapshot_every=1)
-    host.add_aggregate(
-        AggregateDispatch("Other", "other", Rebuilder(counter_pb2.CounterState))
-    )
-    channel = started(host)
-    book = _handled_book(channel, builders.prior_increases(1), 1)
-    assert len(book.pages) == 1
-    assert not book.HasField("snapshot")
-
-
-class _NoReplayRouter:
-    def dispatch_replay(self, domain, request):  # pragma: no cover - must not run
-        raise AssertionError("a handler's own snapshot needs no replay")
-
-
-def test_a_snapshot_the_handler_returned_is_kept():
-    response = command_handler_pb2.BusinessResponse()
-    response.events.pages.add()
-    response.events.snapshot.retention = types_pb2.SnapshotRetention.RETENTION_PERSIST
-    response.events.snapshot.state.type_url = "/own.State"
-    _attach_routine_snapshot(
-        _NoReplayRouter(), "counter", types_pb2.EventBook(next_sequence=1), response, 1
-    )
-    assert response.events.snapshot.state.type_url == "/own.State"
-    assert (
-        response.events.snapshot.retention
-        == types_pb2.SnapshotRetention.RETENTION_PERSIST
-    )
-
-
-def test_a_boolean_interval_is_a_configuration_error():
-    with pytest.raises(ConfigurationError, match="snapshot_every"):
-        _counter_host(snapshot_every=True)
-
-
-@pytest.mark.parametrize("value", ["0", "-3", "twenty"])
-def test_an_unusable_interval_is_a_configuration_error(monkeypatch, value):
-    monkeypatch.setenv("ANGZARR_SNAPSHOT_EVERY", value)
-    with pytest.raises(ConfigurationError, match="ANGZARR_SNAPSHOT_EVERY"):
-        _counter_host()
-
-
-def test_an_unusable_explicit_interval_is_a_configuration_error():
-    with pytest.raises(ConfigurationError, match="snapshot_every"):
-        _counter_host(snapshot_every=0)
+    assert _error_info(err.value).reason == "NO_FACT_HANDLER"
 
 
 # --- Saga / process manager / projector / upcaster ---------------------------
@@ -335,12 +178,10 @@ def _saga_host() -> ComponentHost:
     return host
 
 
-def test_saga_handle_returns_the_deferred_commands(started):
+def test_saga_handle_returns_the_emitted_commands(started):
     channel = started(_saga_host())
     stub = saga_pb2_grpc.SagaServiceStub(channel)
-    resp = stub.Handle(
-        saga_pb2.SagaHandleRequest(source=_increased_book("order")), timeout=5
-    )
+    resp = stub.Handle(_increased_book("order"), timeout=5)
     assert len(resp.commands) == 1
     assert resp.commands[0].cover.domain == "inventory"
 
@@ -348,9 +189,7 @@ def test_saga_handle_returns_the_deferred_commands(started):
 def test_saga_acknowledges_an_event_it_does_not_consume(started):
     channel = started(_saga_host())
     stub = saga_pb2_grpc.SagaServiceStub(channel)
-    resp = stub.Handle(
-        saga_pb2.SagaHandleRequest(source=_unconsumed_book("order")), timeout=5
-    )
+    resp = stub.Handle(_unconsumed_book("order"), timeout=5)
     assert resp == saga_pb2.SagaResponse()
 
 
@@ -358,7 +197,7 @@ def test_saga_reports_a_malformed_request(started):
     channel = started(_saga_host())
     stub = saga_pb2_grpc.SagaServiceStub(channel)
     with pytest.raises(grpc.RpcError) as err:
-        stub.Handle(saga_pb2.SagaHandleRequest(), timeout=5)
+        stub.Handle(types_pb2.EventBook(), timeout=5)
     assert err.value.code() != grpc.StatusCode.UNIMPLEMENTED
     assert _error_info(err.value).reason
 
@@ -403,8 +242,11 @@ def test_projector_handle_returns_the_projection(started):
     stub = projector_pb2_grpc.ProjectorServiceStub(channel)
     book = _increased_book("counter", 2)
     projection = stub.Handle(book, timeout=5)
-    assert projection.projector == "counter-projector"
-    assert projection.sequence == 2
+    assert projection.projector == "CounterProjector"
+    assert projection.next_sequence == 2
+    assert counter_pb2.CounterProjectorState.FromString(
+        projection.projection.value
+    ) == counter_pb2.CounterProjectorState(count=2)
 
 
 class _FailingUpcaster:

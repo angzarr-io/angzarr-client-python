@@ -7,10 +7,9 @@ particularly useful for Gherkin/BDD scenarios.
 from dataclasses import dataclass, field
 from typing import Any
 
-from .._pb import UUID, Cover, EventBook, EventPage
+from .._pb import UUID, Cover, EventBook
 from ..errors import CommandRejectedError
-from ..helpers import now
-from .builders import pack_event
+from .builders import make_event_page, pack_event
 
 
 @dataclass
@@ -69,11 +68,9 @@ class ScenarioContext:
         Returns:
             EventBook with cover, pages, and next_sequence set
         """
-        pages = []
-        for i, event_any in enumerate(self.events):
-            page = EventPage(event=event_any, created_at=now())
-            page.header.sequence = i
-            pages.append(page)
+        pages = [
+            make_event_page(i, event_any) for i, event_any in enumerate(self.events)
+        ]
         return EventBook(
             cover=Cover(
                 domain=self.domain,

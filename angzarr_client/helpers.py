@@ -16,13 +16,11 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from ._pb import (
     UUID,
+    Command,
     CommandBook,
     CommandPage,
     Cover,
-    Edition,
     EventPage,
-    PageHeader,
-    Query,
     SequenceRange,
     TemporalQuery,
 )
@@ -82,29 +80,6 @@ def proto_uuid_to_text(u: UUID | None) -> str:
     return bytes_to_uuid_text(u.value)
 
 
-# Edition helpers
-
-
-def implicit_edition(name: str) -> Edition:
-    """Create an edition with the given name but no divergences."""
-    return Edition(name=name)
-
-
-# Audit #86 reverted 2026-04-29: edition propagation moved to
-# coordinator-contract; READ-side accessors live on the wrapper
-# classes (e.g. ``Cover.edition()``).
-
-
-def divergence_for(e: Edition | None, domain_name: str) -> int | None:
-    """Return the divergence sequence for a domain, or ``None`` if not found."""
-    if e is None:
-        return None
-    for d in e.divergences:
-        if d.domain == domain_name:
-            return d.sequence
-    return None
-
-
 # EventBook / response extraction utilities (string- or class-keyed —
 # wrappers handle the typed-message-class shortcut).
 
@@ -132,13 +107,13 @@ def decode_event(page: EventPage, full_type_name: str, msg_class: type[T]) -> T 
     ``msg_class.DESCRIPTOR.full_name``); use this free function when the
     type name is a runtime variable.
     """
-    if page is None or not page.HasField("event"):
+    if page is None or not page.HasField("payload"):
         return None
-    if not type_url_matches(page.event.type_url, full_type_name):
+    if not type_url_matches(page.payload.type_url, full_type_name):
         return None
     try:
         msg = msg_class()
-        page.event.Unpack(msg)
+        page.payload.Unpack(msg)
         return msg
     except Exception:  # noqa: BLE001 — undecodable payload decodes to None
         return None
@@ -255,36 +230,25 @@ def parse_timestamp(rfc3339: str) -> Timestamp:
 # Construction helpers (build proto messages from primitives)
 
 
-def new_cover(
-    domain_name: str,
-    root: PyUUID,
-    correlation_id_val: str = "",
-    edition_val: Edition | None = None,
-) -> Cover:
-    """Create a new Cover with the given parameters."""
-    cover = Cover(
-        domain=domain_name,
-        root=uuid_to_proto(root),
-        correlation_id=correlation_id_val,
-    )
-    if edition_val is not None:
-        cover.edition.CopyFrom(edition_val)
+def new_cover(domain_name: str, root: PyUUID, edition: str | None = None) -> Cover:
+    """Create a Cover for the stream (domain, edition, root); ``edition``
+    None is the main timeline."""
+    cover = Cover(domain=domain_name, root=uuid_to_proto(root))
+    if edition is not None:
+        cover.edition = edition
     return cover
 
 
-def new_command_page(sequence: int, command: ProtoAny) -> CommandPage:
-    """Create a command page from a sequence and Any message."""
-    page = CommandPage()
-    page.header.sequence = sequence
-    page.command.CopyFrom(command)
-    return page
+def new_command_page(command: ProtoAny) -> CommandPage:
+    """Create a command page whose Command arm carries ``command``."""
+    return CommandPage(command=Command(payload=command))
 
 
-def new_command_book(cover: Cover, pages: list[CommandPage]) -> CommandBook:
-    """Create a CommandBook with the given cover and pages."""
+def new_command_book(cover: Cover, page: CommandPage) -> CommandBook:
+    """Create a CommandBook addressing ``cover`` with its single ``page``."""
     book = CommandBook()
     book.cover.CopyFrom(cover)
-    book.pages.extend(pages)
+    book.page.CopyFrom(page)
     return book
 
 
@@ -308,21 +272,16 @@ def temporal_by_time(ts: Timestamp) -> TemporalQuery:
     return tq
 
 
-def correlated_metadata(correlation_id: str) -> list[tuple[str, str]]:
+def correlated_metadata(correlation_id: str | UUID | None) -> list[tuple[str, str]]:
     """Build gRPC metadata carrying the ``x-correlation-id`` header.
 
-    Returns the list shape grpcio expects on stub calls. Empty
-    correlation IDs produce an empty list — the header is skipped, never
-    sent as a blank value. Audit #69.
+    ``correlation_id`` is the header text, or a proto UUID rendered in its
+    standard text form. Returns the list shape grpcio expects on stub
+    calls. An empty or unset correlation ID produces an empty list — the
+    header is skipped, never sent as a blank value. Audit #69.
     """
+    if isinstance(correlation_id, UUID):
+        correlation_id = proto_uuid_to_text(correlation_id)
     if not correlation_id:
         return []
     return [(CORRELATION_ID_HEADER, correlation_id)]
-
-
-# Suppress unused-import warnings for re-exports that are imported only
-# to make `from .helpers import Query` work for users who need the
-# proto type. Query/PageHeader stay accessible through the proto path
-# but exporting a couple here for stable backwards-compat with code
-# that imports proto types from helpers historically.
-_ = (Query, PageHeader)

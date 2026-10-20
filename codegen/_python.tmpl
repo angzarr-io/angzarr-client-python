@@ -35,9 +35,6 @@ from typing import Optional, Protocol
 
 import {{ .params.runtime_module }} as _az
 {{ include "py.framework" (dict "params" .params "from" $from "target" "io.angzarr.v1.types_pb2") }} as _t
-{{- if and (eq $c.kind "AGGREGATE") (or $c.rejections $c.undos) }}
-{{ include "py.framework" (dict "params" .params "from" $from "target" "io.angzarr.v1.command_handler_pb2") }} as _ch
-{{- end }}
 {{- if eq $c.kind "PROCESS_MANAGER" }}
 {{ include "py.framework" (dict "params" .params "from" $from "target" "io.angzarr.v1.process_manager_pb2") }} as _pm
 {{- end }}
@@ -66,7 +63,7 @@ scaffold so the two never drift. */ -}}
 {{- if $c.state }}{{ $state = typeRef $c.state }}{{ end -}}
 {{- if eq $c.kind "SAGA" -}}
 {{- range $c.handlers -}}
-{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, event: %s, source: _az.PageContext)" (typeRef .message)) "returns" " -> tuple[list[_t.CommandBook], list[_t.EventBook]]")) -}}
+{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, event: %s, source: _az.PageContext)" (typeRef .message)) "returns" " -> list[_t.CommandBook]")) -}}
 {{- end -}}
 {{- else if eq $c.kind "AGGREGATE" -}}
 {{- range $c.handlers -}}
@@ -77,14 +74,8 @@ scaffold so the two never drift. */ -}}
 {{- range $c.appliers -}}
 {{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, state: %s, event: %s, ctx: _az.PageContext)" $state (typeRef .message)) "returns" " -> None")) -}}
 {{- end -}}
-{{- range $c.rejections -}}
-{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, n: _t.Notification, rejection: _t.RejectionNotification, state: %s, cctx: _az.CommandContext)" $state) "returns" " -> Optional[_ch.BusinessResponse]")) -}}
-{{- end -}}
 {{- range $c.facts -}}
 {{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, fact: %s, state: %s)" (typeRef .message) $state) "returns" " -> Optional[_az.FactRecord]")) -}}
-{{- end -}}
-{{- range $c.undos -}}
-{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, n: _t.Notification, compensate: _t.Compensate, state: %s, cctx: _az.CommandContext)" $state) "returns" " -> Optional[_ch.BusinessResponse]")) -}}
 {{- end -}}
 {{- else if eq $c.kind "PROCESS_MANAGER" -}}
 {{- range $c.handlers -}}
@@ -93,14 +84,10 @@ scaffold so the two never drift. */ -}}
 {{- range $c.appliers -}}
 {{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, state: %s, event: %s, ctx: _az.PageContext)" $state (typeRef .message)) "returns" " -> None")) -}}
 {{- end -}}
-{{- range $c.rejections -}}
-{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, n: _t.Notification, rejection: _t.RejectionNotification, state: %s)" $state) "returns" " -> Optional[_pm.ProcessManagerHandleResponse]")) -}}
-{{- end -}}
 {{- else if eq $c.kind "PROJECTOR" -}}
 {{- range $c.handlers -}}
 {{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake .method) "params" (printf "(self, projection: %s, event: %s, ctx: _az.PageContext)" $state (typeRef .message)) "returns" " -> None")) -}}
 {{- end -}}
-{{- $_ := set $out "sigs" (append $out.sigs (dict "name" (snake $c.finish_method) "params" (printf "(self, projection: %s, events: _t.EventBook)" $state) "returns" " -> _t.Projection")) -}}
 {{- else -}}
 {{- fail (printf "unsupported component kind %s" $c.kind) -}}
 {{- end -}}

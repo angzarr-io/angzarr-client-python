@@ -12,6 +12,6 @@ def test_query_domain_builds_cover_for_domain_without_root() -> None:
     assert not query.cover.HasField("root")
 
 
-def test_unset_correlation_id_builds_empty_correlation_id() -> None:
+def test_unset_correlation_id_leaves_the_selector_unset() -> None:
     query = QueryClient.from_stub(Mock()).query_domain("orders").build()
-    assert query.cover.correlation_id == ""
+    assert not query.HasField("correlation_id")

@@ -5,7 +5,7 @@
   this repository's codegen/ templates against it. Import it explicitly: it
   loads the router-ffi native library, which the clients below do not need.
 - The coordinator clients (``CommandHandlerClient``, ``QueryClient``,
-  ``SpeculativeClient``, ``DomainClient``) and their builders.
+  ``DomainClient``) and their builders.
 - ``angzarr_client.testing``: test helpers, imported from that module
   explicitly (they are not part of this top-level surface).
 """
@@ -19,7 +19,6 @@ from .client import (
     CommandHandlerClient,
     DomainClient,
     QueryClient,
-    SpeculativeClient,
     TransportMode,
     resolve_ch_endpoint,
 )
@@ -44,7 +43,6 @@ from .helpers import (
     correlated_metadata,
     full_type_url,
     full_type_url_for,
-    implicit_edition,
     now,
     parse_timestamp,
     proto_to_uuid,
@@ -132,7 +130,6 @@ __all__ = [
     "QueryClient",
     # Retry
     "RetryPolicy",
-    "SpeculativeClient",
     "TransportError",
     "TransportMode",
     # Wrappers (user-facing object surface for framework protos)
@@ -146,7 +143,6 @@ __all__ = [
     "full_type_url",
     "full_type_url_for",
     "get_transport_config",
-    "implicit_edition",
     "now",
     "parse_timestamp",
     "proto_to_uuid",

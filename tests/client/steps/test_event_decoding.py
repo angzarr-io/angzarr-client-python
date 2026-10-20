@@ -37,7 +37,6 @@ from angzarr_client.helpers import (
     type_name_from_url,
     unpack,
 )
-from angzarr_client.proto.io.angzarr.v1.types_pb2 import PayloadReference
 
 scenarios("parity/client/event_decoding.feature")
 
@@ -58,16 +57,13 @@ def _make_event_page(
     value: bytes | None = None,
     payload_variant: str = "event",
     has_timestamp: bool = True,
-    reference_uri: str = "",
-    reference_storage_type: int = 0,
 ) -> EventPage:
     """Build a real EventPage with the requested payload variant."""
-    page = EventPage()
-    page.header.sequence = sequence
+    page = EventPage(sequence=sequence)
     if has_timestamp:
         ts = Timestamp()
         ts.GetCurrentTime()
-        page.created_at.CopyFrom(ts)
+        page.meta.recorded_at.CopyFrom(ts)
 
     if payload_variant == "event":
         any_msg = ProtoAny()
@@ -78,13 +74,8 @@ def _make_event_page(
             any_msg.value = msg.SerializeToString()
         else:
             any_msg.value = value
-        page.event.CopyFrom(any_msg)
-    elif payload_variant == "external":
-        ref = PayloadReference()
-        ref.uri = reference_uri
-        ref.storage_type = reference_storage_type
-        page.external.CopyFrom(ref)
-    # payload_variant == "none" → leave both unset
+        page.payload.CopyFrom(any_msg)
+    # payload_variant == "none" → leave the payload unset
 
     return page
 
@@ -119,7 +110,7 @@ def _given_event_with_type_url(state: _State, type_url: str) -> None:
 def _given_valid_bytes(state: _State) -> None:
     # Already encoded by _make_event_page's default StringValue payload.
     assert state.current_event is not None
-    assert state.current_event.event.value
+    assert state.current_event.payload.value
 
 
 @given(parsers.parse("an EventPage at sequence {seq:d}"))
@@ -135,16 +126,6 @@ def _given_event_page_with_timestamp(state: _State) -> None:
 @given("an EventPage with Event payload")
 def _given_event_page_with_event_payload(state: _State) -> None:
     state.current_event = _make_event_page(payload_variant="event")
-
-
-@given("an EventPage with offloaded payload")
-def _given_event_page_with_offloaded(state: _State) -> None:
-    state.current_event = _make_event_page(
-        payload_variant="external",
-        reference_uri="s3://bucket/key",
-        reference_storage_type=2,
-        has_timestamp=False,
-    )
 
 
 @given(parsers.parse('an event with type_url ending in "{suffix}"'))
@@ -257,14 +238,14 @@ def _when_pack(state: _State, name: str, package: str) -> None:
     from angzarr_client.router import pack
 
     page = EventPage()
-    page.event.CopyFrom(pack(_message_class(package, name)()))
+    page.payload.CopyFrom(pack(_message_class(package, name)()))
     state.current_event = page
 
 
 @then(parsers.parse('the event\'s type_url is "{type_url}"'))
 def _then_type_url_is(state: _State, type_url: str) -> None:
     assert state.current_event is not None
-    assert state.current_event.event.type_url == type_url
+    assert state.current_event.payload.type_url == type_url
 
 
 @when("I decode the event as OrderCreated")
@@ -312,14 +293,14 @@ def _when_match_against(state: _State, pattern: str) -> None:
 
     if state.current_event is None and state.events_list:
         state.events_list = [
-            e for e in state.events_list if _matches(e.event.type_url, pattern)
+            e for e in state.events_list if _matches(e.payload.type_url, pattern)
         ]
         state.match_result = bool(state.events_list)
         return
 
     if state.current_event is None:
         return
-    state.match_result = _matches(state.current_event.event.type_url, pattern)
+    state.match_result = _matches(state.current_event.payload.type_url, pattern)
 
 
 @when(parsers.parse('I match against suffix "{suffix}"'))
@@ -327,7 +308,7 @@ def _when_match_suffix(state: _State, suffix: str) -> None:
     """Suffix match — production's `type_name_from_url` extracts the
     suffix; we then check string equality."""
     assert state.current_event is not None
-    extracted = type_name_from_url(state.current_event.event.type_url)
+    extracted = type_name_from_url(state.current_event.payload.type_url)
     state.match_result = extracted == suffix or extracted.endswith("." + suffix)
 
 
@@ -335,7 +316,7 @@ def _when_match_suffix(state: _State, suffix: str) -> None:
 def _when_decode_payload_bytes(state: _State) -> None:
     assert state.current_event is not None
     try:
-        state.decoded_msg = unpack(state.current_event.event, _MSG_CLASS)
+        state.decoded_msg = unpack(state.current_event.payload, _MSG_CLASS)
     except Exception as e:  # noqa: BLE001
         state.last_error = e
 
@@ -343,7 +324,7 @@ def _when_decode_payload_bytes(state: _State) -> None:
 @when("I decode the payload")
 def _when_decode_payload(state: _State) -> None:
     assert state.current_event is not None
-    state.decoded_msg = try_unpack(state.current_event.event, _MSG_CLASS)
+    state.decoded_msg = try_unpack(state.current_event.payload, _MSG_CLASS)
 
 
 @when("I attempt to decode")
@@ -355,12 +336,12 @@ def _when_attempt_decode(state: _State) -> None:
     returns None. unpack raises ValueError on type mismatch.
     """
     assert state.current_event is not None
-    if not state.current_event.HasField("event"):
+    if not state.current_event.HasField("payload"):
         state.decode_is_none = True
         return
     # Try to decode — corrupted bytes still parse for StringValue's
     # tolerant grammar, so we use try_unpack and let it return whatever.
-    state.decoded_msg = try_unpack(state.current_event.event, _MSG_CLASS)
+    state.decoded_msg = try_unpack(state.current_event.payload, _MSG_CLASS)
     if state.decoded_msg is None:
         state.decode_is_none = True
 
@@ -368,7 +349,7 @@ def _when_attempt_decode(state: _State) -> None:
 @when("I decode")
 def _when_decode(state: _State) -> None:
     assert state.current_event is not None
-    state.decoded_msg = try_unpack(state.current_event.event, _MSG_CLASS)
+    state.decoded_msg = try_unpack(state.current_event.payload, _MSG_CLASS)
 
 
 @when(parsers.parse('I call decode_event(event, "{full_type_name}")'))
@@ -391,7 +372,7 @@ def _when_events_from_response(state: _State) -> None:
 def _when_decode_each(state: _State, event_type: str) -> None:
     decoded = []
     for evt in state.events_list:
-        msg = try_unpack(evt.event, _MSG_CLASS)
+        msg = try_unpack(evt.payload, _MSG_CLASS)
         if msg is not None:
             decoded.append(msg)
     state.decoded_msg = decoded
@@ -402,7 +383,7 @@ def _when_decode_by_type(state: _State) -> None:
     """Group events by their type_url's extracted name."""
     grouped: dict[str, list] = {}
     for evt in state.events_list:
-        type_name = type_name_from_url(evt.event.type_url).rsplit(".", 1)[-1]
+        type_name = type_name_from_url(evt.payload.type_url).rsplit(".", 1)[-1]
         grouped.setdefault(type_name, []).append(evt)
     state.decoded_msg = grouped  # type: ignore[assignment]
 
@@ -412,7 +393,7 @@ def _when_filter_for_type(state: _State, event_type: str) -> None:
     state.events_list = [
         e
         for e in state.events_list
-        if type_name_from_url(e.event.type_url).rsplit(".", 1)[-1] == event_type
+        if type_name_from_url(e.payload.type_url).rsplit(".", 1)[-1] == event_type
     ]
 
 
@@ -463,14 +444,14 @@ def _then_no_error_raised(state: _State) -> None:
 @then(parsers.parse("event.sequence should be {seq:d}"))
 def _then_event_sequence(state: _State, seq: int) -> None:
     assert state.current_event is not None
-    assert state.current_event.header.sequence == seq
+    assert state.current_event.sequence == seq
 
 
 @then("event.created_at should be a valid timestamp")
 def _then_created_at_valid(state: _State) -> None:
     assert state.current_event is not None
-    assert state.current_event.HasField("created_at")
-    assert state.current_event.created_at.seconds > 0
+    assert state.current_event.meta.HasField("recorded_at")
+    assert state.current_event.meta.recorded_at.seconds > 0
 
 
 @then("the timestamp should be parseable")
@@ -478,32 +459,20 @@ def _then_timestamp_parseable(state: _State) -> None:
     assert state.current_event is not None
     # Real Timestamp instances always serialize via ToJsonString; just
     # confirm the call succeeds.
-    state.current_event.created_at.ToJsonString()
+    state.current_event.meta.recorded_at.ToJsonString()
 
 
 @then("event.payload should be Event variant")
 def _then_payload_event_variant(state: _State) -> None:
     assert state.current_event is not None
-    assert state.current_event.HasField("event")
+    assert state.current_event.HasField("payload")
 
 
 @then("the Event should contain the Any wrapper")
 def _then_event_contains_any(state: _State) -> None:
     assert state.current_event is not None
-    assert state.current_event.event.type_url
+    assert state.current_event.payload.type_url
     # value can legitimately be empty for an empty proto; skip length check.
-
-
-@then("event.payload should be PayloadReference variant")
-def _then_payload_reference_variant(state: _State) -> None:
-    assert state.current_event is not None
-    assert state.current_event.HasField("external")
-
-
-@then("the reference should contain storage details")
-def _then_reference_storage(state: _State) -> None:
-    assert state.current_event is not None
-    assert state.current_event.external.uri
 
 
 @then("the match should succeed")
@@ -521,7 +490,7 @@ def _then_only_v1_matches(state: _State) -> None:
     # After _when_match_against filtered, events_list should hold only
     # the matching one(s).
     assert len(state.events_list) == 1
-    assert "v1" in state.events_list[0].event.type_url
+    assert "v1" in state.events_list[0].payload.type_url
 
 
 @then("the protobuf message should deserialize correctly")
@@ -654,4 +623,4 @@ def _then_should_get_n_events(state: _State, count: int) -> None:
 @then("both should be ItemAdded type")
 def _then_both_item_added(state: _State) -> None:
     for evt in state.events_list:
-        assert "ItemAdded" in evt.event.type_url
+        assert "ItemAdded" in evt.payload.type_url

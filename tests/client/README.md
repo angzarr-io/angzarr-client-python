@@ -9,8 +9,6 @@ pytest suite).
 
 - `conftest.py` — `World` dataclass + `world` fixture; a few cross-cutting
   `@then` steps used by multiple feature files
-- `steps/_helpers.py` — constructors for `ContextualCommand`, `EventBook`,
-  `CommandBook`, `Notification`, `SagaHandleRequest`, `PMHandleRequest`
 - `steps/test_*.py` — one per feature file, each starting with
   `scenarios("<file>.feature")` and defining `@given/@when/@then` steps for
   that feature

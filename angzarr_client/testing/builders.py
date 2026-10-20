@@ -10,10 +10,12 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from .._pb import (
     UUID,
+    Command,
     CommandBook,
     CommandPage,
     Cover,
     EventBook,
+    EventMeta,
     EventPage,
 )
 from ..helpers import TYPE_URL_PREFIX
@@ -46,22 +48,18 @@ def pack_event(msg: Message) -> ProtoAny:
     return event_any
 
 
-def make_cover(domain: str, root: bytes, correlation_id: str = "") -> Cover:
+def make_cover(domain: str, root: bytes) -> Cover:
     """Create a Cover from domain and root bytes.
 
     Args:
         domain: The aggregate domain name
         root: The aggregate root as 16 bytes
-        correlation_id: Optional correlation ID for cross-domain tracking
 
     Returns:
-        Cover proto with domain and root set
+        Cover proto with domain and root set (covers carry no correlation:
+        it is recorded per page)
     """
-    return Cover(
-        domain=domain,
-        root=UUID(value=root),
-        correlation_id=correlation_id,
-    )
+    return Cover(domain=domain, root=UUID(value=root))
 
 
 def make_event_page(
@@ -75,11 +73,11 @@ def make_event_page(
         event: The packed event (ProtoAny)
 
     Returns:
-        EventPage proto
+        EventPage proto, recorded now
     """
-    page = EventPage(event=event, created_at=_now())
-    page.header.sequence = sequence
-    return page
+    return EventPage(
+        payload=event, sequence=sequence, meta=EventMeta(recorded_at=_now())
+    )
 
 
 def make_event_book(
@@ -105,40 +103,29 @@ def make_event_book(
     )
 
 
-def make_command_page(sequence: int, command: ProtoAny) -> CommandPage:
-    """Create a CommandPage.
+def make_command_page(command: ProtoAny) -> CommandPage:
+    """Create a CommandPage whose Command arm carries ``command``.
 
     Args:
-        sequence: The command sequence number
         command: The packed command (ProtoAny)
 
     Returns:
         CommandPage proto
     """
-    page = CommandPage(command=command)
-    page.header.sequence = sequence
-    return page
+    return CommandPage(command=Command(payload=command))
 
 
-def make_command_book(
-    cover: Cover,
-    command: ProtoAny,
-    sequence: int = 0,
-) -> CommandBook:
-    """Create a CommandBook with a single command.
+def make_command_book(cover: Cover, command: ProtoAny) -> CommandBook:
+    """Create a CommandBook carrying a single command.
 
     Args:
         cover: The Cover identifying the target aggregate
         command: The packed command (ProtoAny)
-        sequence: The command sequence number (defaults to 0)
 
     Returns:
-        CommandBook proto with one page
+        CommandBook proto with its one page
     """
-    return CommandBook(
-        cover=cover,
-        pages=[make_command_page(sequence, command)],
-    )
+    return CommandBook(cover=cover, page=make_command_page(command))
 
 
 __all__ = [

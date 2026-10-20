@@ -7,24 +7,36 @@ from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.message import Message
 
 from ._pb import (
+    Command,
     CommandBook,
     CommandPage,
-    CommandRequest,
     CommandResponse,
     Cover,
     EventBook,
     EventPage,
-    MergeStrategy,
-    PageHeader,
     Query,
     SequenceRange,
-    SyncMode,
     TemporalQuery,
 )
 from .client import CommandHandlerClient, QueryClient
-from .error_codes import codes, messages
+from .error_codes import codes, keys, messages
 from .errors import InvalidArgumentError
-from .helpers import implicit_edition, parse_timestamp, uuid_to_proto
+from .helpers import parse_timestamp, uuid_to_proto
+
+
+def _as_uuid(value: PyUUID | str, field: str) -> PyUUID:
+    """``value`` as a UUID: a UUID as given, or a UUID's text form parsed.
+    Anything else is refused with ``PROTO_UUID_INVALID``."""
+    if isinstance(value, PyUUID):
+        return value
+    try:
+        return PyUUID(value)
+    except (TypeError, ValueError) as exc:
+        raise InvalidArgumentError(
+            messages.PROTO_UUID_INVALID,
+            code=codes.PROTO_UUID_INVALID,
+            details={keys.FIELD: field, keys.INPUT: value},
+        ) from exc
 
 
 class CommandBuilder:
@@ -46,32 +58,15 @@ class CommandBuilder:
         self._client = client
         self._domain = domain
         self._root = root
-        self._correlation_id: str | None = None
-        self._sequence: int = 0
-        self._merge_strategy: MergeStrategy = MergeStrategy.MERGE_COMMUTATIVE
+        self._correlation_id: PyUUID | None = None
         self._type_url: str | None = None
         self._payload: bytes | None = None
 
-    def with_correlation_id(self, id: str) -> "CommandBuilder":
-        """Set the correlation ID for request tracing."""
-        self._correlation_id = id
-        return self
-
-    def with_sequence(self, seq: int) -> "CommandBuilder":
-        """Set the expected sequence number for optimistic locking.
-
-        Defaults to 0 (a new aggregate) when not called.
-        """
-        self._sequence = seq
-        return self
-
-    def with_merge_strategy(self, strategy: MergeStrategy) -> "CommandBuilder":
-        """Set the merge strategy for conflict resolution.
-
-        Args:
-            strategy: MERGE_COMMUTATIVE (default) or MERGE_STRICT.
-        """
-        self._merge_strategy = strategy
+    def with_correlation_id(self, id: PyUUID | str) -> "CommandBuilder":
+        """Set the correlation ID for request tracing
+        (``CommandPage.correlation_id``): a UUID, or a UUID's text form
+        (anything else raises :class:`InvalidArgumentError`)."""
+        self._correlation_id = _as_uuid(id, "correlation_id")
         return self
 
     def with_command(self, type_url: str, message: Message) -> "CommandBuilder":
@@ -96,8 +91,8 @@ class CommandBuilder:
         Requires a type URL and payload (:meth:`with_command`, or
         :meth:`with_type_url` plus :meth:`with_payload`); otherwise raises
         :class:`InvalidArgumentError` with code ``COMMAND_TYPE_URL_MISSING``
-        / ``COMMAND_PAYLOAD_MISSING``. The sequence defaults to 0 and the
-        correlation ID to a fresh UUID v4.
+        / ``COMMAND_PAYLOAD_MISSING``. The correlation ID defaults to a
+        fresh UUID v4.
         """
         if not self._type_url:
             raise InvalidArgumentError(
@@ -110,36 +105,27 @@ class CommandBuilder:
                 code=codes.COMMAND_PAYLOAD_MISSING,
             )
 
-        correlation_id = self._correlation_id or str(uuid4())
+        correlation_id = self._correlation_id or uuid4()
 
-        cover = Cover(
-            domain=self._domain,
-            correlation_id=correlation_id,
-        )
+        cover = Cover(domain=self._domain)
         cover.root.CopyFrom(uuid_to_proto(self._root))
 
-        command_any = ProtoAny(type_url=self._type_url, value=self._payload)
-        header = PageHeader(sequence=self._sequence)
-        page = CommandPage(header=header, merge_strategy=self._merge_strategy)
-        page.command.CopyFrom(command_any)
+        page = CommandPage(
+            command=Command(
+                payload=ProtoAny(type_url=self._type_url, value=self._payload)
+            )
+        )
+        page.correlation_id.CopyFrom(uuid_to_proto(correlation_id))
 
         book = CommandBook()
         book.cover.CopyFrom(cover)
-        book.pages.append(page)
+        book.page.CopyFrom(page)
         return book
 
-    def execute(
-        self, sync_mode: SyncMode = SyncMode.SYNC_MODE_ASYNC
-    ) -> CommandResponse:
-        """Build and execute the command.
-
-        Args:
-            sync_mode: Execution mode (ASYNC, DECISION or SIMPLE).
-                      Defaults to ASYNC for fire-and-forget behavior.
-        """
-        cmd = self.build()
-        request = CommandRequest(command=cmd, sync_mode=sync_mode)
-        return self._client.handle_command(request)
+    def execute(self) -> CommandResponse:
+        """Build the command and send it (DECISION: the response carries the
+        persisted events)."""
+        return self._client.handle(self.build())
 
 
 class QueryBuilder:
@@ -154,7 +140,7 @@ class QueryBuilder:
         self._client = client
         self._domain = domain
         self._root = root
-        self._correlation_id: str | None = None
+        self._correlation_id: PyUUID | None = None
         # Single selection slot — matches Rust's `selection: Option<Selection>`
         # so chained range/as_of_sequence/as_of_time setters last-wins
         # instead of leaving stale state behind. P2.2-style "single slot,
@@ -163,9 +149,11 @@ class QueryBuilder:
         self._temporal: TemporalQuery | None = None
         self._edition: str | None = None
 
-    def by_correlation_id(self, id: str) -> "QueryBuilder":
-        """Query by correlation ID instead of root."""
-        self._correlation_id = id
+    def by_correlation_id(self, id: PyUUID | str) -> "QueryBuilder":
+        """Query by correlation ID (``Query.correlation_id``) instead of root:
+        a UUID, or a UUID's text form (anything else raises
+        :class:`InvalidArgumentError`)."""
+        self._correlation_id = _as_uuid(id, "correlation_id")
         self._root = None
         return self
 
@@ -231,17 +219,16 @@ class QueryBuilder:
     def build(self) -> Query:
         """Build the Query without executing."""
 
-        cover = Cover(
-            domain=self._domain,
-            correlation_id=self._correlation_id or "",
-        )
+        cover = Cover(domain=self._domain)
         if self._root:
             cover.root.CopyFrom(uuid_to_proto(self._root))
         if self._edition:
-            cover.edition.CopyFrom(implicit_edition(self._edition))
+            cover.edition = self._edition
 
         query = Query()
         query.cover.CopyFrom(cover)
+        if self._correlation_id is not None:
+            query.correlation_id.CopyFrom(uuid_to_proto(self._correlation_id))
 
         if self._range:
             query.range.CopyFrom(self._range)
