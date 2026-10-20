@@ -141,7 +141,7 @@ def test_process_manager_handler_sees_the_event_and_state():
         "Reserving",
         "reserving-pm",
         Rebuilder(factory=counter_pb2.CounterState),
-        ["inventory"],
+        output_domains=["inventory"],
     )
     pm.on_event("counter", builders.FQ_INCREASED, react)
     with Router() as router:
@@ -168,3 +168,47 @@ def test_process_manager_targets_default_to_none_declared():
         router.dispatch_process_manager(_pm_trigger(0))
 
     assert seen == [builders.type_url(builders.FQ_INCREASED)]
+
+
+# --- a process manager's domains, named as ComponentOptions names them ---
+
+
+def _pm(**outputs) -> ProcessManagerDispatch:
+    return ProcessManagerDispatch(
+        "Reserving",
+        "reserving-pm",
+        Rebuilder(factory=counter_pb2.CounterState),
+        **outputs,
+    )
+
+
+def test_a_pm_declares_its_own_domain_and_each_triggers_domain():
+    pm = _pm().on_event("counter", builders.FQ_INCREASED, lambda _e, _s: None)
+    assert pm.domain == "reserving-pm"
+    assert list(pm.handlers) == ["counter"]
+    assert not hasattr(pm, "pm_domain")
+    assert not hasattr(pm, "targets")
+    assert not hasattr(pm, "input_domain")
+
+
+@pytest.mark.parametrize(
+    ("outputs", "combined"),
+    [
+        ({}, []),
+        ({"output_domain": "inventory"}, ["inventory"]),
+        ({"output_domains": ["billing", "inventory"]}, ["billing", "inventory"]),
+        (
+            {"output_domain": "inventory", "output_domains": ["billing", "inventory"]},
+            ["inventory", "billing"],
+        ),
+    ],
+)
+def test_a_pms_outputs_are_output_domain_then_output_domains_deduplicated(
+    outputs, combined
+):
+    assert _pm(**outputs).outputs == combined
+
+
+def test_an_empty_output_domains_entry_is_refused():
+    with pytest.raises(ValueError, match="output_domains"):
+        _pm(output_domains=["inventory", ""]).outputs

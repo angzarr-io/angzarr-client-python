@@ -99,7 +99,7 @@ def _reserving_pm(covers: list) -> ProcessManagerDispatch:
             Rebuilder(factory=counter_pb2.CounterState).apply(
                 FQ_INCREASED, apply_increased
             ),
-            ["inventory"],
+            output_domains=["inventory"],
         )
     ).on_event_with_cover("counter", FQ_INCREASED, on_increased)
 

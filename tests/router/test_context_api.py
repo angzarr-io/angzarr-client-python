@@ -250,7 +250,7 @@ def test_process_manager_handler_reads_the_trigger_cover():
             "Reserving",
             "reserving-pm",
             Rebuilder(factory=counter_pb2.CounterState),
-            ["inventory"],
+            output_domains=["inventory"],
         )
         register(pm)
         with Router() as router:

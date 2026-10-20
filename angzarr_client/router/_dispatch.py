@@ -520,36 +520,50 @@ PMCoverEventThunk = Callable[[any_pb2.Any, object, object], object]
 
 @dataclass
 class ProcessManagerDispatch:
-    """One process-manager component's registration: name, its own domain, the
-    rebuilder for its event-sourced state, its declared output domains
-    (``targets``, its command targets), and event handlers keyed by (input
-    domain, FQ event type)."""
+    """One process-manager component's registration, named as
+    ComponentOptions names it: ``name``; ``domain``, its own workflow
+    stream; the rebuilder for its event-sourced state; the domains it issues
+    commands to, ``output_domain`` and/or ``output_domains`` (combined in
+    :attr:`outputs`); and event handlers keyed by (trigger domain, FQ event
+    type) — each handled event names the domain it triggers from."""
 
     name: str
-    pm_domain: str
+    domain: str
     rebuilder: Rebuilder
-    targets: list[str] = field(default_factory=list)
+    output_domain: str = ""
+    output_domains: list[str] = field(default_factory=list)
     handlers: dict[str, dict[str, PMEventThunk]] = field(default_factory=dict)
     rules_version: str = ""
 
+    @property
+    def outputs(self) -> list[str]:
+        """The domains the PM issues commands to: ``output_domain`` (when
+        set) first, then ``output_domains``, deduplicated. An empty
+        ``output_domains`` entry raises ValueError."""
+        if any(not d for d in self.output_domains):
+            raise ValueError(f"{self.name}: output_domains has an empty entry")
+        combined = [self.output_domain] if self.output_domain else []
+        return list(dict.fromkeys(combined + list(self.output_domains)))
+
     def on_event(
-        self, input_domain: str, full_name: str, thunk: PMEventThunk
+        self, domain: str, full_name: str, thunk: PMEventThunk
     ) -> ProcessManagerDispatch:
-        """Register the thunk for (input domain, fully-qualified event type)."""
-        self.handlers.setdefault(input_domain, {})[full_name] = thunk
+        """Register the thunk for an event of the fully-qualified type
+        triggering from ``domain``."""
+        self.handlers.setdefault(domain, {})[full_name] = thunk
         return self
 
     def on_event_with_cover(
-        self, input_domain: str, full_name: str, thunk: PMCoverEventThunk
+        self, domain: str, full_name: str, thunk: PMCoverEventThunk
     ) -> ProcessManagerDispatch:
-        """Register a thunk for (input domain, fully-qualified event type)
-        that also receives the trigger book's cover (None when it carries
-        none)."""
+        """Register a thunk for an event of the fully-qualified type
+        triggering from ``domain`` that also receives the trigger book's
+        cover (None when it carries none)."""
 
         def handle(event, state):
             return thunk(event, state, current_page().cover)
 
-        self.handlers.setdefault(input_domain, {})[full_name] = handle
+        self.handlers.setdefault(domain, {})[full_name] = handle
         return self
 
     def with_rules_version(self, version: str) -> ProcessManagerDispatch:
@@ -1081,8 +1095,8 @@ class Router:
             factory = dispatch.rebuilder.factory
             desc = abi_pb2.ProcessManagerDescriptor(
                 name=dispatch.name,
-                pm_domain=dispatch.pm_domain,
-                target_domains=dispatch.targets,
+                pm_domain=dispatch.domain,
+                target_domains=dispatch.outputs,
                 rules_version=dispatch.rules_version,
                 state_type_url=_state_type(factory, dispatch.name),
             )
@@ -1090,12 +1104,12 @@ class Router:
                 desc.fold_callback_id = self._assign(
                     _fold_invoker(factory, dict(dispatch.rebuilder.appliers))
                 )
-            for input_domain, by_type in dispatch.handlers.items():
+            for trigger_domain, by_type in dispatch.handlers.items():
                 for fq, thunk in by_type.items():
                     cid = self._assign(_pm_event_invoker(factory, thunk))
                     desc.events.append(
                         abi_pb2.PmEventEntry(
-                            input_domain=input_domain, fq_type=fq, callback_id=cid
+                            input_domain=trigger_domain, fq_type=fq, callback_id=cid
                         )
                     )
             self._register(

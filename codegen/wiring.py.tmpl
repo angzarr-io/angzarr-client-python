@@ -67,12 +67,13 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.AggregateDisp
 def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.ProcessManagerDispatch:
     rebuilder = _az.Rebuilder(lambda: {{ typeRef $c.state }}())
 {{- include "py.appliers" $c }}
-    dispatch = _az.ProcessManagerDispatch({{ quote $c.name }}, {{ quote $c.domain }}, rebuilder, targets=[{{ include "py.domains" $c.output_domains }}])
+    dispatch = _az.ProcessManagerDispatch({{ quote $c.name }}, {{ quote $c.domain }}, rebuilder, output_domains=[{{ include "py.domains" $c.output_domains }}])
 {{- range $c.handlers }}
     def _on_{{ snake .method }}(event_any, state, trigger_cover):
         event = {{ typeRef .message }}()
 {{- include "py.unpack" (dict "target" "event" "any" "event_any") }}
         return handler.{{ snake .method }}(event, state, trigger_cover)
+{{- if not .source_domain }}{{ fail (printf "process manager %s: the %s handler names no trigger domain" $c.name .method) }}{{ end }}
     dispatch.on_event_with_cover({{ quote .source_domain }}, {{ quote .message.full_name }}, _on_{{ snake .method }})
 {{- end }}
     return dispatch
