@@ -52,7 +52,7 @@ def _increased_page(seq: int | None = None):
 def _ledger_aggregate(covers: list, applied: list) -> AggregateDispatch:
     """The ledger aggregate (domain "ledger") over CounterState: Increased
     folds count += 1 and records the page sequence it applied; IncreaseBy records the
-    handled cover and emits nothing; the only declared fact, Increased, is
+    handled cover and emits one Increased; the only declared fact, Increased, is
     recorded as received and flagged by a CounterState carrying the count it
     brings the ledger to."""
 
@@ -62,6 +62,9 @@ def _ledger_aggregate(covers: list, applied: list) -> AggregateDispatch:
 
     def increase_by(_cmd, _state, cctx):
         covers.append(cctx.cover)
+        book = types_pb2.EventBook()
+        book.pages.add().payload.CopyFrom(pack(counter_pb2.Increased()))
+        return book
 
     def record_increased(fact, state):
         return FactRecord(fact, [counter_pb2.CounterState(count=state.count + 1)])
@@ -210,11 +213,14 @@ def _fact_handled(world, fact, prior):
 
 @then(
     parsers.re(
-        r"the ledger applied Increased events at sequences (?P<first>\d+) and (?P<second>\d+)"
+        r"the ledger applied Increased events at sequences (?P<first>\d+) and "
+        r"(?P<second>\d+), then its emitted event at (?P<emitted>\d+)"
     )
 )
-def _applied_at(world, first, second):
-    assert world.applied == [int(first), int(second)]
+def _applied_at(world, first, second, emitted):
+    # The emitted event folds at the sequence it will get, for the
+    # post-command snapshot.
+    assert world.applied == [int(first), int(second), int(emitted)]
 
 
 @when(

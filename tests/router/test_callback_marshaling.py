@@ -746,3 +746,65 @@ def test_closing_a_router_drops_only_its_own_callbacks():
     finally:
         kept.close()
     assert set(_dispatch._CALLBACKS) == before
+
+
+# --- the post-command snapshot and the PM's process state ---
+
+
+def _emitting(n: int):
+    def handle(_cmd, _state, _cctx):
+        book = types_pb2.EventBook()
+        for _ in range(n):
+            book.pages.add().payload.CopyFrom(pack(counter_pb2.Increased()))
+        return book if n else None
+
+    return handle
+
+
+@pytest.mark.parametrize(("emitted", "count"), [(2, 3), (0, 1)])
+def test_c0570_every_answer_carries_the_state_after_the_command(emitted, count):
+    dispatch = AggregateDispatch("Ledger", "ledger", _counting_rebuilder()).on_command(
+        builders.FQ_INCREASE_BY, _emitting(emitted)
+    )
+    cc = _ledger_command()
+    cc.events.pages.append(_event_page(0))
+    cc.events.next_sequence = 1
+    with Router() as router:
+        router.register_aggregate(dispatch)
+        resp = router.dispatch(cc)
+
+    assert resp.events.snapshot.state == pack(counter_pb2.CounterState(count=count))
+    assert resp.events.snapshot.sequence == 0, "the coordinator stamps it"
+
+
+def test_c0570_a_fact_answer_carries_the_state_after_its_record():
+    dispatch = AggregateDispatch("Ledger", "ledger", _counting_rebuilder()).on_fact(
+        builders.FQ_INCREASED, lambda fact, _s: FactRecord.as_received(fact)
+    )
+    with Router() as router:
+        router.register_aggregate(dispatch)
+        resp = router.dispatch(_ledger_fact())
+
+    assert resp.events.snapshot.state == pack(counter_pb2.CounterState(count=1))
+
+
+@pytest.mark.parametrize("writes", [True, False])
+def test_c0571_a_pm_answer_carries_its_state_after_the_reaction(writes):
+    def react(_event, _state):
+        resp = process_manager_pb2.ProcessManagerHandleResponse()
+        if writes:
+            resp.process_events.add().pages.add().payload.CopyFrom(
+                pack(counter_pb2.Increased())
+            )
+        return resp
+
+    pm = ProcessManagerDispatch(
+        "Reserving", "reserving-pm", _counting_rebuilder()
+    ).on_event("counter", builders.FQ_INCREASED, react)
+    with Router() as router:
+        router.register_process_manager(pm)
+        resp = router.dispatch_process_manager(_pm_trigger(prior=2))
+
+    expected = 3 if writes else 2
+    assert resp.process_state.state == pack(counter_pb2.CounterState(count=expected))
+    assert all(not book.HasField("snapshot") for book in resp.process_events)

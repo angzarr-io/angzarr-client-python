@@ -1091,7 +1091,7 @@ class Router:
         data = _consume_out(out)
         if ret != 0:
             raise _decode_status(data, ret)
-        hellos = abi_pb2.ComponentDescriptors()
+        hellos = types_pb2.ComponentDescriptors()
         hellos.ParseFromString(data)
         return list(hellos.components)
 
