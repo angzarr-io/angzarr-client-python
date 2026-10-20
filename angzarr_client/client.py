@@ -475,6 +475,18 @@ class DomainClient:
         :meth:`CommandHandlerClient.handle`)."""
         return self.command_handler.handle(command, timeout=timeout)
 
+    def execute_async(self, command: CommandBook, timeout: float | None = None) -> None:
+        """Send a command without waiting for its decision (see
+        :meth:`CommandHandlerClient.handle_async`)."""
+        self.command_handler.handle_async(command, timeout=timeout)
+
+    def execute_sync(
+        self, command: CommandBook, timeout: float | None = None
+    ) -> CommandResponse:
+        """Send a command and wait for its decision and the synchronous
+        projectors (see :meth:`CommandHandlerClient.handle_sync`)."""
+        return self.command_handler.handle_sync(command, timeout=timeout)
+
     def get_event_book(self, query: Query, timeout: float | None = None) -> EventBook:
         """Retrieve a single EventBook for the query — unary RPC.
 

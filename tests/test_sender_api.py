@@ -166,3 +166,20 @@ def test_a_command_built_without_handling_leaves_it_to_the_coordinator():
         .build()
     )
     assert not book.HasField("handling")
+
+
+def test_the_domain_client_sends_in_each_mode():
+    from angzarr_client import DomainClient
+
+    client, coordinator = _client()
+    domain = DomainClient.__new__(DomainClient)
+    domain.command_handler = client
+    assert domain.execute_async(_book()) is None
+    domain.execute(_book())
+    sync = domain.execute_sync(_book())
+    assert [rpc for rpc, _ in coordinator.calls] == [
+        "HandleAsync",
+        "Handle",
+        "HandleSync",
+    ]
+    assert [p.projector for p in sync.outcome.projections] == ["orders-view"]
