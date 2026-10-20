@@ -377,14 +377,9 @@ def _then_type_url_contains(state: _World, needle: str) -> None:
     assert type_url.startswith("/"), f"type_url: {type_url}"
 
 
-@then("the built command should have a non-empty correlation ID")
-def _then_nonempty_correlation(state: _World) -> None:
-    assert state.book().page.HasField("correlation_id")
-
-
-@then("the correlation ID should be a valid UUID")
-def _then_correlation_is_uuid(state: _World) -> None:
-    uuid.UUID(bytes=state.book().page.correlation_id.value)
+@then("the built command should have no correlation ID")
+def _then_no_correlation(state: _World) -> None:
+    assert not state.book().page.HasField("correlation_id")
 
 
 @then(parsers.parse('the built command should have correlation ID "{expected}"'))
