@@ -126,11 +126,16 @@ filterwarnings = [
     "ignore:Unknown pytest.mark.C-:pytest.PytestUnknownMarkWarning",
     "ignore:Unknown pytest.mark.EU-:pytest.PytestUnknownMarkWarning",
     "ignore:Unknown pytest.mark.EA-:pytest.PytestUnknownMarkWarning",
-    # Category tags on merge_strategy.feature.
-    "ignore:Unknown pytest.mark.merge_:pytest.PytestUnknownMarkWarning",
-    "ignore:Unknown pytest.mark.edge_case:pytest.PytestUnknownMarkWarning",
-    # Category tags on the handler-contract tier (handling.feature).
-    "ignore:Unknown pytest.mark.describe:pytest.PytestUnknownMarkWarning",
+]
+# The spec's category tags on the bound features (pytest-bdd turns each
+# Gherkin tag into a mark), registered so pytest knows them.
+markers = [
+    "commutative: handling.feature, COMMUTATIVE conflict resolution",
+    "conflict_nonce: handling.feature, the AGGREGATE_HANDLES conflict nonce",
+    "describe: handling.feature, describing the process (ComponentService.Describe)",
+    "rules_version: handling.feature, the build version on answers and descriptions",
+    "snapshot_source: handling.feature, the state answered on every response",
+    "upcasting: handling.feature, command and fact upcasting",
 ]
 
 [tool.mutmut]
