@@ -37,6 +37,7 @@ type = forbidden
 source_modules =
     angzarr_client.router
 forbidden_modules =
+    angzarr_client._args
     angzarr_client._pb
     angzarr_client.builder
     angzarr_client.client
@@ -56,6 +57,7 @@ forbidden_modules =
 name = Coordinator clients do not depend on hosting
 type = forbidden
 source_modules =
+    angzarr_client._args
     angzarr_client._pb
     angzarr_client.builder
     angzarr_client.client
@@ -76,6 +78,7 @@ forbidden_modules =
 name = Runtime modules never import the testing kit
 type = forbidden
 source_modules =
+    angzarr_client._args
     angzarr_client._pb
     angzarr_client.builder
     angzarr_client.client

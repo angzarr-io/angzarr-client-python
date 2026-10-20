@@ -9,8 +9,9 @@ from uuid import UUID as PyUUID
 
 import grpc
 
+from ._args import _as_uuid
 from .errors import GRPCError, TransportError
-from .helpers import as_uuid, correlated_metadata, uuid_to_proto
+from .helpers import correlated_metadata, uuid_to_proto
 from .retry import RetryPolicy, default_retry_policy
 
 if TYPE_CHECKING:
@@ -228,7 +229,7 @@ class QueryClient:
         """
         request = CorrelationQuery()
         request.correlation_id.CopyFrom(
-            uuid_to_proto(as_uuid(correlation_id, "correlation_id"))
+            uuid_to_proto(_as_uuid(correlation_id, "correlation_id"))
         )
         md = correlated_metadata(request.correlation_id)
         return _invoke(

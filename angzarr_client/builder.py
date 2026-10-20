@@ -5,6 +5,7 @@ from uuid import UUID as PyUUID
 from google.protobuf.any_pb2 import Any as ProtoAny
 from google.protobuf.message import Message
 
+from ._args import _as_uuid
 from ._pb import (
     Command,
     CommandBook,
@@ -21,7 +22,7 @@ from ._pb import (
 from .client import CommandHandlerClient, QueryClient
 from .error_codes import codes, messages
 from .errors import InvalidArgumentError
-from .helpers import as_uuid, parse_timestamp, uuid_to_proto
+from .helpers import parse_timestamp, uuid_to_proto
 
 
 class CommandBuilder:
@@ -53,7 +54,7 @@ class CommandBuilder:
         """Set the correlation ID for request tracing
         (``CommandPage.correlation_id``): a UUID, or a UUID's text form
         (anything else raises :class:`InvalidArgumentError`)."""
-        self._correlation_id = as_uuid(id, "correlation_id")
+        self._correlation_id = _as_uuid(id, "correlation_id")
         return self
 
     def with_command(self, type_url: str, message: Message) -> "CommandBuilder":
@@ -168,7 +169,7 @@ class QueryBuilder:
         """Query by correlation ID (``Query.correlation_id``) instead of root:
         a UUID, or a UUID's text form (anything else raises
         :class:`InvalidArgumentError`)."""
-        self._correlation_id = as_uuid(id, "correlation_id")
+        self._correlation_id = _as_uuid(id, "correlation_id")
         self._root = None
         return self
 
