@@ -11,6 +11,7 @@ from ._pb import (
     CommandBook,
     CommandPage,
     CommandResponse,
+    ConflictResolution,
     Cover,
     EventBook,
     EventPage,
@@ -61,6 +62,8 @@ class CommandBuilder:
         self._correlation_id: PyUUID | None = None
         self._type_url: str | None = None
         self._payload: bytes | None = None
+        self._expected_sequence: int | None = None
+        self._conflict_resolution = ConflictResolution.CONFLICT_RESOLUTION_UNSPECIFIED
 
     def with_correlation_id(self, id: PyUUID | str) -> "CommandBuilder":
         """Set the correlation ID for request tracing
@@ -83,6 +86,21 @@ class CommandBuilder:
     def with_payload(self, payload: bytes) -> "CommandBuilder":
         """Set the already-encoded command payload; pair with :meth:`with_type_url`."""
         self._payload = payload
+        return self
+
+    def with_expected_sequence(self, sequence: int) -> "CommandBuilder":
+        """Set ``Handling.expected_sequence``: the next sequence of the
+        target stream the command was issued against (0 for a new stream,
+        sent as set). Left unset, nothing is sent and the coordinator stamps
+        the head it decides against."""
+        self._expected_sequence = sequence
+        return self
+
+    def with_conflict_resolution(self, resolution: int) -> "CommandBuilder":
+        """Set ``Handling.conflict_resolution`` (a :class:`ConflictResolution`
+        value): what to do with a stale expected sequence. Left unset, the
+        configured default applies."""
+        self._conflict_resolution = resolution
         return self
 
     def build(self) -> CommandBook:
@@ -120,12 +138,26 @@ class CommandBuilder:
         book = CommandBook()
         book.cover.CopyFrom(cover)
         book.page.CopyFrom(page)
+        if self._expected_sequence is not None:
+            book.handling.expected_sequence = self._expected_sequence
+        if self._conflict_resolution:
+            book.handling.conflict_resolution = self._conflict_resolution
         return book
+
+    def execute_async(self) -> None:
+        """Build the command and send it without waiting for its decision
+        (ASYNC; see :meth:`CommandHandlerClient.handle_async`)."""
+        self._client.handle_async(self.build())
 
     def execute(self) -> CommandResponse:
         """Build the command and send it (DECISION: the response carries the
         persisted events)."""
         return self._client.handle(self.build())
+
+    def execute_sync(self) -> CommandResponse:
+        """Build the command and send it, waiting for the synchronous
+        projectors too (SIMPLE; see :meth:`CommandHandlerClient.handle_sync`)."""
+        return self._client.handle_sync(self.build())
 
 
 class QueryBuilder:

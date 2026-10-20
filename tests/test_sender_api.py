@@ -1,15 +1,12 @@
-"""Item-4 proposal, command senders (docs/design/handling-and-command-modes.md):
-how a sender sets Handling (expected_sequence, conflict_resolution) and
-chooses the command mode — ASYNC (fire and forget), DECISION (wait for the
-decision) or SIMPLE (wait for the synchronous projectors) — over
-CommandHandlerCoordinatorService's three RPCs (command_handler.proto, the
-command_modes region; aggregate_client.feature C-0197, C-0198).
+"""Command senders: Handling (expected_sequence, conflict_resolution) on the
+built command, and the command mode chosen by which method sends it — one
+per CommandHandlerCoordinatorService RPC (command_handler.proto, the
+command_modes region; aggregate_client.feature C-0197, C-0198):
 
-Names come from the spec: ``Handling``, ``expected_sequence``,
-``conflict_resolution``, ``ConflictResolution``, and the modes ASYNC,
-DECISION and SIMPLE with the spec's ``handle(book, mode)`` sugar. Strict
-xfails until the owner signs the proposal off: each fails today because the
-proposed symbol is missing, and implementing one forces its marker off.
+- ``handle_async`` / ``execute_async``: ASYNC, fire and forget (None);
+- ``handle`` / ``execute``: DECISION, the decision (CommandResponse);
+- ``handle_sync`` / ``execute_sync``: SIMPLE, the decision plus the
+  synchronous projectors' results (CommandResponse.outcome).
 """
 
 from __future__ import annotations
@@ -18,13 +15,8 @@ import uuid
 
 import pytest
 
-from angzarr_client import CommandHandlerClient
+from angzarr_client import CommandHandlerClient, ConflictResolution
 from angzarr_client.proto.io.angzarr.v1 import command_handler_pb2, types_pb2
-
-PENDING = pytest.mark.xfail(
-    strict=True,
-    reason="item-4 proposal (sender Handling and command modes) pending owner sign-off",
-)
 
 _ROOT = uuid.UUID("3cfe0a31-d58d-5190-af30-5459ccc221f7")
 
@@ -67,56 +59,72 @@ def _book() -> types_pb2.CommandBook:
     return book
 
 
-# --- command modes: handle(book, mode) ---
+# --- command modes: one method per RPC ---
 
 
-@PENDING
 def test_c0197_a_fire_and_forget_command_returns_before_the_decision():
-    from angzarr_client import CommandMode
-
     client, coordinator = _client()
-    assert client.handle(_book(), mode=CommandMode.ASYNC) is None
+    assert client.handle_async(_book()) is None
     assert [rpc for rpc, _ in coordinator.calls] == ["HandleAsync"]
 
 
-@PENDING
 def test_c0198_waiting_for_projectors_returns_their_projections():
-    from angzarr_client import CommandMode
-
     client, coordinator = _client()
-    response = client.handle(_book(), mode=CommandMode.SIMPLE)
+    response = client.handle_sync(_book())
     assert [rpc for rpc, _ in coordinator.calls] == ["HandleSync"]
     assert [p.projector for p in response.outcome.projections] == ["orders-view"]
 
 
-@PENDING
-def test_the_default_mode_waits_for_the_decision():
-    from angzarr_client import CommandMode
-
+def test_handle_waits_for_the_decision():
     client, coordinator = _client()
     client.handle(_book())
-    client.handle(_book(), mode=CommandMode.DECISION)
-    assert [rpc for rpc, _ in coordinator.calls] == ["Handle", "Handle"]
+    assert [rpc for rpc, _ in coordinator.calls] == ["Handle"]
 
 
-@PENDING
-def test_the_builder_executes_in_the_chosen_mode():
-    from angzarr_client import CommandMode
+def _builder(client):
+    return (
+        client.command("orders", _ROOT)
+        .with_type_url("/orders.v1.AddItem")
+        .with_payload(b"")
+    )
 
+
+def test_the_builder_executes_in_each_mode():
     client, coordinator = _client()
-    client.command("orders", _ROOT).with_type_url("/orders.v1.AddItem").with_payload(
-        b""
-    ).execute(mode=CommandMode.ASYNC)
-    assert [rpc for rpc, _ in coordinator.calls] == ["HandleAsync"]
+    assert _builder(client).execute_async() is None
+    _builder(client).execute()
+    sync = _builder(client).execute_sync()
+    assert [rpc for rpc, _ in coordinator.calls] == [
+        "HandleAsync",
+        "Handle",
+        "HandleSync",
+    ]
+    assert [p.projector for p in sync.outcome.projections] == ["orders-view"]
+
+
+def test_every_mode_carries_the_correlation_header():
+    client, coordinator = _client()
+    seen = []
+    for rpc in ("Handle", "HandleAsync", "HandleSync"):
+        original = getattr(coordinator, rpc)
+
+        def record(book, original=original, **kw):
+            seen.append(dict(kw.get("metadata") or ()))
+            return original(book, **kw)
+
+        setattr(coordinator, rpc, record)
+    book = _builder(client).build()
+    client.handle(book)
+    client.handle_async(book)
+    client.handle_sync(book)
+    assert len(seen) == 3
+    assert all(md.get("x-correlation-id") for md in seen)
 
 
 # --- Handling on the sent command ---
 
 
-@PENDING
 def test_the_builder_sets_the_expected_sequence_and_conflict_resolution():
-    from angzarr_client import ConflictResolution
-
     client, _ = _client()
     book = (
         client.command("orders", _ROOT)
@@ -133,7 +141,6 @@ def test_the_builder_sets_the_expected_sequence_and_conflict_resolution():
     )
 
 
-@PENDING
 def test_an_expected_sequence_of_zero_is_sent_as_set():
     # expected_sequence is optional on the wire: 0 means "a new stream",
     # absent means "stamp the head" (types.proto, Handling).
@@ -158,7 +165,4 @@ def test_a_command_built_without_handling_leaves_it_to_the_coordinator():
         .with_payload(b"")
         .build()
     )
-    assert not book.handling.HasField("expected_sequence")
-    assert book.handling.conflict_resolution == (
-        types_pb2.ConflictResolution.CONFLICT_RESOLUTION_UNSPECIFIED
-    )
+    assert not book.HasField("handling")

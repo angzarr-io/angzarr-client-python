@@ -14,6 +14,7 @@ from importlib.metadata import version as _version
 
 __version__ = _version("angzarr-client")
 
+from ._pb import ConflictResolution
 from .builder import CommandBuilder, QueryBuilder
 from .client import (
     CommandHandlerClient,
@@ -114,6 +115,7 @@ __all__ = [
     # Component host
     "ComponentHost",
     "ConfigurationError",
+    "ConflictResolution",
     "ConnectionError",
     "Cover",
     "CoverBearer",

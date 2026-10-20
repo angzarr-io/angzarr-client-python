@@ -61,6 +61,8 @@ class _Recipe:
     type_url: str | None = None
     # Encoded payload set on its own via with_payload.
     payload: bytes | None = None
+    # Handling.expected_sequence via with_expected_sequence; None sends none.
+    expected_sequence: int | None = None
 
 
 def _apply(client: CommandHandlerClient, r: _Recipe) -> CommandBuilder:
@@ -77,6 +79,8 @@ def _apply(client: CommandHandlerClient, r: _Recipe) -> CommandBuilder:
         b = b.with_type_url(r.type_url)
     if r.payload is not None:
         b = b.with_payload(r.payload)
+    if r.expected_sequence is not None:
+        b = b.with_expected_sequence(r.expected_sequence)
     return b
 
 
@@ -178,6 +182,11 @@ def _when_set_type(state: _World, type_name: str) -> None:
 def _when_set_payload(state: _World) -> None:
     state.recipe.payload = _create_order().SerializeToString()
     state.build()
+
+
+@when(parsers.parse("I set sequence to {seq:d}"))
+def _when_set_sequence(state: _World, seq: int) -> None:
+    state.recipe.expected_sequence = seq
 
 
 @when("I set the command type and payload")
@@ -289,6 +298,15 @@ def _then_auto_root_is_valid_uuid(state: _World) -> None:
     assert (
         parsed.version == 4
     ), f"command_new must produce UUID v4, got {parsed.version}"
+
+
+@then(parsers.parse("the built command should have sequence {seq:d}"))
+def _then_sequence(state: _World, seq: int) -> None:
+    # Only an explicitly set expected sequence is sent (Handling): an unset
+    # one is stamped by the coordinator, never defaulted here.
+    handling = state.book().handling
+    assert handling.HasField("expected_sequence"), "no expected sequence was sent"
+    assert handling.expected_sequence == seq
 
 
 @then(parsers.parse('the built command should have type URL containing "{needle}"'))

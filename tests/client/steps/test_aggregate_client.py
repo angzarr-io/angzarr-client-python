@@ -232,6 +232,22 @@ def _when_retry(state: _World) -> None:
     state.result = state.send_generic("AddItem", state.looked_up_sequence)
 
 
+def _add_item(state: _World) -> CommandBuilder:
+    return state.builder().with_command(
+        order_type_url("AddItem"), GenericCommand(data="AddItem-data", count=1)
+    )
+
+
+@when("I send a command without waiting for downstream work")
+def _when_send_async(state: _World) -> None:
+    state.result = _add_item(state).execute_async()
+
+
+@when("I send a command and wait for projectors")
+def _when_send_sync(state: _World) -> None:
+    state.result = _add_item(state).execute_sync()
+
+
 @when("I send a command with a malformed payload")
 def _when_send_malformed(state: _World) -> None:
     builder = state.builder().with_command(
@@ -288,6 +304,23 @@ def _when_send_named_for_root(state: _World, name: str, root: str, seq: int) -> 
 # ---------------------------------------------------------------------------
 # Outcomes
 # ---------------------------------------------------------------------------
+
+
+@then("the response returns before any projectors have caught up")
+def _then_returns_before_projectors(state: _World) -> None:
+    assert state.result is None, "a fire-and-forget send answers nothing"
+    assert state.backend.projector_runs == [], "a projector ran before the answer"
+    assert state.backend.stored_pages(cover(state.domain, str(state.root))) == []
+    state.backend.drain()
+    assert len(state.backend.stored_pages(cover(state.domain, str(state.root)))) == 1
+
+
+@then("the response reflects the projectors having processed the event")
+def _then_projectors_processed(state: _World) -> None:
+    resp = state.ok()
+    projected = [p.next_sequence - 1 for p in resp.outcome.projections]
+    assert projected, "no projections in the response"
+    assert projected == _seqs(resp.events)
 
 
 @then("the command is accepted")

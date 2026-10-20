@@ -304,6 +304,25 @@ class CommandHandlerClient:
         md = correlated_metadata(command.page.correlation_id)
         return _invoke(self._stub.Handle, command, timeout=timeout, metadata=md)
 
+    def handle_async(self, command: CommandBook, timeout: float | None = None) -> None:
+        """Send a command without waiting for its decision
+        (CommandHandlerCoordinatorService.HandleAsync, ASYNC): the coordinator
+        validates it, assigns its ids and enqueues it. A malformed command
+        raises :class:`GRPCError`; a later rejection has no caller to
+        answer, so follow the command's correlation id for its outcome."""
+        md = correlated_metadata(command.page.correlation_id)
+        _invoke(self._stub.HandleAsync, command, timeout=timeout, metadata=md)
+
+    def handle_sync(
+        self, command: CommandBook, timeout: float | None = None
+    ) -> CommandResponse:
+        """Send a command and wait for its decision and the synchronous
+        projectors (CommandHandlerCoordinatorService.HandleSync, SIMPLE): the
+        response carries the persisted events, and ``outcome.projections``
+        (with ``outcome.projector_failures``) the projectors' results."""
+        md = correlated_metadata(command.page.correlation_id)
+        return _invoke(self._stub.HandleSync, command, timeout=timeout, metadata=md)
+
     def command(self, domain: str, root: PyUUID) -> CommandBuilder:
         """Start building a command for an existing aggregate."""
         from .builder import CommandBuilder
