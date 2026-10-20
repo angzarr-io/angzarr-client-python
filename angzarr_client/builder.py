@@ -19,24 +19,9 @@ from ._pb import (
     TemporalQuery,
 )
 from .client import CommandHandlerClient, QueryClient
-from .error_codes import codes, keys, messages
+from .error_codes import codes, messages
 from .errors import InvalidArgumentError
-from .helpers import parse_timestamp, uuid_to_proto
-
-
-def _as_uuid(value: PyUUID | str, field: str) -> PyUUID:
-    """``value`` as a UUID: a UUID as given, or a UUID's text form parsed.
-    Anything else is refused with ``PROTO_UUID_INVALID``."""
-    if isinstance(value, PyUUID):
-        return value
-    try:
-        return PyUUID(value)
-    except (TypeError, ValueError) as exc:
-        raise InvalidArgumentError(
-            messages.PROTO_UUID_INVALID,
-            code=codes.PROTO_UUID_INVALID,
-            details={keys.FIELD: field, keys.INPUT: value},
-        ) from exc
+from .helpers import as_uuid, parse_timestamp, uuid_to_proto
 
 
 class CommandBuilder:
@@ -68,7 +53,7 @@ class CommandBuilder:
         """Set the correlation ID for request tracing
         (``CommandPage.correlation_id``): a UUID, or a UUID's text form
         (anything else raises :class:`InvalidArgumentError`)."""
-        self._correlation_id = _as_uuid(id, "correlation_id")
+        self._correlation_id = as_uuid(id, "correlation_id")
         return self
 
     def with_command(self, type_url: str, message: Message) -> "CommandBuilder":
@@ -183,7 +168,7 @@ class QueryBuilder:
         """Query by correlation ID (``Query.correlation_id``) instead of root:
         a UUID, or a UUID's text form (anything else raises
         :class:`InvalidArgumentError`)."""
-        self._correlation_id = _as_uuid(id, "correlation_id")
+        self._correlation_id = as_uuid(id, "correlation_id")
         self._root = None
         return self
 

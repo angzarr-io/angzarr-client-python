@@ -10,7 +10,7 @@ from uuid import UUID as PyUUID
 import grpc
 
 from .errors import GRPCError, TransportError
-from .helpers import correlated_metadata
+from .helpers import as_uuid, correlated_metadata, uuid_to_proto
 from .retry import RetryPolicy, default_retry_policy
 
 if TYPE_CHECKING:
@@ -21,6 +21,7 @@ from ._pb import (
     CommandBook,
     CommandHandlerCoordinatorServiceStub,
     CommandResponse,
+    CorrelationQuery,
     EventBook,
     EventQueryServiceStub,
     Query,
@@ -211,6 +212,31 @@ class QueryClient:
         md = correlated_metadata(query.correlation_id)
         return _invoke(
             self._stub.GetEvents, query, timeout=timeout, metadata=md, stream=True
+        )
+
+    def get_correlated_events(
+        self, correlation_id: PyUUID | str, timeout: float | None = None
+    ) -> list[EventBook]:
+        """Every event of one correlation, across all domains
+        (EventQueryService.GetCorrelatedEvents): one EventBook per stream
+        holding that stream's correlated pages, in sequence order. A
+        correlation with no events answers an empty list.
+
+        Args:
+            correlation_id: The correlation, as a UUID or its text form.
+            timeout: Optional per-call deadline in seconds.
+        """
+        request = CorrelationQuery()
+        request.correlation_id.CopyFrom(
+            uuid_to_proto(as_uuid(correlation_id, "correlation_id"))
+        )
+        md = correlated_metadata(request.correlation_id)
+        return _invoke(
+            self._stub.GetCorrelatedEvents,
+            request,
+            timeout=timeout,
+            metadata=md,
+            stream=True,
         )
 
     def query(self, domain: str, root: PyUUID) -> QueryBuilder:
@@ -463,6 +489,13 @@ class DomainClient:
         ``DomainClient::get_events``.
         """
         return self.query.get_events(query, timeout=timeout)
+
+    def get_correlated_events(
+        self, correlation_id: PyUUID | str, timeout: float | None = None
+    ) -> list[EventBook]:
+        """Every event of one correlation, across all domains (see
+        :meth:`QueryClient.get_correlated_events`)."""
+        return self.query.get_correlated_events(correlation_id, timeout=timeout)
 
     def close(self) -> None:
         """Close the underlying channel if this client owns it."""

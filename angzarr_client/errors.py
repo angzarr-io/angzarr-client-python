@@ -31,7 +31,8 @@ class ClientError(Exception):
     """Base class for client errors.
 
     Predicate methods (``is_not_found``, ``is_precondition_failed``,
-    ``is_invalid_argument``, ``is_connection_error``) return ``False`` here and
+    ``is_invalid_argument``, ``is_aborted``, ``is_connection_error``) return
+    ``False`` here and
     are overridden by subclasses. This lets callers write
     ``if err.is_not_found(): ...`` without casting.
 
@@ -69,6 +70,12 @@ class ClientError(Exception):
 
     def is_invalid_argument(self) -> bool:
         """Return True if this is an INVALID_ARGUMENT error."""
+        return False
+
+    def is_aborted(self) -> bool:
+        """Return True if this is an ABORTED error: a stale expected sequence
+        (or an unsettled conflict). Retrying means re-reading the stream and
+        re-issuing the command."""
         return False
 
     def is_connection_error(self) -> bool:
@@ -145,6 +152,9 @@ class GRPCError(ClientError):
 
     def is_invalid_argument(self) -> bool:
         return self.grpc_code == grpc.StatusCode.INVALID_ARGUMENT
+
+    def is_aborted(self) -> bool:
+        return self.grpc_code == grpc.StatusCode.ABORTED
 
     def is_connection_error(self) -> bool:
         """Return True for UNAVAILABLE status."""
@@ -276,3 +286,6 @@ class CommandRejectedError(ClientError):
 
     def is_not_found(self) -> bool:
         return self.status_code == "NOT_FOUND"
+
+    def is_aborted(self) -> bool:
+        return self.status_code == "ABORTED"

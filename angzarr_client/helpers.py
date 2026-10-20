@@ -24,7 +24,8 @@ from ._pb import (
     SequenceRange,
     TemporalQuery,
 )
-from .errors import InvalidTimestampError
+from .error_codes import codes, keys, messages
+from .errors import InvalidArgumentError, InvalidTimestampError
 
 # Type variable for generic message type
 T = TypeVar("T", bound=Message)
@@ -285,3 +286,18 @@ def correlated_metadata(correlation_id: str | UUID | None) -> list[tuple[str, st
     if not correlation_id:
         return []
     return [(CORRELATION_ID_HEADER, correlation_id)]
+
+
+def as_uuid(value: PyUUID | str, field: str) -> PyUUID:
+    """``value`` as a UUID: a UUID as given, or a UUID's text form parsed.
+    Anything else is refused with ``PROTO_UUID_INVALID``, naming ``field``."""
+    if isinstance(value, PyUUID):
+        return value
+    try:
+        return PyUUID(value)
+    except (TypeError, ValueError) as exc:
+        raise InvalidArgumentError(
+            messages.PROTO_UUID_INVALID,
+            code=codes.PROTO_UUID_INVALID,
+            details={keys.FIELD: field, keys.INPUT: value},
+        ) from exc

@@ -147,8 +147,7 @@ def _given_edition_n(
 
 @given(parsers.parse('events with correlation ID "{cid}" exist in multiple aggregates'))
 def _given_correlated(state: _World, cid: str) -> None:
-    # A Query's correlation selector searches every stream of its domain
-    # (types.proto, Query); the correlated aggregates live in "orders".
+    # GetCorrelatedEvents gathers one correlation across every domain.
     b = state.backend
     flow, other = correlation_for(cid), correlation_for("other-flow")
     b.seed(cover("orders", "corr-order"), "OrderCreated", 1, flow)
@@ -157,7 +156,13 @@ def _given_correlated(state: _World, cid: str) -> None:
     b.seed(cover("orders", "unrelated"), "OrderCreated", 1, other)
     b.seed(cover("inventory", "corr-stock"), "StockReserved", 1, flow)
     state.correlated_roots = sorted(
-        root_for(r).bytes for r in ("corr-order", "corr-cart", "corr-ship")
+        (domain, root_for(r).bytes)
+        for domain, r in (
+            ("orders", "corr-order"),
+            ("orders", "corr-cart"),
+            ("orders", "corr-ship"),
+            ("inventory", "corr-stock"),
+        )
     )
 
 
@@ -223,11 +228,7 @@ def _when_query_edition(state: _World, domain: str, root: str, edition: str) -> 
 
 @when(parsers.parse('I query events by correlation ID "{cid}"'))
 def _when_query_correlation(state: _World, cid: str) -> None:
-    state.books = (
-        state.client.query_domain("orders")
-        .by_correlation_id(correlation_for(cid))
-        .get_events()
-    )
+    state.books = state.client.get_correlated_events(correlation_for(cid))
 
 
 @when("I query events with empty domain")
@@ -308,8 +309,10 @@ def _then_edition_only(state: _World) -> None:
 @then("I receive events from all correlated aggregates")
 def _then_correlated(state: _World) -> None:
     assert state.books is not None
-    assert all(b.cover.domain == "orders" for b in state.books)
-    assert sorted(b.cover.root.value for b in state.books) == state.correlated_roots
+    assert (
+        sorted((b.cover.domain, b.cover.root.value) for b in state.books)
+        == state.correlated_roots
+    )
     assert all(len(b.pages) == 1 for b in state.books)
 
 

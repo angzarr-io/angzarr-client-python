@@ -47,6 +47,7 @@ from angzarr_client._pb import (
     EventMeta,
     EventPage,
     Projection,
+    CorrelationQuery,
     Query,
     Snapshot,
 )
@@ -415,6 +416,10 @@ class TestBackend:
                 self._get_event_book,
             ),
             "/io.angzarr.v1.EventQueryService/GetEvents": (Query, self._select),
+            "/io.angzarr.v1.EventQueryService/GetCorrelatedEvents": (
+                CorrelationQuery,
+                self._correlated,
+            ),
         }
 
     # -- connections ------------------------------------------------------
@@ -610,6 +615,21 @@ class TestBackend:
             book = agg.book([p for p in agg.pages if keep(p)])
             book.cover.CopyFrom(c)
             return [book]
+
+    def _correlated(self, query: CorrelationQuery) -> list[EventBook]:
+        """Every stream's pages carrying the correlation, across all
+        domains: one EventBook per stream (query.proto,
+        GetCorrelatedEvents)."""
+        if len(query.correlation_id.value) != 16:
+            raise _status(grpc.StatusCode.INVALID_ARGUMENT, "correlation_id")
+        flow = query.correlation_id.value
+        with self._lock:
+            books = []
+            for agg in self._store.values():
+                pages = [p for p in agg.pages if p.meta.correlation_id.value == flow]
+                if pages:
+                    books.append(agg.book(pages))
+            return books
 
     def _get_event_book(self, query: Query) -> EventBook:
         books = self._select(query)
