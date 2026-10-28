@@ -33,7 +33,9 @@ dependencies = [
     # import on a grpcio older than the generating version (1.84.1, the newest
     # release the grpcio-tools range in [build-system] admits).
     "grpcio>=1.84.1",
-    "grpcio-health-checking>=1.76.0",
+    # 1.82 is the first release whose protobuf range admits 7.x; every
+    # earlier one requires protobuf<7, which the floor below rules out.
+    "grpcio-health-checking>=1.82",
     # google.rpc.Status / ErrorInfo and google.api.
     "googleapis-common-protos>=1.65",
     # protocolbuffers/python:v35.1 gencode targets the protobuf 7.x runtime.
