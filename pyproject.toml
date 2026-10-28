@@ -49,7 +49,11 @@ Documentation = "https://angzarr.io/docs"
 [project.optional-dependencies]
 dev = [
     "grpcio-tools>=1.84,<1.85",
-    "pytest>=8.0.0",
+    # Below 9.2: pytest 9.2.0 (2026-10-27) breaks pytest-bdd 9.0.0, which reads
+    # the FixtureManager._arg2fixturedefs that 9.2 removed (every scenario test
+    # fails with AttributeError). Revisit when a pytest-bdd release supports
+    # pytest 9.2, then lift the ceiling.
+    "pytest>=9.1,<9.2",
     "pytest-asyncio>=0.23.0",
     "pytest-bdd>=7.0.0",
     "pytest-cov>=4.1.0",
