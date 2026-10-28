@@ -29,9 +29,10 @@ classifiers = [
 dependencies = [
     # cffi ABI mode (ffi.dlopen) over the router-ffi cdylib.
     "cffi>=1.16",
-    # grpc/python:v1.76.0 gencode (buf.gen.yaml) checks the runtime is at
-    # least the generating version.
-    "grpcio>=1.76.0",
+    # The *_pb2_grpc.py modules grpcio-tools generates at build time refuse to
+    # import on a grpcio older than the generating version (1.84.1, the newest
+    # release the grpcio-tools range in [build-system] admits).
+    "grpcio>=1.84.1",
     "grpcio-health-checking>=1.76.0",
     # google.rpc.Status / ErrorInfo and google.api.
     "googleapis-common-protos>=1.65",
