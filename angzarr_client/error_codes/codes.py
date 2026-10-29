@@ -76,3 +76,7 @@ HANDLER_PANICKED = "HANDLER_PANICKED"
 NO_COMPONENTS_REGISTERED = "NO_COMPONENTS_REGISTERED"
 # A host serves exactly one component; a second registration is refused.
 DUPLICATE_REGISTRATION = "DUPLICATE_REGISTRATION"
+
+# Child process (angzarr_client.child)
+# A line that is not a v1 handshake (details: line).
+HANDSHAKE_MALFORMED = "HANDSHAKE_MALFORMED"

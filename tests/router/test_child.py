@@ -229,3 +229,14 @@ def test_a_child_that_cannot_bind_exits_without_a_handshake(tmp_path):
     )
     assert proc.returncode != 0
     assert proc.stdout == b""
+
+
+@pytest.mark.timeout(30)
+def test_the_child_closes_stdout_after_the_handshake(child):
+    # End of file on stdout while the child still serves: read() returns
+    # only once every writer has closed it (a child holding it open hangs
+    # here until the timeout fails the test).
+    assert child.proc.stdout.read() == b""
+    assert child.proc.poll() is None
+    code, _, err = child.finish("stdin")
+    assert code == 0, err
