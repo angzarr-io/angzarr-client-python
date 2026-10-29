@@ -11,7 +11,7 @@ this surface:
         Router, AggregateDispatch, Rebuilder, ProjectorDispatch,
         SagaDispatch, ProcessManagerDispatch,
         CommandContext, Conflict, FactRecord, PageContext, current_cover, current_page,
-        CodedError, reject, GrpcCode, abi_version, AbiVersionError,
+        CodedError, Rejection, Bug, GrpcCode, abi_version, AbiVersionError,
         WILDCARD_DOMAIN,
     )
 """
@@ -38,7 +38,6 @@ from ._dispatch import (
     current_cover,
     current_page,
     pack,
-    reject,
 )
 
 __all__ = [
@@ -63,5 +62,4 @@ __all__ = [
     "current_cover",
     "current_page",
     "pack",
-    "reject",
 ]

@@ -49,7 +49,7 @@ Every name comes from the spec or from the router core's Rust API
 def add_item(cmd, state, cctx):
     if cctx.conflict is not None:          # AGGREGATE_HANDLES
         if any(touches(page, cmd.item) for page in cctx.conflict.window):
-            raise reject("ITEM_CHANGED", "the item changed since you read it")
+            raise Rejection("ITEM_CHANGED")
         cctx.conflict.resolve_conflicts(cctx.conflict.window, cctx.conflict.nonce)
     return [ItemAdded(item=cmd.item)]
 

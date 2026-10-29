@@ -77,8 +77,9 @@ class GrpcCode(enum.IntEnum):
 
 
 class CodedError(Exception):
-    """A stable cross-language coded failure. A handler raises one (via
-    :func:`reject`) to fail a command with a code like ``VALUE_NOT_POSITIVE``;
+    """A stable cross-language coded failure. A handler raises one of its two
+    classes, :class:`Rejection` or :class:`Bug`, to fail a command with a
+    code like ``VALUE_NOT_POSITIVE``;
     the binding also raises one when decoding a coded failure the core
     returned (``NO_HANDLER_REGISTERED``, ``CONFLICT_UNRESOLVED``, …). It
     crosses the FFI as ``google.rpc.Status`` carrying a
@@ -99,17 +100,38 @@ class CodedError(Exception):
 
 
 class Rejection(CodedError):
-    """A business rejection (red: not yet)."""
+    """A business rejection: the command is refused, a business "no", never
+    a fault. One of the two classes a handler fails with (the other is
+    :class:`Bug`). A diagnostic key and its args, never text (decision
+    14.37), crossing as FAILED_PRECONDITION under the key; it reaches the
+    issuing policy's OnRefused."""
+
+    def __init__(self, key: str, **args: object) -> None:
+        super().__init__(
+            code=key,
+            message=key,
+            grpc=GrpcCode.FAILED_PRECONDITION,
+            extras={name: str(value) for name, value in args.items()},
+        )
 
 
 class Bug(CodedError):
-    """A bug (red: not yet)."""
+    """A bug: a defect, never a business answer. The other of the two
+    classes a handler fails with (the first is :class:`Rejection`). A
+    diagnostic key and its args, crossing as INTERNAL
+    ``UNHANDLED_HANDLER_ERROR`` with the key as ``cause`` and each arg as
+    ``cause.<arg>`` (decision 14.37); the runtime alerts it and
+    dead-letters the input."""
 
-
-def reject(code: str, message: str) -> CodedError:
-    """Build an invalid-argument business rejection — the common shape a
-    command handler raises to reject a command with a coded reason."""
-    return CodedError(code=code, message=message, grpc=GrpcCode.INVALID_ARGUMENT)
+    def __init__(self, key: str, **args: object) -> None:
+        cause = {"cause": key}
+        cause.update({f"cause.{name}": str(value) for name, value in args.items()})
+        super().__init__(
+            code=CODE_UNHANDLED_HANDLER_ERROR,
+            message=key,
+            grpc=GrpcCode.INTERNAL,
+            extras=cause,
+        )
 
 
 def any_decode_error(type_url: str, cause: BaseException) -> CodedError:
