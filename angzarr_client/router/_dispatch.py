@@ -211,6 +211,9 @@ class CommandContext:
     expected_sequence: int = 0
     conflict_resolution: int = types_pb2.CONFLICT_RESOLUTION_UNSPECIFIED
     conflict: Conflict | None = None
+    command_id: types_pb2.UUID | None = None
+    correlation_id: types_pb2.UUID | None = None
+    fact_origin: types_pb2.FactOrigin | None = None
 
 
 @dataclass(frozen=True)

@@ -73,6 +73,38 @@ def test_command_handler_reads_its_cover_from_the_context_and_the_accessor():
     assert len(resp.events.pages) == 0
 
 
+def test_command_handler_reads_the_inputs_identity_from_the_context():
+    """The input's identity, as the router's CommandContext carries it: its
+    command id and correlation as delivered, and no fact origin for a
+    command."""
+    seen = []
+
+    def handle(cmd, state, cctx):
+        seen.append((cctx.command_id, cctx.correlation_id, cctx.fact_origin))
+
+    dispatch = AggregateDispatch("Ledger", "ledger", _ledger_rebuilder())
+    dispatch.on_command(builders.FQ_INCREASE_BY, handle)
+    command = _ledger_command("ledger-1")
+    command.command.page.command_id.value = b"\x11" * 16
+    command.command.page.correlation_id.value = b"\x22" * 16
+    with Router() as router:
+        router.register_aggregate(dispatch)
+        router.dispatch(command)
+
+    assert seen == [
+        (types_pb2.UUID(value=b"\x11" * 16), types_pb2.UUID(value=b"\x22" * 16), None)
+    ]
+
+
+def test_a_handler_outside_a_dispatch_has_no_identity():
+    """The identity is the dispatch's: a CommandContext built by hand has
+    none."""
+    from angzarr_client.router import CommandContext
+
+    ctx = CommandContext()
+    assert (ctx.command_id, ctx.correlation_id, ctx.fact_origin) == (None, None, None)
+
+
 def test_current_cover_outside_a_handler_raises():
     with pytest.raises(RuntimeError):
         current_cover()
