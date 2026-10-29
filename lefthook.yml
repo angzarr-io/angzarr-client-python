@@ -1,7 +1,7 @@
 # Lefthook configuration
 # https://github.com/evilmartians/lefthook
 #
-# Setup: lefthook install
+# Setup: lefthook install (again after a hook is added here: pre-push was)
 # Never bypass: a failing hook is a finding. Red tests are not one off the
 # default branch (`just test-commit`).
 
@@ -27,6 +27,19 @@ pre-merge-commit:
     test:
       run: just test-commit merging
 
-# Mutation testing runs on a weekly schedule
-# (.github/workflows/mutation.yml) rather than gating every push.
-# Invoke manually with `just mutation-test` when needed.
+# Mutation testing runs at pre-push, not pre-commit (too slow for every
+# commit), over what the push changes only: `just mutation-push` runs mutmut
+# over the functions the pushed diff touches, in the pushed commit's own
+# tree, judged at MUTATION_THRESHOLD (the justfile says how). The full pass,
+# `just mutation-test`, runs weekly (.github/workflows/mutation.yml). git's
+# pushed refs are on stdin, and {1} is the remote's name. lefthook skips a
+# pre-push command when it finds no files changed between HEAD and the
+# remote, which says nothing of the refs pushed; a `{files}` in `run` turns
+# that off, so `files` names one that is always there, and mutation-push
+# ignores it.
+pre-push:
+  commands:
+    mutation:
+      use_stdin: true
+      files: echo justfile
+      run: just mutation-push {1} {files}
