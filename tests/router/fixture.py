@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from angzarr_client.proto.io.angzarr.v1 import process_manager_pb2, types_pb2
-from angzarr_client.router import CommandContext, pack, reject
+from angzarr_client.router import CommandContext, Rejection, pack
 
 from .builders import FQ_RESERVE, type_url
 from .gen.test.counter import counter_pb2
@@ -44,7 +44,7 @@ class CounterAggregate:
         if self.observed is not None:
             self.observed.append(Observation(cctx=cctx, count=state.count))
         if cmd.n == 0:
-            raise reject("VALUE_NOT_POSITIVE", "increase amount must be positive")
+            raise Rejection("VALUE_NOT_POSITIVE")
         return [counter_pb2.Increased() for _ in range(cmd.n)]
 
     def fail_hard(self, cmd, state, cctx: CommandContext):

@@ -1,5 +1,6 @@
-"""The binding's error model: CodedError construction, the reject /
-any_decode_error helpers, and the CodedError <-> google.rpc.Status (with
+"""The binding's error model: CodedError construction, the two classes a
+handler fails with (Rejection, a business "no", and Bug, a defect), the
+any_decode_error helper, and the CodedError <-> google.rpc.Status (with
 ErrorInfo) mapping that crosses the FFI in both directions."""
 
 from __future__ import annotations
@@ -7,12 +8,14 @@ from __future__ import annotations
 from google.protobuf import any_pb2
 from google.rpc import error_details_pb2, status_pb2
 
+import angzarr_client.router as router_module
 from angzarr_client.router import (
+    Bug,
     CodedError,
     FactRecord,
     GrpcCode,
+    Rejection,
     any_decode_error,
-    reject,
 )
 from angzarr_client.router._dispatch import (
     _decode_status,
@@ -70,13 +73,46 @@ def test_coded_error_text_is_code_then_message_or_message_alone():
     assert str(CodedError(message="must be positive")) == "must be positive"
 
 
-def test_reject_is_an_invalid_argument_carrying_code_and_message():
-    err = reject("VALUE_NOT_POSITIVE", "increase amount must be positive")
+def test_a_rejection_is_a_failed_precondition_carrying_its_key_and_args():
+    err = Rejection("VALUE_NOT_POSITIVE", amount=0)
 
+    assert isinstance(err, CodedError)
     assert err.code == "VALUE_NOT_POSITIVE"
-    assert err.message == "increase amount must be positive"
-    assert err.grpc == GrpcCode.INVALID_ARGUMENT
-    assert err.extras == {}
+    assert err.message == "VALUE_NOT_POSITIVE"
+    assert err.grpc == GrpcCode.FAILED_PRECONDITION
+    assert err.extras == {"amount": "0"}
+
+
+def test_a_bug_is_unhandled_handler_error_with_its_key_and_args_as_cause():
+    err = Bug("LEDGER_INVARIANT_BROKEN", balance=-1)
+
+    assert isinstance(err, CodedError)
+    assert err.code == "UNHANDLED_HANDLER_ERROR"
+    assert err.message == "LEDGER_INVARIANT_BROKEN"
+    assert err.grpc == GrpcCode.INTERNAL
+    assert err.extras == {
+        "cause": "LEDGER_INVARIANT_BROKEN",
+        "cause.balance": "-1",
+    }
+
+
+def test_a_bug_crosses_as_internal_unhandled_handler_error_with_its_cause():
+    data, ret = _error_status(Bug("LEDGER_INVARIANT_BROKEN", balance=-1))
+    status, info = _parse(data)
+
+    assert ret == -13
+    assert status.code == 13
+    assert info.reason == "UNHANDLED_HANDLER_ERROR"
+    assert dict(info.metadata) == {
+        "cause": "LEDGER_INVARIANT_BROKEN",
+        "cause.balance": "-1",
+    }
+
+
+def test_a_handler_fails_with_a_rejection_or_a_bug_only():
+    assert not hasattr(router_module, "reject")
+    assert "reject" not in router_module.__all__
+    assert {"Rejection", "Bug"} <= set(router_module.__all__)
 
 
 def test_any_decode_error_names_the_type_url_and_cause():

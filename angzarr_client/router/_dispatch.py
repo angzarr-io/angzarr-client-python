@@ -98,6 +98,14 @@ class CodedError(Exception):
         super().__init__(f"{code}: {message}" if code else message)
 
 
+class Rejection(CodedError):
+    """A business rejection (red: not yet)."""
+
+
+class Bug(CodedError):
+    """A bug (red: not yet)."""
+
+
 def reject(code: str, message: str) -> CodedError:
     """Build an invalid-argument business rejection — the common shape a
     command handler raises to reject a command with a coded reason."""

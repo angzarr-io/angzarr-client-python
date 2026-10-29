@@ -142,11 +142,10 @@ def test_a_coded_rejection_travels_as_status_and_error_info(started):
     stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
     with pytest.raises(grpc.RpcError) as err:
         stub.Handle(builders.increase_command(0), timeout=5)
-    assert err.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert err.value.code() == grpc.StatusCode.FAILED_PRECONDITION
     info = _error_info(err.value)
     assert info.reason == "VALUE_NOT_POSITIVE"
     assert info.domain
-    assert "VALUE_NOT_POSITIVE" not in err.value.details()
 
 
 def test_an_unclassified_handler_failure_is_a_coded_internal_error(started):
