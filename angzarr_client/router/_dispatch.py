@@ -69,8 +69,11 @@ class GrpcCode(enum.IntEnum):
 
     INVALID_ARGUMENT = 3
     NOT_FOUND = 5
+    ALREADY_EXISTS = 6
+    PERMISSION_DENIED = 7
     FAILED_PRECONDITION = 9
     ABORTED = 10
+    OUT_OF_RANGE = 11
     UNIMPLEMENTED = 12
     INTERNAL = 13
     DATA_LOSS = 15
@@ -99,18 +102,54 @@ class CodedError(Exception):
         super().__init__(f"{code}: {message}" if code else message)
 
 
+# The business set (the owner's ruling, 2026-10-29): a status a rejection
+# may cross under, each mapped to the status it crosses as. angzarr-router's
+# GrpcCode has no ALREADY_EXISTS, OUT_OF_RANGE or PERMISSION_DENIED and
+# turns a status it lacks INTERNAL, a bug, so those cross as
+# FAILED_PRECONDITION, still a refusal.
+_REJECTION_STATUS = {
+    GrpcCode.FAILED_PRECONDITION: GrpcCode.FAILED_PRECONDITION,
+    GrpcCode.INVALID_ARGUMENT: GrpcCode.INVALID_ARGUMENT,
+    GrpcCode.NOT_FOUND: GrpcCode.NOT_FOUND,
+    GrpcCode.ALREADY_EXISTS: GrpcCode.FAILED_PRECONDITION,
+    GrpcCode.OUT_OF_RANGE: GrpcCode.FAILED_PRECONDITION,
+    GrpcCode.PERMISSION_DENIED: GrpcCode.FAILED_PRECONDITION,
+}
+
+
 class Rejection(CodedError):
     """A business rejection: the command is refused, a business "no", never
     a fault. One of the two classes a handler fails with (the other is
     :class:`Bug`). A diagnostic key and its args, never text (decision
-    14.37), crossing as FAILED_PRECONDITION under the key; it reaches the
-    issuing policy's OnRefused."""
+    14.37), crossing under the key; it reaches the issuing policy's
+    OnRefused.
 
-    def __init__(self, key: str, **args: object) -> None:
+    ``status``, given positionally (an arg may still be named ``status``),
+    is one of the business set: FAILED_PRECONDITION (the default),
+    INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE or
+    PERMISSION_DENIED. Any other status is a :class:`ValueError` here: a
+    bug is a :class:`Bug`. ALREADY_EXISTS, OUT_OF_RANGE and
+    PERMISSION_DENIED cross as FAILED_PRECONDITION, which angzarr-router
+    carries."""
+
+    def __init__(
+        self,
+        key: str,
+        status: int = GrpcCode.FAILED_PRECONDITION,
+        /,
+        **args: object,
+    ) -> None:
+        crosses = _REJECTION_STATUS.get(status)
+        if crosses is None:
+            raise ValueError(
+                f"a rejection's status is one of the business set "
+                f"({', '.join(code.name for code in _REJECTION_STATUS)}), "
+                f"not {status!r}"
+            )
         super().__init__(
             code=key,
             message=key,
-            grpc=GrpcCode.FAILED_PRECONDITION,
+            grpc=crosses,
             extras={name: str(value) for name, value in args.items()},
         )
 
