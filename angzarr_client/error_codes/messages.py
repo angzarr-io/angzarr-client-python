@@ -1,6 +1,8 @@
-"""Static human-readable messages — the value of ``message`` on every
-error this client constructs. Constant names match the corresponding
-``codes::`` constant.
+"""English text for display only: a catalog keyed by the code, rendered
+where an error is shown. Nothing on the wire uses it (decision 14.37,
+backlog ER-4): every error angzarr sends is its code and its args, and the
+gRPC status message is the code. Constant names match the corresponding
+``codes`` constant.
 
 Mirrors ``client-rust/main/src/error_codes.rs::messages`` — same
 constant names, same string values.

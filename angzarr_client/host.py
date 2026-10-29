@@ -19,9 +19,12 @@ optionally, an upcaster and its own gRPC services; the host exposes:
 - ``UpcasterService``: Upcast, over an application upcaster.
 
 Dispatch is the router's. A coded failure from the router travels as its
-gRPC status: the status message is the error's message, and the
-``grpc-status-details-bin`` trailer carries a ``google.rpc.Status`` whose
-``ErrorInfo.reason`` is the error code. Saga and process-manager
+gRPC status, a key and an argument map, never text (decision 14.37): the
+status message is the error's code, and the ``grpc-status-details-bin``
+trailer carries a ``google.rpc.Status`` whose ``ErrorInfo`` has the code as
+its reason and the args as its metadata. Any other exception is
+``UNHANDLED_HANDLER_ERROR`` with cause ``HANDLER_PANICKED``; its text goes
+to the host's log only. Saga and process-manager
 coordinators deliver every event of their source domains, so an event the
 component does not handle is acknowledged with an empty response.
 
@@ -53,7 +56,7 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from grpc_health.v1.health import aio as health_aio
 
 from . import readiness
-from .error_codes import codes, messages
+from .error_codes import codes, keys
 from .errors import ClientError
 from .proto.io.angzarr.v1 import (
     command_handler_pb2,
@@ -159,20 +162,19 @@ class _Dispatcher:
         except CodedError as exc:
             if ack_unconsumed is not None and exc.grpc == GrpcCode.UNIMPLEMENTED:
                 return ack_unconsumed()
-            details = _build_status_bytes(exc.grpc, exc.message, exc.code, exc.extras)
-            context.set_trailing_metadata(((_STATUS_DETAILS_KEY, details),))
-            await context.abort(grpc_status_code(exc.grpc), exc.message)
-        # The transport edge reports every other failure as a coded INTERNAL.
+            failure = exc
+        # The transport edge reports every other failure as a coded INTERNAL;
+        # what escaped stays in the host's log.
         except Exception as exc:  # noqa: BLE001
             self._log.error("dispatch_failed", error=str(exc))
-            details = _build_status_bytes(
-                int(grpc.StatusCode.INTERNAL.value[0]),
-                messages.HANDLER_PANICKED,
-                codes.HANDLER_PANICKED,
-                {"error": str(exc)},
+            failure = CodedError(
+                codes.UNHANDLED_HANDLER_ERROR,
+                GrpcCode.INTERNAL,
+                {keys.CAUSE: codes.HANDLER_PANICKED},
             )
-            context.set_trailing_metadata(((_STATUS_DETAILS_KEY, details),))
-            await context.abort(grpc.StatusCode.INTERNAL, messages.HANDLER_PANICKED)
+        details = _build_status_bytes(failure.grpc, failure.code, failure.extras)
+        context.set_trailing_metadata(((_STATUS_DETAILS_KEY, details),))
+        await context.abort(grpc_status_code(failure.grpc), failure.code)
 
 
 class _CommandHandlerServicer(command_handler_pb2_grpc.CommandHandlerServiceServicer):
@@ -398,11 +400,11 @@ class ComponentHost:
         binds a free port, reflected in the returned address."""
         if self._kind is None:
             raise ConfigurationError(
-                f"{codes.NO_COMPONENTS_REGISTERED}: {messages.NO_COMPONENTS_REGISTERED}"
+                codes.NO_COMPONENTS_REGISTERED, code=codes.NO_COMPONENTS_REGISTERED
             )
         if self._refused:
             raise ConfigurationError(
-                messages.DUPLICATE_REGISTRATION,
+                codes.DUPLICATE_REGISTRATION,
                 code=codes.DUPLICATE_REGISTRATION,
                 details={
                     "registered": self._component_name,
@@ -491,7 +493,9 @@ class ComponentHost:
         try:
             self.router.component_descriptor()
         except CodedError as exc:
-            raise ConfigurationError(f"{exc.code}: {exc.message}") from exc
+            raise ConfigurationError(
+                str(exc), code=exc.code, details=exc.extras
+            ) from exc
 
     def __enter__(self) -> Self:
         return self

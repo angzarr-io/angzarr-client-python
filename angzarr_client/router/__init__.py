@@ -11,7 +11,8 @@ this surface:
         Router, AggregateDispatch, Rebuilder, ProjectorDispatch,
         SagaDispatch, ProcessManagerDispatch,
         CommandContext, Conflict, FactRecord, PageContext, current_cover, current_page,
-        CodedError, Rejection, Bug, GrpcCode, abi_version, AbiVersionError,
+        CodedError, Rejection, Immediate, Bug, RetryableBug, ErrorClass,
+        error_class, GrpcCode, abi_version, AbiVersionError,
         WILDCARD_DOMAIN,
     )
 """

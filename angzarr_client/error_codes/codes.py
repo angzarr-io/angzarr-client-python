@@ -72,6 +72,10 @@ HANDLER_UNKNOWN_KIND = "HANDLER_UNKNOWN_KIND"
 ROUTER_NO_HANDLERS = "ROUTER_NO_HANDLERS"
 
 # Component host
+# An error escaped a handler, or it failed as a bug; its cause names why
+# (decision 14.37).
+UNHANDLED_HANDLER_ERROR = "UNHANDLED_HANDLER_ERROR"
+# The cause of an UNHANDLED_HANDLER_ERROR when an exception escaped.
 HANDLER_PANICKED = "HANDLER_PANICKED"
 NO_COMPONENTS_REGISTERED = "NO_COMPONENTS_REGISTERED"
 # A host serves exactly one component; a second registration is refused.

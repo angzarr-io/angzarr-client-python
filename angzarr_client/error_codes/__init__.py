@@ -5,8 +5,9 @@ Audit finding #59 (structural error model). Three sub-modules:
 
 - ``codes`` — SCREAMING_SNAKE event-type identifiers. Carried on the
   ``code`` attribute of every error.
-- ``messages`` — static human-readable messages. Carried on the
-  ``message`` attribute. Same constant name as the corresponding code.
+- ``messages`` — English text for display only, keyed by the code (same
+  constant name). Nothing on the wire uses it (decision 14.37): a coded
+  error crosses as its code and its args.
 - ``keys`` — detail-map key strings. Used at insertion sites and in
   ``details["..."]`` lookups.
 

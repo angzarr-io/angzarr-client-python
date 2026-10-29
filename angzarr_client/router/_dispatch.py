@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import enum
 import itertools
+import logging
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -38,6 +39,9 @@ from ._abi import ffi, lib
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+# What escaped a handler is logged here, never put on the wire.
+_log = logging.getLogger(__name__)
+
 # --- ABI status codes (mirror crates/router-ffi/src/abi.rs) ---
 _STATUS_OK = 0  # success with a payload in `out`
 _STATUS_OK_EMPTY = 1  # success, handler emitted nothing
@@ -45,6 +49,14 @@ _STATUS_OK_EMPTY = 1  # success, handler emitted nothing
 # The code an unclassified handler failure surfaces as — the binding's job
 # to classify, mirroring the Go binding and client-* engines.
 CODE_UNHANDLED_HANDLER_ERROR = "UNHANDLED_HANDLER_ERROR"
+
+# The cause of an UNHANDLED_HANDLER_ERROR (or a failed fold) when an
+# exception escaped the handler: Python's panic (decision 14.37).
+CODE_HANDLER_PANICKED = "HANDLER_PANICKED"
+
+# The cause of a bug the binding finds in a handler that returned the wrong
+# kind of answer (a fact handler that returned no FactRecord).
+CODE_HANDLER_WRONG_RESPONSE_KIND = "HANDLER_WRONG_RESPONSE_KIND"
 
 # The reverse-DNS error domain on every ErrorInfo the boundary emits
 # (distinct from the io.angzarr proto package — see plan §1).
@@ -83,58 +95,120 @@ class GrpcCode(enum.IntEnum):
     DATA_LOSS = 15
 
 
+class ErrorClass(enum.Enum):
+    """The class an error is, decided by its gRPC status alone (decision
+    14.37, the owner's rulings 2026-10-29, latest), as angzarr-router's
+    ``ErrorClass``. Acting on the class (the retry, its backoff and cap,
+    the dead letter, the alert) is the runtime's; the binding only
+    classifies."""
+
+    #: FAILED_PRECONDITION, INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS,
+    #: OUT_OF_RANGE, PERMISSION_DENIED: final, to the caller or the issuing
+    #: policy's OnRefused; never retried.
+    BusinessFatal = "BusinessFatal"
+    #: ABORTED, "re-read and re-decide": returned at once to an outside
+    #: caller; never OnRefused.
+    BusinessImmediate = "BusinessImmediate"
+    #: INTERNAL, UNKNOWN, DATA_LOSS: dead-lettered and alerted at once.
+    BugFatal = "BugFatal"
+    #: UNAVAILABLE, DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED, UNIMPLEMENTED and
+    #: every other status: capped retry with backoff, then dead-lettered.
+    BugRetryable = "BugRetryable"
+
+
+# The business set (the owner's ruling, 2026-10-29): the statuses a
+# rejection may carry.
+_BUSINESS_FATAL = frozenset(
+    {
+        GrpcCode.FAILED_PRECONDITION,
+        GrpcCode.INVALID_ARGUMENT,
+        GrpcCode.NOT_FOUND,
+        GrpcCode.ALREADY_EXISTS,
+        GrpcCode.OUT_OF_RANGE,
+        GrpcCode.PERMISSION_DENIED,
+    }
+)
+_BUG_FATAL = frozenset({GrpcCode.INTERNAL, GrpcCode.UNKNOWN, GrpcCode.DATA_LOSS})
+# The statuses a handler picks for a bug it marks retryable, as
+# angzarr-router's RetryableStatus. They are not interchangeable:
+# UNAVAILABLE means resend; DEADLINE_EXCEEDED resend only if the call is
+# idempotent; RESOURCE_EXHAUSTED wait longer before resending.
+_RETRYABLE_STATUS = frozenset(
+    {GrpcCode.UNAVAILABLE, GrpcCode.DEADLINE_EXCEEDED, GrpcCode.RESOURCE_EXHAUSTED}
+)
+
+
+def error_class(status: int) -> ErrorClass:
+    """The class an error with gRPC ``status`` is, as angzarr-router's
+    ``GrpcCode::class()``: UNIMPLEMENTED, and every status outside the
+    business, immediate and fatal-bug sets, is a retryable bug."""
+    if status in _BUSINESS_FATAL:
+        return ErrorClass.BusinessFatal
+    if status == GrpcCode.ABORTED:
+        return ErrorClass.BusinessImmediate
+    if status in _BUG_FATAL:
+        return ErrorClass.BugFatal
+    return ErrorClass.BugRetryable
+
+
+def _args(args: dict[str, object]) -> dict[str, str]:
+    """A handler's args as the string map ErrorInfo metadata carries."""
+    return {name: str(value) for name, value in args.items()}
+
+
+def _as_cause(key: str, args: dict[str, object]) -> dict[str, str]:
+    """``key`` and ``args`` flattened as a wrapped cause (decision 14.37):
+    the key under ``cause``, each arg under ``cause.<arg>``."""
+    cause = {"cause": key}
+    cause.update({f"cause.{name}": value for name, value in _args(args).items()})
+    return cause
+
+
 class CodedError(Exception):
-    """A stable cross-language coded failure. A handler raises one of its two
-    classes, :class:`Rejection` or :class:`Bug`, to fail a command with a
-    code like ``VALUE_NOT_POSITIVE``;
-    the binding also raises one when decoding a coded failure the core
-    returned (``NO_HANDLER_REGISTERED``, ``CONFLICT_UNRESOLVED``, …). It
-    crosses the FFI as ``google.rpc.Status`` carrying a
-    ``google.rpc.ErrorInfo``."""
+    """A stable cross-language coded failure: a key, a gRPC status and an
+    argument map, never text (decision 14.37). A handler raises one of
+    :class:`Rejection`, :class:`Immediate`, :class:`Bug` or
+    :class:`RetryableBug`; the binding also raises one when decoding a
+    coded failure the core returned (``CONFLICT_UNRESOLVED``, …). It
+    crosses the FFI as a ``google.rpc.Status`` whose message is the key,
+    carrying a ``google.rpc.ErrorInfo`` with the key as its reason and the
+    args as its metadata. Its text is the code then `` name=value`` per
+    arg; English is rendered only where it is shown, from a catalog keyed
+    by the code."""
 
     def __init__(
         self,
         code: str = "",
-        message: str = "",
         grpc: int = GrpcCode.INTERNAL,
         extras: dict[str, str] | None = None,
     ):
         self.code = code
-        self.message = message
         self.grpc = int(grpc)
         self.extras = dict(extras) if extras else {}
-        super().__init__(f"{code}: {message}" if code else message)
+        super().__init__(
+            "".join(
+                [code, *(f" {name}={value}" for name, value in self.extras.items())]
+            )
+        )
 
-
-# The business set (the owner's ruling, 2026-10-29): a status a rejection
-# may cross under, each mapped to the status it crosses as. angzarr-router's
-# GrpcCode has no ALREADY_EXISTS, OUT_OF_RANGE or PERMISSION_DENIED and
-# turns a status it lacks INTERNAL, a bug, so those cross as
-# FAILED_PRECONDITION, still a refusal.
-_REJECTION_STATUS = {
-    GrpcCode.FAILED_PRECONDITION: GrpcCode.FAILED_PRECONDITION,
-    GrpcCode.INVALID_ARGUMENT: GrpcCode.INVALID_ARGUMENT,
-    GrpcCode.NOT_FOUND: GrpcCode.NOT_FOUND,
-    GrpcCode.ALREADY_EXISTS: GrpcCode.FAILED_PRECONDITION,
-    GrpcCode.OUT_OF_RANGE: GrpcCode.FAILED_PRECONDITION,
-    GrpcCode.PERMISSION_DENIED: GrpcCode.FAILED_PRECONDITION,
-}
+    @property
+    def error_class(self) -> ErrorClass:
+        """The class this error is, decided by its status."""
+        return error_class(self.grpc)
 
 
 class Rejection(CodedError):
-    """A business rejection: the command is refused, a business "no", never
-    a fault. One of the two classes a handler fails with (the other is
-    :class:`Bug`). A diagnostic key and its args, never text (decision
-    14.37), crossing under the key; it reaches the issuing policy's
+    """A business rejection, final: the command is refused, a business "no",
+    never a fault (:attr:`ErrorClass.BusinessFatal`). A diagnostic key and
+    its args, crossing under the key; it reaches the issuing policy's
     OnRefused.
 
     ``status``, given positionally (an arg may still be named ``status``),
     is one of the business set: FAILED_PRECONDITION (the default),
     INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE or
     PERMISSION_DENIED. Any other status is a :class:`ValueError` here: a
-    bug is a :class:`Bug`. ALREADY_EXISTS, OUT_OF_RANGE and
-    PERMISSION_DENIED cross as FAILED_PRECONDITION, which angzarr-router
-    carries."""
+    "re-read and re-decide" answer is an :class:`Immediate`, a defect a
+    :class:`Bug` or a :class:`RetryableBug`."""
 
     def __init__(
         self,
@@ -143,78 +217,76 @@ class Rejection(CodedError):
         /,
         **args: object,
     ) -> None:
-        crosses = _REJECTION_STATUS.get(status)
-        if crosses is None:
+        if status not in _BUSINESS_FATAL:
             raise ValueError(
                 f"a rejection's status is one of the business set "
-                f"({', '.join(code.name for code in _REJECTION_STATUS)}), "
+                f"({', '.join(sorted(code.name for code in _BUSINESS_FATAL))}), "
                 f"not {status!r}"
             )
-        super().__init__(
-            code=key,
-            message=key,
-            grpc=crosses,
-            extras={name: str(value) for name, value in args.items()},
-        )
-
-
-class Bug(CodedError):
-    """A bug: a defect, never a business answer. The other of the two
-    classes a handler fails with (the first is :class:`Rejection`). A
-    diagnostic key and its args, crossing as INTERNAL
-    ``UNHANDLED_HANDLER_ERROR`` with the key as ``cause`` and each arg as
-    ``cause.<arg>`` (decision 14.37); the runtime alerts it and
-    dead-letters the input."""
-
-    def __init__(self, key: str, **args: object) -> None:
-        cause = {"cause": key}
-        cause.update({f"cause.{name}": str(value) for name, value in args.items()})
-        super().__init__(
-            code=CODE_UNHANDLED_HANDLER_ERROR,
-            message=key,
-            grpc=GrpcCode.INTERNAL,
-            extras=cause,
-        )
-
-
-class ErrorClass(enum.Enum):
-    """Red stub (decision 14.37's four classes)."""
-
-    BusinessFatal = "BusinessFatal"
-    BusinessImmediate = "BusinessImmediate"
-    BugFatal = "BugFatal"
-    BugRetryable = "BugRetryable"
-
-
-def error_class(status: int) -> ErrorClass:
-    """Red stub."""
-    raise NotImplementedError
+        super().__init__(code=key, grpc=status, extras=_args(args))
 
 
 class Immediate(CodedError):
-    """Red stub."""
+    """A business answer returned at once: "re-read and re-decide", the
+    answer was decided on state that has moved
+    (:attr:`ErrorClass.BusinessImmediate`). ABORTED under the handler's own
+    key and args, as angzarr-router's ``CodedError::immediate``. An outside
+    caller gets it at once, no retry and no dead letter; for a policy step
+    the runtime reloads and re-runs it. Never a policy's OnRefused."""
 
     def __init__(self, key: str, **args: object) -> None:
-        raise NotImplementedError
+        super().__init__(code=key, grpc=GrpcCode.ABORTED, extras=_args(args))
+
+
+class Bug(CodedError):
+    """A fatal bug: a defect, never a business answer
+    (:attr:`ErrorClass.BugFatal`). A diagnostic key and its args, crossing
+    as INTERNAL ``UNHANDLED_HANDLER_ERROR`` with the key as ``cause`` and
+    each arg as ``cause.<arg>`` (decision 14.37); the runtime alerts it and
+    dead-letters the input at once."""
+
+    def __init__(self, key: str, **args: object) -> None:
+        super().__init__(
+            code=CODE_UNHANDLED_HANDLER_ERROR,
+            grpc=GrpcCode.INTERNAL,
+            extras=_as_cause(key, args),
+        )
 
 
 class RetryableBug(CodedError):
-    """Red stub."""
+    """A retryable bug: a dependency is down, say
+    (:attr:`ErrorClass.BugRetryable`). The handler picks ``status``, given
+    positionally: UNAVAILABLE (resend), DEADLINE_EXCEEDED (resend only if
+    idempotent) or RESOURCE_EXHAUSTED (wait longer), as angzarr-router's
+    ``CodedError::retryable_bug``; any other is a :class:`ValueError`. It
+    goes out under that status as ``UNHANDLED_HANDLER_ERROR`` with the key
+    and args as its cause, like a :class:`Bug`; the runtime retries it with
+    capped backoff, then dead-letters it."""
 
     def __init__(self, key: str, status: int, /, **args: object) -> None:
-        raise NotImplementedError
+        if status not in _RETRYABLE_STATUS:
+            raise ValueError(
+                f"a retryable bug's status is one of "
+                f"({', '.join(sorted(code.name for code in _RETRYABLE_STATUS))}), "
+                f"not {status!r}"
+            )
+        super().__init__(
+            code=CODE_UNHANDLED_HANDLER_ERROR,
+            grpc=status,
+            extras=_as_cause(key, args),
+        )
 
 
 def any_decode_error(type_url: str, cause: BaseException) -> CodedError:
     """Report that a google.protobuf.Any payload failed to parse to its
     expected type. Generated dispatch thunks raise it when a command or event
-    Any cannot be decoded — a malformed payload is an invalid argument, not a
-    handler bug."""
+    Any cannot be decoded: ANY_DECODE_FAILED, an INTERNAL bug (decision
+    14.37: malformed input is a bug) naming the ``message_type``, the
+    protobuf runtime's own text carried verbatim as ``ext_err_txt``."""
     return CodedError(
         code=CODE_ANY_DECODE_FAILED,
-        message=f"decode Any {type_url!r}: {cause}",
-        grpc=GrpcCode.INVALID_ARGUMENT,
-        extras={"type_url": type_url},
+        grpc=GrpcCode.INTERNAL,
+        extras={"message_type": _type_name(type_url), "ext_err_txt": str(cause)},
     )
 
 
@@ -710,61 +782,76 @@ class ProcessManagerDispatch:
 # --- error model: CodedError <-> google.rpc.Status bytes ---
 
 
-def _build_status_bytes(
-    grpc: int, message: str, code: str, extras: dict | None
-) -> bytes:
+def _build_status_bytes(grpc: int, code: str, extras: dict | None) -> bytes:
     """Serialize a coded failure as google.rpc.Status bytes carrying an
     ErrorInfo detail — the exact shape the core decodes (and gRPC puts on the
-    wire). ErrorInfo Any uses the type.googleapis.com prefix the ABI pins."""
+    wire). The status message IS the key (decision 14.37); the ErrorInfo
+    carries it as its reason and the args as its metadata. ErrorInfo Any uses
+    the type.googleapis.com prefix the ABI pins."""
     info = error_details_pb2.ErrorInfo(
         reason=code, domain=ERROR_INFO_DOMAIN, metadata=extras or {}
     )
     any_info = any_pb2.Any()
     any_info.Pack(info)
-    status = status_pb2.Status(code=int(grpc), message=message, details=[any_info])
+    status = status_pb2.Status(code=int(grpc), message=code, details=[any_info])
     return status.SerializeToString()
+
+
+# The status a business refusal crosses the C ABI under. The pinned
+# angzarr-router's GrpcCode has no ALREADY_EXISTS, OUT_OF_RANGE or
+# PERMISSION_DENIED and turns a status it lacks INTERNAL, a bug, so those
+# cross as FAILED_PRECONDITION, still a refusal.
+_CROSSES_AS = {
+    GrpcCode.ALREADY_EXISTS: GrpcCode.FAILED_PRECONDITION,
+    GrpcCode.OUT_OF_RANGE: GrpcCode.FAILED_PRECONDITION,
+    GrpcCode.PERMISSION_DENIED: GrpcCode.FAILED_PRECONDITION,
+}
+
+
+def _panicked(exc: BaseException) -> CodedError:
+    """What an exception that escaped a handler crosses as:
+    UNHANDLED_HANDLER_ERROR with cause HANDLER_PANICKED (decision 14.37).
+    Its text stays in the local log, never on the wire."""
+    _log.error("handler_panicked: %r", exc, exc_info=exc)
+    return CodedError(
+        code=CODE_UNHANDLED_HANDLER_ERROR,
+        grpc=GrpcCode.INTERNAL,
+        extras={"cause": CODE_HANDLER_PANICKED},
+    )
 
 
 def _error_status(exc: BaseException) -> tuple[bytes, int]:
     """Map a handler exception to (Status bytes, negative gRPC code): a
-    CodedError keeps its code; any other exception is an unclassified failure
-    → UNHANDLED_HANDLER_ERROR."""
-    if isinstance(exc, CodedError):
-        grpc = exc.grpc or GrpcCode.INVALID_ARGUMENT
-        return _build_status_bytes(grpc, exc.message, exc.code, exc.extras), -int(grpc)
-    return (
-        _build_status_bytes(
-            GrpcCode.INTERNAL, str(exc), CODE_UNHANDLED_HANDLER_ERROR, None
-        ),
-        -int(GrpcCode.INTERNAL),
-    )
+    CodedError keeps its code and args; any other exception escaped the
+    handler (:func:`_panicked`)."""
+    if not isinstance(exc, CodedError):
+        exc = _panicked(exc)
+    grpc = _CROSSES_AS.get(exc.grpc, exc.grpc or GrpcCode.INVALID_ARGUMENT)
+    return _build_status_bytes(grpc, exc.code, exc.extras), -int(grpc)
 
 
 def _decode_status(data: bytes | None, ret: int) -> CodedError:
     """Turn google.rpc.Status bytes (with an ErrorInfo detail) back into a
-    CodedError. ``ret`` (the negative callback/dispatch return) is the gRPC
-    fallback when the bytes are absent or undecodable."""
-    code = ""
-    message = ""
+    CodedError: its ErrorInfo reason and metadata, or with no ErrorInfo its
+    message, which is the key. ``ret`` (the negative callback/dispatch
+    return) is the gRPC fallback when the bytes are absent or
+    undecodable."""
     grpc = -ret
-    extras: dict[str, str] = {}
-    if data:
-        status = status_pb2.Status()
-        try:
-            status.ParseFromString(data)
-        except DecodeError:
-            return CodedError(grpc=grpc)
-        message = status.message
-        if status.code != 0:
-            grpc = status.code
-        for detail in status.details:
-            if detail.Is(error_details_pb2.ErrorInfo.DESCRIPTOR):
-                info = error_details_pb2.ErrorInfo()
-                detail.Unpack(info)
-                code = info.reason
-                extras = dict(info.metadata)
-                break
-    return CodedError(code=code, message=message, grpc=grpc, extras=extras)
+    if not data:
+        return CodedError(grpc=grpc)
+    status = status_pb2.Status()
+    try:
+        status.ParseFromString(data)
+    except DecodeError:
+        return CodedError(grpc=grpc)
+    if status.code != 0:
+        grpc = status.code
+    for detail in status.details:
+        if detail.Is(error_details_pb2.ErrorInfo.DESCRIPTOR):
+            info = error_details_pb2.ErrorInfo()
+            detail.Unpack(info)
+            return CodedError(code=info.reason, grpc=grpc, extras=dict(info.metadata))
+    return CodedError(code=status.message, grpc=grpc)
 
 
 # --- type-erased invokers ---
@@ -787,8 +874,18 @@ def _decode_state(factory: Callable[[], object], state: any_pb2.Any):
     return msg
 
 
-def _fold_failure(message: str, page_index: int | None = None) -> bytes:
-    failure = abi_pb2.FoldFailure(message=message)
+def _fold_cause(exc: BaseException) -> str:
+    """The key a failing fold crosses as its cause (decision 14.37): a coded
+    failure's own key (a Bug's cause), HANDLER_PANICKED for anything else,
+    whose text stays in the local log. The ABI's FoldFailure carries the
+    key alone."""
+    if isinstance(exc, CodedError):
+        return exc.extras.get("cause", exc.code)
+    return _panicked(exc).extras["cause"]
+
+
+def _fold_failure(exc: BaseException, page_index: int | None = None) -> bytes:
+    failure = abi_pb2.FoldFailure(message=_fold_cause(exc))
     if page_index is not None:
         failure.page_index = page_index
     return failure.SerializeToString()
@@ -807,7 +904,7 @@ def _fold_invoker(factory, appliers: dict[str, ApplierThunk]) -> Invoker:
             call.ParseFromString(payload)
             state = _decode_state(factory, call.state)
         except BaseException as exc:  # noqa: BLE001 — answered as a FoldFailure
-            return _fold_failure(str(exc)), _FOLD_FAILED
+            return _fold_failure(exc), _FOLD_FAILED
         cover = _cover_of(call, "cover")
         applied = False
         for index, page in enumerate(call.pages):
@@ -820,7 +917,7 @@ def _fold_invoker(factory, appliers: dict[str, ApplierThunk]) -> Invoker:
                 with _handling(PageContext(cover=cover, sequence=page.sequence)):
                     thunk(state, page.payload)
             except BaseException as exc:  # noqa: BLE001 — answered as a FoldFailure
-                return _fold_failure(str(exc), index), _FOLD_FAILED
+                return _fold_failure(exc, index), _FOLD_FAILED
             applied = True
         if not applied:
             return None, _STATUS_OK_EMPTY
@@ -857,8 +954,10 @@ def _fact_invoker(factory, thunk: FactThunk) -> Invoker:
         state = _decode_state(factory, cax.state)
         record = thunk(any_pb2.Any(type_url=type_url, value=payload), state)
         if not isinstance(record, FactRecord):
-            raise TypeError(
-                f"fact handler for {type_url!r} returned {type(record).__name__}, not a FactRecord"
+            raise Bug(
+                CODE_HANDLER_WRONG_RESPONSE_KIND,
+                type_url=type_url,
+                actual_return_type=type(record).__name__,
             )
         return record.to_abi().SerializeToString(), _STATUS_OK
 
@@ -985,8 +1084,8 @@ def _trampoline(
             data, code = _error_status(
                 CodedError(
                     code=CODE_UNHANDLED_HANDLER_ERROR,
-                    message=f"no host callback registered for id {int(callback_id)}",
                     grpc=GrpcCode.INTERNAL,
+                    extras={"callback_id": str(int(callback_id))},
                 )
             )
             _write_out(out, data)
@@ -1089,8 +1188,6 @@ class Router:
             held_kind, held_name = self._component
             raise CodedError(
                 code=CODE_DUPLICATE_REGISTRATION,
-                message=f"this router already hosts its one component, the "
-                f"{held_kind} {held_name!r}",
                 grpc=GrpcCode.INVALID_ARGUMENT,
                 extras={"component": held_name, "kind": held_kind},
             )
