@@ -203,7 +203,10 @@ class CommandContext:
     command carried none. ``expected_sequence`` and ``conflict_resolution``
     are the resolved ``Handling`` (types.proto); ``conflict`` is set only
     under AGGREGATE_HANDLES (under STRICT there is no window, and under
-    COMMUTATIVE the router settles it)."""
+    COMMUTATIVE the router settles it). ``command_id``, ``correlation_id``
+    and ``fact_origin`` are the input's identity as its ContextualCommand's
+    page delivered it, None when the page carries none, as the router's
+    CommandContext has them."""
 
     next_sequence: int = 0
     had_prior_events: bool = False
@@ -211,6 +214,8 @@ class CommandContext:
     expected_sequence: int = 0
     conflict_resolution: int = types_pb2.CONFLICT_RESOLUTION_UNSPECIFIED
     conflict: Conflict | None = None
+    # The input's identity, as delivered in its ContextualCommand's page:
+    # its command id, its correlation and, for a fact, its origin.
     command_id: types_pb2.UUID | None = None
     correlation_id: types_pb2.UUID | None = None
     fact_origin: types_pb2.FactOrigin | None = None
@@ -235,6 +240,23 @@ _CURRENT_PAGE: ContextVar[PageContext | None] = ContextVar(
 )
 
 
+_CURRENT_INPUT: ContextVar[types_pb2.CommandPage | None] = ContextVar(
+    "angzarr_router_ffi_current_input", default=None
+)
+
+
+@contextmanager
+def _delivering(page: types_pb2.CommandPage) -> Iterator[None]:
+    """Make ``page`` the input being dispatched while the block runs: what a
+    command handler's CommandContext reads its identity from (the C ABI's
+    CommandContextAux carries no identity; the ContextualCommand does)."""
+    token = _CURRENT_INPUT.set(page)
+    try:
+        yield
+    finally:
+        _CURRENT_INPUT.reset(token)
+
+
 @contextmanager
 def _handling(ctx: PageContext) -> Iterator[None]:
     """Make ``ctx`` the current page context while the block runs."""
@@ -243,6 +265,11 @@ def _handling(ctx: PageContext) -> Iterator[None]:
         yield
     finally:
         _CURRENT_PAGE.reset(token)
+
+
+def _present(msg, name: str):
+    """``msg``'s message field ``name``, or None when it is unset."""
+    return getattr(msg, name) if msg.HasField(name) else None
 
 
 def _cover_of(msg, name: str) -> types_pb2.Cover | None:
@@ -279,6 +306,7 @@ def _command_context(cax) -> CommandContext:
     conflict = None
     if cax.conflict_resolution == types_pb2.CONFLICT_RESOLUTION_AGGREGATE_HANDLES:
         conflict = Conflict(cax.window, cax.conflict_nonce)
+    page = _CURRENT_INPUT.get() or types_pb2.CommandPage()
     return CommandContext(
         next_sequence=cax.next_sequence,
         had_prior_events=cax.had_prior_events,
@@ -286,6 +314,9 @@ def _command_context(cax) -> CommandContext:
         expected_sequence=cax.expected_sequence,
         conflict_resolution=cax.conflict_resolution,
         conflict=conflict,
+        command_id=_present(page, "command_id"),
+        correlation_id=_present(page, "correlation_id"),
+        fact_origin=_present(page, "fact_origin"),
     )
 
 
@@ -1006,11 +1037,12 @@ class Router:
         """Run one ContextualCommand (a command, or a fact in the page's Fact
         arm) through the core and return the CommandHandlerResponse, or raise
         a CodedError decoded from the core's failure."""
-        ret, resp_bytes = self._call(
-            lib.angzarr_router_dispatch,
-            contextual_command.SerializeToString(),
-            PageContext(cover=_cover_of(contextual_command.command, "cover")),
-        )
+        with _delivering(contextual_command.command.page):
+            ret, resp_bytes = self._call(
+                lib.angzarr_router_dispatch,
+                contextual_command.SerializeToString(),
+                PageContext(cover=_cover_of(contextual_command.command, "cover")),
+            )
         if ret == 0:
             resp = command_handler_pb2.CommandHandlerResponse()
             if resp_bytes:
