@@ -103,6 +103,36 @@ prepare: proto router-lib conformance-gen
 test: prepare
     cd {{TOP}} && uv run --extra dev pytest tests/ -q
 
+# The test gate the git hooks run (pre-commit, pre-merge-commit), under the
+# red-on-branches rule: red tests (pytest exit 1, failing tests) are committed
+# on any branch but the default one, with a warning that the branch cannot
+# merge until they pass, and refused on the default branch and on a merge
+# commit. Everything else (preparing the environment, collection errors, an
+# interrupted run) fails everywhere.
+test-commit merging="":
+    #!/usr/bin/env bash
+    set -uo pipefail
+    cd {{TOP}}
+    just prepare || exit 1
+    uv run --extra dev pytest tests/ -q
+    status=$?
+    [ "$status" -eq 0 ] && exit 0
+    [ "$status" -ne 1 ] && exit "$status"
+    default="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"
+    default="${default#origin/}"
+    default="${default:-main}"
+    branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo HEAD)"
+    if [ -n "{{merging}}" ]; then
+        echo "FAIL tests: red tests cannot be merged" >&2
+        exit 1
+    fi
+    if [ "$branch" = "$default" ] || [ "$branch" = "HEAD" ]; then
+        echo "FAIL tests: red tests cannot be committed on $branch; commit them on a branch" >&2
+        exit 1
+    fi
+    echo "RED  tests: red tests committed on $branch, allowed off $default; $branch cannot merge into $default until they pass" >&2
+    exit 0
+
 # Full suite with verbose output
 test-verbose: prepare
     cd {{TOP}} && uv run --extra dev pytest tests/ -v

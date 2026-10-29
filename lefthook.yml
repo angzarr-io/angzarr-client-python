@@ -2,7 +2,8 @@
 # https://github.com/evilmartians/lefthook
 #
 # Setup: lefthook install
-# Bypass: git commit --no-verify (or LEFTHOOK=0 git commit)
+# Never bypass: a failing hook is a finding. Red tests are not one off the
+# default branch (`just test-commit`).
 
 pre-commit:
   parallel: false
@@ -15,8 +16,16 @@ pre-commit:
       run: just archlint
     scan-secrets:
       run: just scan-secrets
+    # Red tests pass on a branch other than the default one, with a
+    # warning, and fail on it (`just test-commit` says how).
     test:
-      run: just test
+      run: just test-commit
+
+# A merge commit is tested as a commit is, and red tests fail it.
+pre-merge-commit:
+  commands:
+    test:
+      run: just test-commit merging
 
 # Mutation testing runs on a weekly schedule
 # (.github/workflows/mutation.yml) rather than gating every push.

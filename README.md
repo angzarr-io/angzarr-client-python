@@ -101,6 +101,24 @@ grace period. A coded failure from a handler travels as its gRPC status, with
 a `google.rpc.Status` / `ErrorInfo` (reason = the error code) in
 `grpc-status-details-bin`.
 
+### As a child of an in-app runtime
+
+angzarr-embedded (the Rust runtime that runs inside an application) launches
+a Python component as a child process (by default `uv run --locked <entry
+point>`) and calls it over gRPC on a Unix socket. The child calls
+`run_child(host)` (`angzarr_client.child`) instead of `host.run()`:
+
+- the socket is `$ANGZARR_SOCKET` (made absolute), else a fresh path in the
+  system temporary directory;
+- once the host is SERVING, the child writes exactly one line to stdout,
+  `angzarr-handshake v1 unix:<absolute-socket-path>`, then closes stdout.
+  Nothing else ever goes to stdout: logs and stray prints go to stderr. A
+  child that exits without the line failed to start, and its stderr says why;
+- it serves until stdin reaches end of file or it gets SIGTERM or SIGINT,
+  then stops gracefully and removes the socket.
+
+A parent parses the line with `parse_handshake`; `v1` is the format version.
+
 ## Coordinator clients
 
 ```python
