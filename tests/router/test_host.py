@@ -13,7 +13,7 @@ from google.rpc import error_details_pb2, status_pb2
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
 from angzarr_client import ComponentHost, ConfigurationError, PassThroughUpcaster
-from angzarr_client.error_codes import codes, messages
+from angzarr_client.error_codes import codes
 from angzarr_client.host import (
     COMMAND_HANDLER_SERVICE,
     COMPONENT_SERVICE,
@@ -153,7 +153,13 @@ def test_an_unclassified_handler_failure_is_a_coded_internal_error(started):
     stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
     with pytest.raises(grpc.RpcError) as err:
         stub.Handle(builders.fail_hard_command(), timeout=5)
-    assert _error_info(err.value).reason == "UNHANDLED_HANDLER_ERROR"
+    assert err.value.details() == "UNHANDLED_HANDLER_ERROR"
+    info = _error_info(err.value)
+    assert (info.reason, info.metadata["cause"]) == (
+        "UNHANDLED_HANDLER_ERROR",
+        "HANDLER_PANICKED",
+    )
+    assert "hard failure" not in dict(info.metadata).values()
 
 
 def test_a_fact_without_a_fact_handler_is_refused(started):
@@ -273,32 +279,43 @@ def test_pass_through_upcaster_returns_the_events_unchanged(started):
     assert list(resp.events) == list(events)
 
 
-def test_an_upcaster_coded_error_travels_as_its_status(started):
-    error = CodedError(
-        code="LEGACY_SHAPE",
-        message="unknown legacy shape",
-        grpc=GrpcCode.FAILED_PRECONDITION,
-        extras={"k": "v"},
-    )
+def test_an_upcaster_coded_error_travels_as_its_key_and_args(started):
+    error = CodedError("LEGACY_SHAPE", GrpcCode.FAILED_PRECONDITION, {"k": "v"})
     channel = started(_upcaster_host(_FailingUpcaster(error)))
     stub = upcaster_pb2_grpc.UpcasterServiceStub(channel)
     with pytest.raises(grpc.RpcError) as err:
         stub.Upcast(upcaster_pb2.UpcastRequest(), timeout=5)
     assert err.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-    assert err.value.details() == "unknown legacy shape"
+    # Decision 14.37: the status message IS the reason key.
+    assert err.value.details() == "LEGACY_SHAPE"
     info = _error_info(err.value)
     assert (info.reason, dict(info.metadata)) == ("LEGACY_SHAPE", {"k": "v"})
 
 
-def test_an_unexpected_exception_is_internal_handler_panicked(started):
+def test_an_unexpected_exception_is_unhandled_caused_by_a_panic(started):
+    # Decision 14.37: an escaped exception is UNHANDLED_HANDLER_ERROR with
+    # cause HANDLER_PANICKED; its text stays in the host's own log.
     channel = started(_upcaster_host(_FailingUpcaster(RuntimeError("boom"))))
     stub = upcaster_pb2_grpc.UpcasterServiceStub(channel)
     with pytest.raises(grpc.RpcError) as err:
         stub.Upcast(upcaster_pb2.UpcastRequest(), timeout=5)
     assert err.value.code() == grpc.StatusCode.INTERNAL
-    assert err.value.details() == messages.HANDLER_PANICKED
+    assert err.value.details() == codes.UNHANDLED_HANDLER_ERROR
     info = _error_info(err.value)
-    assert (info.reason, info.metadata["error"]) == (codes.HANDLER_PANICKED, "boom")
+    assert (info.reason, dict(info.metadata)) == (
+        codes.UNHANDLED_HANDLER_ERROR,
+        {"cause": codes.HANDLER_PANICKED},
+    )
+    raw = dict(err.value.trailing_metadata())["grpc-status-details-bin"]
+    assert b"boom" not in raw
+
+
+def test_the_host_puts_no_catalog_text_on_the_wire():
+    # error_codes.messages is display-only (decision 14.37, ER-4): the
+    # host renders nothing from it.
+    import angzarr_client.host as host_module
+
+    assert not hasattr(host_module, "messages")
 
 
 # --- services, health and lifecycle ------------------------------------------
@@ -366,6 +383,7 @@ def test_a_host_given_a_second_component_refuses_to_start(first, second):
         with pytest.raises(ConfigurationError) as exc:
             host.start("127.0.0.1:0")
         assert exc.value.code == codes.DUPLICATE_REGISTRATION
+        assert str(exc.value) == codes.DUPLICATE_REGISTRATION
         assert exc.value.details == {
             "registered": first_table.name,
             "refused": second_table.name,
@@ -442,8 +460,12 @@ def test_start_refuses_an_upcaster_only_host_and_a_second_start():
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION).add_upcaster(
         PassThroughUpcaster()
     )
-    with pytest.raises(ConfigurationError, match=codes.NO_COMPONENTS_REGISTERED):
+    with pytest.raises(ConfigurationError) as refused:
         host.start("127.0.0.1:0")
+    assert (refused.value.code, str(refused.value)) == (
+        codes.NO_COMPONENTS_REGISTERED,
+        codes.NO_COMPONENTS_REGISTERED,
+    )
     host = _counter_host()
     host.start("127.0.0.1:0")
     try:

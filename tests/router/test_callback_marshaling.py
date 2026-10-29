@@ -12,6 +12,7 @@ import pytest
 from angzarr_client.proto.io.angzarr.v1 import process_manager_pb2, types_pb2
 from angzarr_client.router import (
     AggregateDispatch,
+    Bug,
     CodedError,
     FactRecord,
     GrpcCode,
@@ -354,7 +355,9 @@ def test_a_failing_fold_is_internal_naming_the_failing_page():
     assert exc.value.extras["sequence"] == "5"
     assert exc.value.extras["type_url"] == _INCREASED_URL
     assert exc.value.extras["state_type_url"] == "/test.counter.CounterState"
-    assert exc.value.extras["fold_message"] == "cannot fold a second increase"
+    # The fold's failure crosses as its cause key, never its text (decision
+    # 14.37); the pinned angzarr-router names it fold_message.
+    assert exc.value.extras["fold_message"] == "HANDLER_PANICKED"
 
 
 def test_a_failing_projector_fold_is_internal_naming_the_failing_page():
@@ -374,7 +377,26 @@ def test_a_failing_projector_fold_is_internal_naming_the_failing_page():
 
     assert exc.value.grpc == GrpcCode.INTERNAL
     assert exc.value.extras["sequence"] == "9"
-    assert exc.value.extras["fold_message"] == "projection broke"
+    assert exc.value.extras["fold_message"] == "HANDLER_PANICKED"
+
+
+def test_a_fold_failing_with_a_coded_bug_crosses_its_key_as_the_cause():
+    def fold(_projection, _event):
+        raise Bug("PROJECTION_INVARIANT_BROKEN", count=-1)
+
+    projector = ProjectorDispatch("Tracker", counter_pb2.CounterState).on_event(
+        builders.FQ_INCREASED, fold
+    )
+    book = types_pb2.EventBook()
+    book.cover.domain = "counter"
+    book.pages.append(_event_page(9))
+    with Router() as router:
+        router.register_projector(projector)
+        with pytest.raises(CodedError) as exc:
+            router.dispatch_projector(book)
+
+    assert exc.value.grpc == GrpcCode.INTERNAL
+    assert exc.value.extras["fold_message"] == "PROJECTION_INVARIANT_BROKEN"
 
 
 def test_a_state_that_is_not_a_protobuf_message_is_refused_at_registration():
@@ -557,7 +579,7 @@ def test_an_unknown_type_after_upcasting_names_both_type_urls():
             router.dispatch(cc)
 
     assert exc.value.grpc == GrpcCode.INVALID_ARGUMENT
-    assert exc.value.message == "no handler for type URL /test.counter.FailHard"
+    assert exc.value.extras["type_url"] == "/test.counter.FailHard"
     assert exc.value.extras["upcast_type_url"] == "/test.counter.Reserve"
 
 
@@ -632,9 +654,11 @@ def test_a_fact_handler_returning_a_non_record_names_the_type_in_its_failure():
         with pytest.raises(CodedError) as exc:
             router.dispatch(_ledger_fact())
 
+    # A bug the binding finds in the handler: its key and args, no text.
     assert exc.value.code == "UNHANDLED_HANDLER_ERROR"
-    assert _INCREASED_URL in exc.value.message
-    assert "not a FactRecord" in exc.value.message
+    assert exc.value.extras["cause"] == "HANDLER_WRONG_RESPONSE_KIND"
+    assert exc.value.extras["cause.type_url"] == _INCREASED_URL
+    assert exc.value.extras["cause.actual_return_type"] == "Any"
 
 
 # --- the dispatch-level page context ---
@@ -834,3 +858,4 @@ def test_a_refused_second_component_names_the_first_and_drops_its_callbacks():
 
     assert exc.value.code == "DUPLICATE_REGISTRATION"
     assert exc.value.extras == {"component": "Ledger", "kind": "aggregate"}
+    assert str(exc.value) == "DUPLICATE_REGISTRATION component=Ledger kind=aggregate"

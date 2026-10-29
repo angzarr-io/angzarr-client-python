@@ -182,7 +182,7 @@ def _no_events(world):
 def _refused_naming(world, url):
     assert world.err is not None, "expected a refusal"
     assert world.err.grpc == GrpcCode.INVALID_ARGUMENT
-    assert world.err.message == f"no handler for type URL {url}"
+    assert world.err.extras["type_url"] == url
 
 
 @then(parsers.parse("the handler saw no prior history, at next sequence {seq:d}"))

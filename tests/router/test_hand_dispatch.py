@@ -50,7 +50,8 @@ def test_handler_base_exception_surfaces_as_internal_failure():
 
     assert exc.value.code == "UNHANDLED_HANDLER_ERROR"
     assert exc.value.grpc == GrpcCode.INTERNAL
-    assert "handler aborted" in exc.value.message
+    assert exc.value.extras["cause"] == "HANDLER_PANICKED"
+    assert "handler aborted" not in str(exc.value)
 
 
 def test_the_binding_hands_handlers_no_destinations():

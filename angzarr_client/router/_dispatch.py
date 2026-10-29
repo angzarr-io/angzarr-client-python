@@ -67,15 +67,19 @@ class GrpcCode(enum.IntEnum):
     """The numeric gRPC status codes carried with a coded error. Plain ints
     so the binding depends only on the protobuf runtime, not grpcio."""
 
+    UNKNOWN = 2
     INVALID_ARGUMENT = 3
+    DEADLINE_EXCEEDED = 4
     NOT_FOUND = 5
     ALREADY_EXISTS = 6
     PERMISSION_DENIED = 7
+    RESOURCE_EXHAUSTED = 8
     FAILED_PRECONDITION = 9
     ABORTED = 10
     OUT_OF_RANGE = 11
     UNIMPLEMENTED = 12
     INTERNAL = 13
+    UNAVAILABLE = 14
     DATA_LOSS = 15
 
 
@@ -171,6 +175,34 @@ class Bug(CodedError):
             grpc=GrpcCode.INTERNAL,
             extras=cause,
         )
+
+
+class ErrorClass(enum.Enum):
+    """Red stub (decision 14.37's four classes)."""
+
+    BusinessFatal = "BusinessFatal"
+    BusinessImmediate = "BusinessImmediate"
+    BugFatal = "BugFatal"
+    BugRetryable = "BugRetryable"
+
+
+def error_class(status: int) -> ErrorClass:
+    """Red stub."""
+    raise NotImplementedError
+
+
+class Immediate(CodedError):
+    """Red stub."""
+
+    def __init__(self, key: str, **args: object) -> None:
+        raise NotImplementedError
+
+
+class RetryableBug(CodedError):
+    """Red stub."""
+
+    def __init__(self, key: str, status: int, /, **args: object) -> None:
+        raise NotImplementedError
 
 
 def any_decode_error(type_url: str, cause: BaseException) -> CodedError:
@@ -414,8 +446,7 @@ def _state_type(factory: Callable[[], object], component: str) -> str:
     state = factory()
     if not isinstance(state, Message):
         raise TypeError(
-            f"{component}: state must be a protobuf message, "
-            f"got {type(state).__name__}"
+            f"{component}: state must be a protobuf message, got {type(state).__name__}"
         )
     return state.DESCRIPTOR.full_name
 
