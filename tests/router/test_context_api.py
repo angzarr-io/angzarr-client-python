@@ -96,6 +96,25 @@ def test_command_handler_reads_the_inputs_identity_from_the_context():
     ]
 
 
+def test_command_handler_reads_a_fact_origin_its_page_carries():
+    """A fact origin, where the input's page carries one, reaches the
+    context as delivered."""
+    seen = []
+
+    def handle(cmd, state, cctx):
+        seen.append(cctx.fact_origin)
+
+    dispatch = AggregateDispatch("Ledger", "ledger", _ledger_rebuilder())
+    dispatch.on_command(builders.FQ_INCREASE_BY, handle)
+    command = _ledger_command("ledger-1")
+    command.command.page.fact_origin.external_id = "stripe:evt_1"
+    with Router() as router:
+        router.register_aggregate(dispatch)
+        router.dispatch(command)
+
+    assert seen == [types_pb2.FactOrigin(external_id="stripe:evt_1")]
+
+
 def test_a_handler_outside_a_dispatch_has_no_identity():
     """The identity is the dispatch's: a CommandContext built by hand has
     none."""
