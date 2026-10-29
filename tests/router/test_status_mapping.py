@@ -26,9 +26,14 @@ from angzarr_client.router import (
     any_decode_error,
     error_class,
 )
+from angzarr_client.proto.io.angzarr.router.ffi.v1 import abi_pb2
+from angzarr_client.router._abi import ffi
 from angzarr_client.router._dispatch import (
+    _consume_out,
     _decode_status,
     _error_status,
+    _fold_failure,
+    _trampoline,
 )
 
 
@@ -450,3 +455,32 @@ def test_a_status_round_trips_through_the_error_model():
     err = _decode_status(data, ret)
 
     assert (err.code, err.grpc, err.extras) == ("STOCK_MISSING", 5, {"k": "v"})
+
+
+# --- what a failing fold and an unknown callback cross as ---
+
+
+@pytest.mark.parametrize(
+    ("raised", "cause"),
+    [
+        (Bug("STATE_INVARIANT_BROKEN", count=-1), "STATE_INVARIANT_BROKEN"),
+        (Rejection("NOT_FOLDABLE"), "NOT_FOLDABLE"),
+        (ValueError("cannot fold"), "HANDLER_PANICKED"),
+    ],
+)
+def test_a_failing_fold_crosses_its_cause_key_and_the_page(raised, cause):
+    failure = abi_pb2.FoldFailure.FromString(_fold_failure(raised, 2))
+
+    assert (failure.message, failure.page_index) == (cause, 2)
+
+
+def test_a_callback_id_with_no_invoker_is_an_unhandled_error_naming_it():
+    out = ffi.new("angzarr_buf*")
+
+    ret = _trampoline(987654321, ffi.NULL, 0, ffi.NULL, 0, ffi.NULL, 0, out)
+
+    data = _consume_out(out)
+    status, info = _parse(data)
+    assert ret == -13
+    assert status.message == "UNHANDLED_HANDLER_ERROR"
+    assert dict(info.metadata) == {"callback_id": "987654321"}

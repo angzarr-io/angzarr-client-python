@@ -357,4 +357,4 @@ def _nothing_served(world: _World) -> None:
 @then("starting fails with a configuration error")
 def _config_error(world: _World) -> None:
     assert isinstance(world.start_error, ConfigurationError)
-    assert "no components" in str(world.start_error)
+    assert world.start_error.code == "NO_COMPONENTS_REGISTERED"

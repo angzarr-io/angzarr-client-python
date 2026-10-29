@@ -384,7 +384,6 @@ def test_the_default_logger_is_the_host_modules_structlog_logger(
 
 _FAILED = CodedError(
     code="SCRIPTED_FAILURE",
-    message="scripted failure",
     grpc=GrpcCode.FAILED_PRECONDITION,
     extras={"k": "v"},
 )
@@ -436,14 +435,12 @@ def test_every_rpc_reports_a_coded_router_failure_as_its_status(hosts, call):
     with pytest.raises(grpc.RpcError) as err:
         invoke(channel)
     assert err.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-    assert err.value.details() == "scripted failure"
+    assert err.value.details() == "SCRIPTED_FAILURE"
     info = _error_info(err.value)
     assert (info.reason, dict(info.metadata)) == ("SCRIPTED_FAILURE", {"k": "v"})
 
 
-_UNIMPLEMENTED = CodedError(
-    code="NO_HANDLER_REGISTERED", message="nothing", grpc=GrpcCode.UNIMPLEMENTED
-)
+_UNIMPLEMENTED = CodedError(code="NO_HANDLER_REGISTERED", grpc=GrpcCode.UNIMPLEMENTED)
 
 
 def test_a_process_manager_acknowledges_an_unimplemented_dispatch(hosts):
