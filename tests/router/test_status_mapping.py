@@ -5,6 +5,7 @@ ErrorInfo) mapping that crosses the FFI in both directions."""
 
 from __future__ import annotations
 
+import pytest
 from google.protobuf import any_pb2
 from google.rpc import error_details_pb2, status_pb2
 
@@ -81,6 +82,85 @@ def test_a_rejection_is_a_failed_precondition_carrying_its_key_and_args():
     assert err.message == "VALUE_NOT_POSITIVE"
     assert err.grpc == GrpcCode.FAILED_PRECONDITION
     assert err.extras == {"amount": "0"}
+
+
+# A rejection's status: one of the business set (the owner's ruling,
+# 2026-10-29), FAILED_PRECONDITION unless given.
+
+
+def _rejected_under(status, crosses):
+    err = Rejection("SEAT_TAKEN", status, seat=3)
+
+    assert err.code == "SEAT_TAKEN"
+    assert err.grpc == crosses
+    assert err.extras == {"seat": "3"}
+    data, ret = _error_status(err)
+    wire, info = _parse(data)
+    assert (wire.code, ret) == (int(crosses), -int(crosses))
+    assert (info.reason, dict(info.metadata)) == ("SEAT_TAKEN", {"seat": "3"})
+
+
+def test_a_rejection_under_failed_precondition_crosses_as_it():
+    _rejected_under(GrpcCode.FAILED_PRECONDITION, GrpcCode.FAILED_PRECONDITION)
+
+
+def test_a_rejection_under_invalid_argument_crosses_as_it():
+    _rejected_under(GrpcCode.INVALID_ARGUMENT, GrpcCode.INVALID_ARGUMENT)
+
+
+def test_a_rejection_under_not_found_crosses_as_it():
+    _rejected_under(GrpcCode.NOT_FOUND, GrpcCode.NOT_FOUND)
+
+
+# angzarr-router's GrpcCode has no ALREADY_EXISTS, OUT_OF_RANGE or
+# PERMISSION_DENIED, and turns a status it has no variant for INTERNAL, a
+# bug: a rejection under one crosses as FAILED_PRECONDITION, still a
+# refusal.
+
+
+def test_a_rejection_under_already_exists_crosses_as_failed_precondition():
+    assert GrpcCode.ALREADY_EXISTS == 6
+    _rejected_under(GrpcCode.ALREADY_EXISTS, GrpcCode.FAILED_PRECONDITION)
+
+
+def test_a_rejection_under_out_of_range_crosses_as_failed_precondition():
+    assert GrpcCode.OUT_OF_RANGE == 11
+    _rejected_under(GrpcCode.OUT_OF_RANGE, GrpcCode.FAILED_PRECONDITION)
+
+
+def test_a_rejection_under_permission_denied_crosses_as_failed_precondition():
+    assert GrpcCode.PERMISSION_DENIED == 7
+    _rejected_under(GrpcCode.PERMISSION_DENIED, GrpcCode.FAILED_PRECONDITION)
+
+
+def test_a_rejections_status_may_be_its_number():
+    assert Rejection("SEAT_TAKEN", 5).grpc == GrpcCode.NOT_FOUND
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        GrpcCode.INTERNAL,
+        GrpcCode.DATA_LOSS,
+        GrpcCode.ABORTED,
+        GrpcCode.UNIMPLEMENTED,
+        0,  # OK
+        2,  # UNKNOWN
+        4,  # DEADLINE_EXCEEDED
+        8,  # RESOURCE_EXHAUSTED
+        14,  # UNAVAILABLE
+    ],
+)
+def test_a_rejection_outside_the_business_set_is_refused_at_construction(status):
+    with pytest.raises(ValueError, match="business"):
+        Rejection("SEAT_TAKEN", status)
+
+
+def test_an_arg_named_status_is_an_arg_not_the_rejections_status():
+    err = Rejection("SEAT_TAKEN", status="open")
+
+    assert err.grpc == GrpcCode.FAILED_PRECONDITION
+    assert err.extras == {"status": "open"}
 
 
 def test_a_bug_is_unhandled_handler_error_with_its_key_and_args_as_cause():
