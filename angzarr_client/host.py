@@ -9,9 +9,10 @@ only. An application registers its component (a generated
 ``new_<component>_dispatch(handler)`` table, or a hand-built one) and,
 optionally, an upcaster and its own gRPC services; the host exposes:
 
-- ``ComponentService``: Describe, answered from the router's descriptor of
-  the component. The coordinator pulls it; the host never calls its
-  coordinator. The component carries the binary's build version, given as
+- ``ComponentService``: Describe, answered with the ComponentDescriptor
+  angzarr-cli generated for the component, given with it, unchanged
+  (decision 14.42). The coordinator pulls it and validates it; the host
+  never calls its coordinator. The component carries the binary's build version, given as
   ``ComponentHost(rules_version=...)``;
 - the component's kind service: ``CommandHandlerService`` (an aggregate or
   a process manager, a domain: Handle, for commands and facts alike),
@@ -177,15 +178,11 @@ class _CommandHandlerServicer(command_handler_pb2_grpc.CommandHandlerServiceServ
 
 
 class _ComponentServicer(component_pb2_grpc.ComponentServiceServicer):
-    def __init__(self, router, dispatcher: _Dispatcher) -> None:
-        self._router = router
-        self._dispatcher = dispatcher
-
-    def _describe(self, _request):
-        return self._router.component_descriptor()
+    def __init__(self, descriptor) -> None:
+        self._descriptor = descriptor
 
     async def Describe(self, request, context):
-        return await self._dispatcher.call(context, self._describe, request)
+        return self._descriptor
 
 
 class _PolicyServicer(policy_pb2_grpc.PolicyServiceServicer):
@@ -270,6 +267,9 @@ class ComponentHost:
         self._log = logger if logger is not None else structlog.get_logger(__name__)
         # The one component's kind service, once registered.
         self._kind: str | None = None
+        #: The hosted component's generated ComponentDescriptor, which
+        #: Describe answers unchanged; None before one is registered.
+        self.descriptor = None
         self._component_name: str | None = None
         # Components registered after the first: never hosted; start()
         # refuses while any is.
@@ -288,33 +288,36 @@ class ComponentHost:
 
     # --- registration --------------------------------------------------
 
-    def add_aggregate(self, dispatch) -> ComponentHost:
-        """Register an aggregate's dispatch table; serves CommandHandlerService."""
-        if self._claim(dispatch):
-            self.router.register_aggregate(self._versioned(dispatch))
-            self._kind = COMMAND_HANDLER_SERVICE
-        return self
+    def add_aggregate(self, dispatch, descriptor) -> ComponentHost:
+        """Register an aggregate's dispatch table and its descriptor; serves
+        CommandHandlerService."""
+        return self._add(dispatch, descriptor, "aggregate", COMMAND_HANDLER_SERVICE)
 
-    def add_policy(self, dispatch) -> ComponentHost:
-        """Register a policy's dispatch table; serves PolicyService."""
-        if self._claim(dispatch):
-            self.router.register_policy(self._versioned(dispatch))
-            self._kind = POLICY_SERVICE
-        return self
+    def add_policy(self, dispatch, descriptor) -> ComponentHost:
+        """Register a policy's dispatch table and its descriptor; serves
+        PolicyService."""
+        return self._add(dispatch, descriptor, "policy", POLICY_SERVICE)
 
-    def add_process_manager(self, dispatch) -> ComponentHost:
-        """Register a process manager's dispatch table: a domain, so it
-        serves CommandHandlerService (decision 14.31)."""
-        if self._claim(dispatch):
-            self.router.register_process_manager(self._versioned(dispatch))
-            self._kind = COMMAND_HANDLER_SERVICE
-        return self
+    def add_process_manager(self, dispatch, descriptor) -> ComponentHost:
+        """Register a process manager's dispatch table and its descriptor:
+        a domain, so it serves CommandHandlerService (decision 14.31)."""
+        return self._add(
+            dispatch, descriptor, "process_manager", COMMAND_HANDLER_SERVICE
+        )
 
-    def add_projector(self, dispatch) -> ComponentHost:
-        """Register a projector's dispatch table; serves ProjectorService."""
+    def add_projector(self, dispatch, descriptor) -> ComponentHost:
+        """Register a projector's dispatch table and its descriptor; serves
+        ProjectorService."""
+        return self._add(dispatch, descriptor, "projector", PROJECTOR_SERVICE)
+
+    def _add(self, dispatch, descriptor, kind: str, service: str) -> ComponentHost:
+        """Register the host's one component: ``descriptor`` is the
+        ComponentDescriptor angzarr-cli generated for it, which Describe
+        answers unchanged (decision 14.42)."""
         if self._claim(dispatch):
-            self.router.register_projector(self._versioned(dispatch))
-            self._kind = PROJECTOR_SERVICE
+            getattr(self.router, f"register_{kind}")(self._versioned(dispatch))
+            self._kind = service
+            self.descriptor = descriptor
         return self
 
     def _claim(self, dispatch) -> bool:
@@ -491,7 +494,7 @@ class ComponentHost:
         server = grpc.aio.server()
         router = self.router
         component_pb2_grpc.add_ComponentServiceServicer_to_server(
-            _ComponentServicer(router, dispatcher), server
+            _ComponentServicer(self.descriptor), server
         )
         if self._kind == COMMAND_HANDLER_SERVICE:
             command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server(

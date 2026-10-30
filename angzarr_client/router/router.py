@@ -23,10 +23,6 @@ _AGGREGATE = types_pb2.COMPONENT_KIND_AGGREGATE
 _PROCESS_MANAGER = types_pb2.COMPONENT_KIND_PROCESS_MANAGER
 _POLICY = types_pb2.COMPONENT_KIND_POLICY
 _PROJECTOR = types_pb2.COMPONENT_KIND_PROJECTOR
-_STRATEGIES = (
-    types_pb2.CONFLICT_RESOLUTION_STRICT,
-    types_pb2.CONFLICT_RESOLUTION_AGGREGATE_HANDLES,
-)
 
 
 def _kind_name(kind: int) -> str:
@@ -95,25 +91,3 @@ class Router:
     def dispatch_projector(self, book: types_pb2.EventBook):
         """``ProjectorService.Handle``: a book for the hosted projector."""
         return self._hosted(_PROJECTOR).handle(book)
-
-    def component_descriptor(self) -> types_pb2.ComponentDescriptor:
-        """What the hosted component says of itself (its name, kind, build
-        version, inputs and, for an aggregate or a process manager, its state
-        type and strategies), answered unjudged: the coordinator validates
-        it (decision 14.42)."""
-        c = self._hosted(_AGGREGATE, _PROCESS_MANAGER, _POLICY, _PROJECTOR)
-        desc = types_pb2.ComponentDescriptor(
-            name=c.name, kind=c.kind, rules_version=c.rules_version
-        )
-        if c.kind == _POLICY:
-            desc.inputs.add(domain=c.input_domain)
-            desc.output_domain = c.output_domain
-        elif c.kind == _PROJECTOR:
-            desc.inputs.extend(types_pb2.Target(domain=d) for d in c.domains or ["*"])
-        else:
-            desc.state.type_url = "/" + c.rebuilder.factory().DESCRIPTOR.full_name
-            commutative = (
-                [types_pb2.CONFLICT_RESOLUTION_COMMUTATIVE] if c.changed else []
-            )
-            desc.state.options.conflict_resolutions.extend([*_STRATEGIES, *commutative])
-        return desc

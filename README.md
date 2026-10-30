@@ -52,12 +52,13 @@ Implement the stub and host it:
 ```python
 from angzarr_client import ComponentHost, configure_logging
 from myapp._version import __version__  # versionator output emit python > myapp/_version.py
+from myapp._descriptor import DESCRIPTOR  # the ComponentDescriptor the CLI generated
 from myapp._gen.my.v1.thing_aggregate_angzarr import new_thing_aggregate_dispatch
 from myapp.logic_impl import ThingLogicImpl
 
 configure_logging()
 host = ComponentHost(rules_version=__version__)
-host.add_aggregate(new_thing_aggregate_dispatch(ThingLogicImpl()))
+host.add_aggregate(new_thing_aggregate_dispatch(ThingLogicImpl()), DESCRIPTOR)
 # An application's own gRPC service, served and health-reported alongside:
 # host.add_service(add_MyQueryServiceServicer_to_server, MyQueryServicer(), "my.v1.MyQueryService")
 host.run()   # binds the transport the environment selects; stops on SIGTERM / SIGINT

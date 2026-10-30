@@ -17,7 +17,9 @@ from .contract import counter_aggregate, described
 def main() -> None:
     configure_logging()
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_aggregate(*described(counter_aggregate([])))
+    host.add_aggregate(
+        *described(counter_aggregate([]).with_rules_version(TEST_RULES_VERSION))
+    )
     run_child(host)
 
 

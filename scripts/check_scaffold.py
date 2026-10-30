@@ -6,7 +6,8 @@ python``) works against this repository's package.
   imports: its message types, the framework types and the router resolve;
 - the project's ``main.host()`` builds its ComponentHost, registering the
   domain on the router;
-- its ``_descriptor.DESCRIPTOR`` names the domain's component.
+- its host answers Describe with ``_descriptor.DESCRIPTOR``, the
+  descriptor the CLI generated, unchanged (decision 14.42).
 
     check_scaffold.py <project dir> <domain>
 
@@ -42,6 +43,8 @@ def check(project: pathlib.Path, domain: str) -> list[str]:
         descriptor = importlib.import_module(f"{package}._descriptor").DESCRIPTOR
         if not descriptor.name:
             problems.append(f"{package}._descriptor: the descriptor names no component")
+        if host.descriptor is not descriptor:
+            problems.append(f"{package}.main: the host describes {host.descriptor!r}")
         print(
             f"ok {package}: {descriptor.name} registered, {len(wiring)} dispatch modules"
         )

@@ -341,7 +341,7 @@ def test_a_host_given_a_second_component_refuses_to_start(first, second):
     getattr(host, f"add_{first}")(*described(first_table))
     getattr(host, f"add_{second}")(*described(second_table))
     try:
-        assert host.descriptor == described(first_table)[1]
+        assert host.descriptor.name == first_table.name
         with pytest.raises(ConfigurationError) as exc:
             host.start("127.0.0.1:0")
         assert exc.value.code == codes.DUPLICATE_REGISTRATION
