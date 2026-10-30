@@ -17,6 +17,7 @@ from google.protobuf import any_pb2, timestamp_pb2
 from google.rpc import error_details_pb2
 from pytest_bdd import given, parsers, scenarios, then, when
 
+from angzarr_client import ComponentHost
 from angzarr_client.proto.io.angzarr.v1 import policy_pb2, types_pb2
 from angzarr_client.router import (
     WILDCARD_DOMAIN,
@@ -575,7 +576,12 @@ _REGISTER = {
     )
 )
 def _order_registered(world, name):
-    world.order()
+    # The business process: a host given the order aggregate and the
+    # descriptor generated for it (decision 14.42).
+    world.router = Router()
+    world.process = ComponentHost(world.router)
+    world.component = fx.order_aggregate(world.version, world.seen, world.behave)
+    world.process.add_aggregate(*fx.described(world.component))
 
 
 @when(
@@ -608,10 +614,10 @@ def _registration_refused(world, reason, name):
     parsers.re(r'the business process describes only the "(?P<name>[^"]*)" aggregate')
 )
 def _describes_only(world, name):
-    desc = world.router.component_descriptor()
+    desc = world.process.descriptor
+    assert desc == fx.descriptor_of(world.component)
     assert (desc.name, desc.kind) == (name, types_pb2.COMPONENT_KIND_AGGREGATE)
     assert desc.rules_version == world.version
-    assert desc.state.type_url == "/orders.v1.OrderState"
 
 
 # --- inputs ------------------------------------------------------------------

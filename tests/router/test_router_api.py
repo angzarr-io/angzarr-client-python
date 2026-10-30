@@ -613,7 +613,6 @@ def test_a_router_hosting_nothing_refuses_every_delivery():
         lambda: router.dispatch_policy(types_pb2.EventBook()),
         lambda: router.dispatch_refusal(policy_pb2.Refusal()),
         lambda: router.dispatch_projector(types_pb2.EventBook()),
-        router.component_descriptor,
     ):
         err = _raises(call)
         assert (err.code, err.grpc) == ("NO_HANDLERS_REGISTERED", GrpcCode.INTERNAL)
@@ -687,69 +686,10 @@ def test_a_second_component_is_refused_naming_the_first(first, kind):
     )
 
 
-def test_an_aggregate_describes_its_state_and_strategies():
-    dispatch = AggregateDispatch(
-        "order", "order", Rebuilder(order_pb2.OrderState)
-    ).with_rules_version("1")
-    router = Router()
-    router.register_aggregate(dispatch)
-    strict = types_pb2.ComponentDescriptor(
-        name="order", kind=types_pb2.COMPONENT_KIND_AGGREGATE, rules_version="1"
-    )
-    strict.state.type_url = "/orders.v1.OrderState"
-    strict.state.options.conflict_resolutions.extend(
-        [
-            types_pb2.CONFLICT_RESOLUTION_STRICT,
-            types_pb2.CONFLICT_RESOLUTION_AGGREGATE_HANDLES,
-        ]
-    )
-    assert router.component_descriptor() == strict
-    dispatch.with_commutative(lambda _b, _a: [])
-    strict.state.options.conflict_resolutions.append(
-        types_pb2.CONFLICT_RESOLUTION_COMMUTATIVE
-    )
-    assert router.component_descriptor() == strict
-
-
-def test_a_process_manager_describes_its_kind():
-    router = Router()
-    router.register_process_manager(
-        ProcessManagerDispatch("M", "m", Rebuilder(order_pb2.FulfillmentState))
-    )
-    desc = router.component_descriptor()
-    assert (desc.kind, desc.state.type_url) == (
-        types_pb2.COMPONENT_KIND_PROCESS_MANAGER,
-        "/orders.v1.FulfillmentState",
-    )
-
-
-@pytest.mark.parametrize(("domains", "inputs"), [((), ["*"]), (("a", "b"), ["a", "b"])])
-def test_a_projector_describes_its_domains_as_its_inputs(domains, inputs):
-    projector = ProjectorDispatch("S", wrappers_pb2.Int64Value).with_rules_version("2")
-    if domains:
-        projector.for_domains(*domains)
-    router = Router()
-    router.register_projector(projector)
-    assert router.component_descriptor() == types_pb2.ComponentDescriptor(
-        name="S",
-        kind=types_pb2.COMPONENT_KIND_PROJECTOR,
-        rules_version="2",
-        inputs=[types_pb2.Target(domain=d) for d in inputs],
-    )
-
-
-def test_a_policy_describes_its_input_and_output_domains():
-    router = Router()
-    router.register_policy(
-        PolicyDispatch("P", "order", "inventory").with_rules_version("4")
-    )
-    assert router.component_descriptor() == types_pb2.ComponentDescriptor(
-        name="P",
-        kind=types_pb2.COMPONENT_KIND_POLICY,
-        rules_version="4",
-        inputs=[types_pb2.Target(domain="order")],
-        output_domain="inventory",
-    )
+def test_the_router_describes_nothing():
+    # Decision 14.42: the descriptor is angzarr-cli's; the router holds no
+    # descriptor logic.
+    assert not hasattr(Router(), "component_descriptor")
 
 
 def test_an_any_payload_needs_no_packing():

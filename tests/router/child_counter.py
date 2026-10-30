@@ -11,13 +11,13 @@ from angzarr_client.child import run_child
 from angzarr_client.router import Router
 
 from .builders import TEST_RULES_VERSION
-from .contract import counter_aggregate
+from .contract import counter_aggregate, described
 
 
 def main() -> None:
     configure_logging()
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_aggregate(counter_aggregate([]))
+    host.add_aggregate(*described(counter_aggregate([])))
     run_child(host)
 
 

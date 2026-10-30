@@ -35,7 +35,13 @@ from angzarr_client.router import CodedError, GrpcCode, Router, pack
 
 from . import builders
 from .builders import TEST_RULES_VERSION
-from .contract import counter_aggregate, counter_projector, fulfillment, order_policy
+from .contract import (
+    counter_aggregate,
+    counter_projector,
+    described,
+    fulfillment,
+    order_policy,
+)
 from .gen import counter_pb2, order_pb2
 
 _SERVING = health_pb2.HealthCheckResponse.SERVING
@@ -77,7 +83,7 @@ def _wait_serving(channel, service: str = "") -> None:
 
 def _counter_host(**kwargs) -> ComponentHost:
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION, **kwargs)
-    host.add_aggregate(counter_aggregate([]))
+    host.add_aggregate(*described(counter_aggregate([])))
     return host
 
 
@@ -159,7 +165,7 @@ def test_a_fact_without_a_fact_handler_is_refused(started):
 
 def _policy_host() -> ComponentHost:
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_policy(order_policy("inventory", []))
+    host.add_policy(*described(order_policy("inventory", [])))
     return host
 
 
@@ -193,7 +199,7 @@ def test_policy_on_refused_answers_no_translation(started):
 
 def _pm_host() -> ComponentHost:
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_process_manager(fulfillment("", True, []))
+    host.add_process_manager(*described(fulfillment("", True, [])))
     return host
 
 
@@ -211,7 +217,7 @@ def test_a_process_manager_is_a_domain_served_as_a_command_handler(started):
 
 def test_projector_handle_returns_the_projection(started):
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_projector(counter_projector([]))
+    host.add_projector(*described(counter_projector([])))
     channel = started(host)
     stub = projector_pb2_grpc.ProjectorServiceStub(channel)
     book = _increased_book("counter", 2)
@@ -310,7 +316,7 @@ def test_services_are_the_component_then_its_kind_then_application_services():
 )
 def test_a_host_serves_its_one_component_kind(kind, service):
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    getattr(host, f"add_{kind}")(_TABLES[kind]())
+    getattr(host, f"add_{kind}")(*described(_TABLES[kind]()))
     try:
         assert host.services == [COMPONENT_SERVICE, service]
     finally:
@@ -332,10 +338,10 @@ def test_a_host_given_a_second_component_refuses_to_start(first, second):
     # naming both, before anything is served.
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
     first_table, second_table = _TABLES[first](), _TABLES[second]()
-    getattr(host, f"add_{first}")(first_table)
-    getattr(host, f"add_{second}")(second_table)
+    getattr(host, f"add_{first}")(*described(first_table))
+    getattr(host, f"add_{second}")(*described(second_table))
     try:
-        assert host.router.component_descriptor().name == first_table.name
+        assert host.descriptor == described(first_table)[1]
         with pytest.raises(ConfigurationError) as exc:
             host.start("127.0.0.1:0")
         assert exc.value.code == codes.DUPLICATE_REGISTRATION
@@ -381,7 +387,7 @@ def test_stop_reports_not_serving_and_refuses_new_calls():
 
 def test_an_owned_router_is_closed_on_stop():
     host = ComponentHost(rules_version=TEST_RULES_VERSION)
-    host.add_aggregate(counter_aggregate([]))
+    host.add_aggregate(*described(counter_aggregate([])))
     host.start("127.0.0.1:0")
     host.stop(grace=0)
     with pytest.raises(Exception):  # noqa: B017 — a closed router refuses dispatch
@@ -391,7 +397,7 @@ def test_an_owned_router_is_closed_on_stop():
 def test_a_borrowed_router_stays_open_after_stop():
     router = Router()
     host = ComponentHost(router, rules_version=TEST_RULES_VERSION)
-    host.add_aggregate(counter_aggregate([]))
+    host.add_aggregate(*described(counter_aggregate([])))
     host.start("127.0.0.1:0")
     host.stop(grace=0)
     try:

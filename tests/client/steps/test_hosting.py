@@ -75,6 +75,13 @@ def world(tmp_path, monkeypatch):
         w.host.stop(grace=0)
 
 
+def _described(dispatch: AggregateDispatch) -> tuple:
+    """``dispatch`` and the descriptor it registers with."""
+    return dispatch, types_pb2.ComponentDescriptor(
+        name=dispatch.name, kind=dispatch.kind
+    )
+
+
 def _aggregate(world: _World, domain: str, block: bool = False) -> AggregateDispatch:
     dispatch = AggregateDispatch(
         name=f"{domain}-component",
@@ -107,7 +114,7 @@ def _command(domain: str, text: str) -> types_pb2.ContextualCommand:
 
 def _new_host(world: _World, domain: str, block: bool = False) -> ComponentHost:
     world.host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    world.host.add_aggregate(_aggregate(world, domain, block=block))
+    world.host.add_aggregate(*_described(_aggregate(world, domain, block=block)))
     return world.host
 
 
@@ -150,7 +157,7 @@ def _host_one(world: _World, domain: str) -> None:
     )
 )
 def _second_component(world: _World, domain: str) -> None:
-    world.host.add_aggregate(_aggregate(world, domain))
+    world.host.add_aggregate(*_described(_aggregate(world, domain)))
 
 
 @given("a component host with no component registered")

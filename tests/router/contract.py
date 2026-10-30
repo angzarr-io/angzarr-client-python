@@ -354,6 +354,19 @@ def order_fulfillment(
     return policy
 
 
+def descriptor_of(dispatch) -> types_pb2.ComponentDescriptor:
+    """A stand-in for the ComponentDescriptor angzarr-cli generates for
+    ``dispatch``'s component (decision 14.42): its name, kind and version."""
+    return types_pb2.ComponentDescriptor(
+        name=dispatch.name, kind=dispatch.kind, rules_version=dispatch.rules_version
+    )
+
+
+def described(dispatch) -> tuple:
+    """``dispatch`` and its descriptor, as a host registers a component."""
+    return dispatch, descriptor_of(dispatch)
+
+
 def log_for_itself(text: str) -> None:
     """Business code's own log line, never the answer's."""
     _log.info(text)

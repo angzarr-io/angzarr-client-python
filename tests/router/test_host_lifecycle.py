@@ -38,9 +38,11 @@ from angzarr_client.router import CodedError, GrpcCode, Router
 
 from . import builders
 from .builders import TEST_RULES_VERSION
-from .contract import order_policy
+from .contract import described, order_policy
 from .test_host import _counter_host, _error_info, _increased_book, _wait_serving
 
+# The descriptor a scripted component registers with.
+_DESCRIPTOR = types_pb2.ComponentDescriptor(name="Scripted")
 _SERVING = health_pb2.HealthCheckResponse.SERVING
 _NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
 _LOOP_THREAD = "angzarr-component-host"
@@ -79,9 +81,6 @@ class _ScriptedRouter:
 
     def close(self) -> None:
         pass
-
-    def component_descriptor(self):
-        return None
 
     def dispatch(self, request):
         return self._run("dispatch", request)
@@ -193,7 +192,7 @@ def hosts():
 def _aggregate_host(answer, **kwargs) -> tuple[ComponentHost, _ScriptedRouter]:
     router = _ScriptedRouter(answer)
     host = ComponentHost(router, rules_version=TEST_RULES_VERSION, **kwargs)
-    host.add_aggregate(SimpleNamespace(domain="counter"))
+    host.add_aggregate(SimpleNamespace(domain="counter"), _DESCRIPTOR)
     return host, router
 
 
@@ -392,7 +391,7 @@ def _fail(kind, *args):
 
 def _register(kind: str, host: ComponentHost) -> None:
     dispatch = SimpleNamespace(domain="counter")
-    getattr(host, f"add_{kind}")(dispatch)
+    getattr(host, f"add_{kind}")(dispatch, _DESCRIPTOR)
 
 
 _CALLS = {
@@ -469,7 +468,7 @@ def test_an_unimplemented_dispatch_is_reported_not_acknowledged(hosts, kind):
 
 def test_a_policy_answers_no_reaction_to_a_domain_it_does_not_consume(hosts):
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_policy(order_policy("inventory", []))
+    host.add_policy(*described(order_policy("inventory", [])))
     stub = policy_pb2_grpc.PolicyServiceStub(hosts(host))
     book = _increased_book("elsewhere")
     book.pages[0].payload.type_url = builders.type_url("test.counter.Unconsumed")
@@ -565,7 +564,7 @@ def fast_probes(monkeypatch):
 
 def _policy_host() -> ComponentHost:
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_policy(order_policy("inventory", []))
+    host.add_policy(*described(order_policy("inventory", [])))
     return host
 
 
