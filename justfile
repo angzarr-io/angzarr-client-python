@@ -176,7 +176,7 @@ mutation-test: prepare
 # Mutation kill-rate threshold, percent: the share of evaluable mutants (all
 # but those no test reaches) that tests kill, for `mutation-test` and
 # `mutation-push`.
-MUTATION_THRESHOLD := "80"
+MUTATION_THRESHOLD := "90"
 
 # lefthook's pre-push step, given the remote's name and git's pushed refs on
 # stdin: mutmut over what each pushed ref changes, judged by
