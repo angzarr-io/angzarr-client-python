@@ -93,6 +93,107 @@ test-commit merging="":
     echo "RED  tests: red tests committed on $branch, allowed off $default; $branch cannot merge into $default until they pass" >&2
     exit 0
 
+# lefthook's pre-push step, given the remote's name and git's pushed refs on
+# stdin: every test (`just test`), in each pushed commit's tree checked out
+# alone (build/push-tree, its submodules, recursively, exported from this
+# checkout's, its .tools copied from here), so an unpushed edit cannot pass
+# or fail it. No mutation: no git hook runs it. The range reported runs from
+# the merge base of the commit pushed and the remote's current tip of that
+# ref (a fast-forward's base is that tip); for a new ref, or a tip not fetched
+# here, the merge base with the remote's default branch (<remote>/HEAD, else
+# main). A deleted ref passes at once. The log is build/logs/push-tests.log.
+#
+# Red tests are allowed on a branch and kept out of the default branch: pushed
+# to another branch, failing tests pass with a warning that the branch cannot
+# merge until they pass; pushed to the default branch they are refused.
+# `lefthook` is what lefthook.yml passes to stop lefthook skipping it, and is
+# ignored. To check a push to main by hand without pushing:
+#
+#     echo "refs/heads/B $(git rev-parse HEAD) refs/heads/main 0" | just push-check origin
+[positional-arguments]
+push-check remote *lefthook:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    top='{{TOP}}'
+    remote=$1
+    default=$(git -C "$top" symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null) && default=${default#"$remote"/} || default=main
+    tree="$top/build/push-tree"
+    mkdir -p "$top/build/logs"
+    log="$top/build/logs/push-tests.log"
+    exec 9> "$top/build/.push-tree.lock"
+    flock 9
+    # git exports repository-locating variables (GIT_DIR, ...) into a hook;
+    # with them, a git -C the push tree or a submodule would act on this
+    # checkout instead.
+    unset $(git rev-parse --local-env-vars)
+    # Each submodule (recursively) at the commit its parent records,
+    # exported from this checkout's own submodule repositories.
+    export_submodules() {
+        local src=$1 commit=$2 dest=$3 _ path sub
+        git -C "$src" cat-file -e "$commit:.gitmodules" 2>/dev/null || return 0
+        while read -r _ path; do
+            sub=$(git -C "$src" ls-tree "$commit" "$path" | awk '{print $3}')
+            [ -n "$sub" ] || continue
+            if ! git -C "$src/$path" cat-file -e "$sub^{commit}" 2>/dev/null; then
+                git -C "$src/$path" fetch --quiet origin "$sub" || {
+                    echo "FAIL push-check: $src/$path $sub, a pushed submodule commit, is not here (git submodule update --init --recursive)" >&2
+                    return 1
+                }
+            fi
+            rm -rf "$dest/$path"
+            mkdir -p "$dest/$path"
+            git -C "$src/$path" archive "$sub" | tar -x -C "$dest/$path"
+            export_submodules "$src/$path" "$sub" "$dest/$path" || return 1
+        done < <(git -C "$src" show "$commit:.gitmodules" | git config -f - --get-regexp '^submodule\..*\.path$')
+    }
+    pushed=0
+    while read -r local_ref local_sha remote_ref remote_sha; do
+        [ -n "${local_sha:-}" ] || continue
+        [ "${local_sha//0/}" = "" ] && continue  # a deletion
+        pushed=1
+        target=${remote_ref#refs/heads/}
+        base=
+        if [ -n "${remote_sha//0/}" ] && git -C "$top" cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+            base=$(git -C "$top" merge-base "$remote_sha" "$local_sha") || base=
+        fi
+        if [ -z "$base" ]; then
+            for ref in "refs/remotes/$remote/$default" "refs/heads/$default"; do
+                if git -C "$top" rev-parse --verify --quiet "$ref^{commit}" > /dev/null; then
+                    base=$(git -C "$top" merge-base "$ref" "$local_sha") && break
+                fi
+            done
+        fi
+        if [ -z "$base" ]; then
+            echo "FAIL push-check: $local_ref shares no history with $remote's tip or with $default" >&2
+            exit 1
+        fi
+        range="$(git -C "$top" rev-parse --short "$base")..$(git -C "$top" rev-parse --short "$local_sha") to $remote/$target"
+        # The pushed commit's tree, alone, no hook run for it; its .venv
+        # (ignored, so kept by clean) carries across pushes.
+        if ! git -C "$tree" rev-parse --git-dir > /dev/null 2>&1; then
+            rm -rf "$tree"
+            git -C "$top" worktree prune
+            git -c core.hooksPath=/dev/null -C "$top" worktree add --quiet --detach --no-checkout "$tree" "$local_sha"
+        fi
+        git -c core.hooksPath=/dev/null -C "$tree" checkout --quiet --detach --force "$local_sha"
+        git -C "$tree" clean -fdq
+        export_submodules "$top" "$local_sha" "$tree" || exit 1
+        if [ ! -d "$tree/.tools" ] && [ -d "$top/.tools" ]; then cp -a "$top/.tools" "$tree/.tools"; fi
+        rc=0
+        (cd "$tree" && just --justfile "$tree/justfile" test) > "$log" 2>&1 9>&- || rc=$?
+        if [ "$rc" -ne 0 ]; then
+            if [ "$remote_ref" != "refs/heads/$default" ]; then
+                echo "RED  push-check: $range: the tests fail (build/logs/push-tests.log); allowed off $default, which $target cannot merge into until they pass"
+                continue
+            fi
+            echo "FAIL push-check: $range: the tests fail, and $default takes no red tests (full log: build/logs/push-tests.log)" >&2
+            grep -E '^(FAILED|ERROR|error:)|[0-9]+ (failed|error)' "$log" | head -20 >&2 || true
+            exit 1
+        fi
+        echo "ok   push-check ($range): tests pass"
+    done
+    [ "$pushed" = 1 ] || echo "ok   push-check (no commit pushed: nothing to test)"
+
 # Full suite with verbose output
 test-verbose: prepare
     cd {{TOP}} && uv run --extra dev pytest tests/ -v
