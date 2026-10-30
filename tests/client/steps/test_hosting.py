@@ -348,7 +348,7 @@ def _app_served(world: _World, name: str) -> None:
 @then("starting fails with a configuration error naming both components")
 def _config_error_naming_both(world: _World) -> None:
     assert isinstance(world.start_error, ConfigurationError)
-    assert world.start_error.code == "DUPLICATE_REGISTRATION"
+    assert world.start_error.code == "ROUTER_REASON_DUPLICATE_COMPONENT"
     assert world.start_error.details == {
         "registered": "order-component",
         "refused": "payment-component",
@@ -364,4 +364,4 @@ def _nothing_served(world: _World) -> None:
 @then("starting fails with a configuration error")
 def _config_error(world: _World) -> None:
     assert isinstance(world.start_error, ConfigurationError)
-    assert world.start_error.code == "NO_COMPONENTS_REGISTERED"
+    assert world.start_error.code == "HOST_REASON_NO_COMPONENTS_REGISTERED"

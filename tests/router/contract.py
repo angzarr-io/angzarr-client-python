@@ -45,7 +45,7 @@ FIXTURE = (
 )
 
 # The item an order applier cannot fold: a fold that fails on it is a
-# handler bug (FOLD_FAILED, FOLD_FAILED_EMITTED).
+# handler bug (ROUTER_REASON_FOLD_FAILED, ROUTER_REASON_FOLD_FAILED_EMITTED).
 ROTTEN = "rotten"
 
 _log = logging.getLogger("tests.router.contract")

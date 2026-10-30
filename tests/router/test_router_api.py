@@ -155,7 +155,10 @@ def test_an_immediate_return_is_aborted_under_its_own_key():
 
 def test_a_bug_is_unhandled_handler_error_caused_by_its_key_and_args():
     err = Bug("LEDGER_OFFLINE", ledger="main", tries=2)
-    assert (err.code, err.grpc) == ("UNHANDLED_HANDLER_ERROR", GrpcCode.INTERNAL)
+    assert (err.code, err.grpc) == (
+        "ROUTER_REASON_UNHANDLED_HANDLER_ERROR",
+        GrpcCode.INTERNAL,
+    )
     assert err.extras == {
         "cause": "LEDGER_OFFLINE",
         "cause.ledger": "main",
@@ -169,7 +172,7 @@ def test_a_bug_is_unhandled_handler_error_caused_by_its_key_and_args():
 )
 def test_a_retryable_bug_goes_out_under_the_status_it_picks(status):
     err = RetryableBug("LEDGER_OFFLINE", status, ledger="main")
-    assert (err.code, err.grpc) == ("UNHANDLED_HANDLER_ERROR", status)
+    assert (err.code, err.grpc) == ("ROUTER_REASON_UNHANDLED_HANDLER_ERROR", status)
     assert err.extras == {"cause": "LEDGER_OFFLINE", "cause.ledger": "main"}
 
 
@@ -184,7 +187,10 @@ def test_a_retryable_bug_outside_the_retryable_statuses_is_refused(status):
 def test_a_typed_refusal_carries_its_object_after_its_error_info():
     refusal = order_pb2.ItemOutOfStock(item="apple", on_hand=0)
     for err in (Refused(refusal), Refused(pack(refusal))):
-        assert (err.code, err.grpc) == ("COMMAND_REFUSED", GrpcCode.FAILED_PRECONDITION)
+        assert (err.code, err.grpc) == (
+            "ROUTER_REASON_COMMAND_REFUSED",
+            GrpcCode.FAILED_PRECONDITION,
+        )
         assert err.extras == {"refusal_type": "orders.v1.ItemOutOfStock"}
         assert list(err.status().details)[1:] == [pack(refusal)]
 
@@ -193,7 +199,10 @@ def test_an_undecodable_payload_names_its_message_type_and_the_runtimes_text():
     err = any_decode_error(
         "example.com/types/test.counter.IncreaseBy", ValueError("bad wire")
     )
-    assert (err.code, err.grpc) == ("ANY_DECODE_FAILED", GrpcCode.INTERNAL)
+    assert (err.code, err.grpc) == (
+        "ROUTER_REASON_ANY_DECODE_FAILED",
+        GrpcCode.INTERNAL,
+    )
     assert err.extras == {
         "message_type": "test.counter.IncreaseBy",
         "ext_err_txt": "bad wire",
@@ -245,14 +254,14 @@ def _raising(exc):
     ("escaped", "extras"),
     [
         (UnclassifiedError("socket gone"), {}),
-        (KeyError("socket gone"), {"cause": "HANDLER_PANICKED"}),
+        (KeyError("socket gone"), {"cause": "ROUTER_REASON_HANDLER_PANICKED"}),
     ],
 )
 def test_what_escapes_is_logged_never_answered(caplog, escaped, extras):
     with caplog.at_level(logging.ERROR, "angzarr_client.router.errors"):
         err = _raises(_aggregate(_raising(escaped)).dispatch, _command())
     assert (err.code, err.grpc, err.extras) == (
-        "UNHANDLED_HANDLER_ERROR",
+        "ROUTER_REASON_UNHANDLED_HANDLER_ERROR",
         GrpcCode.INTERNAL,
         extras,
     )
@@ -279,7 +288,7 @@ def test_an_interrupt_is_not_answered():
     ("raised", "cause"),
     [
         (UnclassifiedError("x"), {}),
-        (RuntimeError("x"), {"cause": "HANDLER_PANICKED"}),
+        (RuntimeError("x"), {"cause": "ROUTER_REASON_HANDLER_PANICKED"}),
         (
             Bug("LEDGER_OFFLINE", ledger="main"),
             {"cause": "LEDGER_OFFLINE", "cause.ledger": "main"},
@@ -290,7 +299,7 @@ def test_an_interrupt_is_not_answered():
 def test_a_failing_applier_fails_the_fold_naming_the_page_and_its_cause(raised, cause):
     router = _aggregate(lambda *_: None, _raising(raised))
     err = _raises(router.dispatch, _command(0, 1))
-    assert (err.code, err.grpc) == ("FOLD_FAILED", GrpcCode.INTERNAL)
+    assert (err.code, err.grpc) == ("ROUTER_REASON_FOLD_FAILED", GrpcCode.INTERNAL)
     assert err.extras == {
         "sequence": "0",
         "type_url": "/test.counter.Increased",
@@ -305,7 +314,7 @@ def test_an_undecodable_starting_state_is_a_corrupt_persisted_event():
     request.events.snapshot.state.value = b"\xff\xff\xff"
     err = _raises(_aggregate(lambda *_: None).dispatch, request)
     assert (err.code, err.grpc, err.extras) == (
-        "PERSISTED_EVENT_CORRUPT",
+        "ROUTER_REASON_PERSISTED_EVENT_CORRUPT",
         GrpcCode.INTERNAL,
         {"type_url": "/test.counter.CounterState"},
     )
@@ -463,7 +472,7 @@ def test_a_commutative_resolver_failing_is_a_handler_bug():
         types_pb2.CONFLICT_RESOLUTION_COMMUTATIVE
     )
     err = _raises(router.dispatch, request)
-    assert err.extras == {"cause": "HANDLER_PANICKED"}
+    assert err.extras == {"cause": "ROUTER_REASON_HANDLER_PANICKED"}
 
 
 def test_a_refused_command_this_component_sent_is_recorded_by_its_handler():
@@ -550,7 +559,10 @@ def test_a_failing_translating_callback_is_a_handler_bug():
     router.register_policy(policy)
     refusal = policy_pb2.Refusal()
     refusal.command.page.command.payload.CopyFrom(pack(order_pb2.ReserveStock()))
-    assert _raises(router.dispatch_refusal, refusal).code == "UNHANDLED_HANDLER_ERROR"
+    assert (
+        _raises(router.dispatch_refusal, refusal).code
+        == "ROUTER_REASON_UNHANDLED_HANDLER_ERROR"
+    )
 
 
 def _projector(*domains: str) -> Router:
@@ -635,7 +647,10 @@ def test_a_router_hosting_nothing_refuses_every_delivery():
         lambda: router.dispatch_projector(types_pb2.EventBook()),
     ):
         err = _raises(call)
-        assert (err.code, err.grpc) == ("NO_HANDLERS_REGISTERED", GrpcCode.INTERNAL)
+        assert (err.code, err.grpc) == (
+            "ROUTER_REASON_NO_HANDLERS_REGISTERED",
+            GrpcCode.INTERNAL,
+        )
 
 
 @pytest.mark.parametrize(
@@ -656,7 +671,7 @@ def test_a_delivery_for_another_kind_is_unimplemented(call):
     router.register_aggregate(kinds[call])
     err = _raises(getattr(router, call), None)
     assert (err.code, err.grpc, err.extras) == (
-        "NO_COMPONENT_OF_KIND",
+        "ROUTER_REASON_NO_COMPONENT_OF_KIND",
         GrpcCode.UNIMPLEMENTED,
         {},
     )
@@ -677,7 +692,10 @@ def test_a_closed_router_hosts_nothing():
         router.register_aggregate(
             AggregateDispatch("A", "a", Rebuilder(counter_pb2.CounterState))
         )
-    assert _raises(router.dispatch, _command()).code == "NO_HANDLERS_REGISTERED"
+    assert (
+        _raises(router.dispatch, _command()).code
+        == "ROUTER_REASON_NO_HANDLERS_REGISTERED"
+    )
     router.register_projector(ProjectorDispatch("S", wrappers_pb2.Int64Value))
 
 
@@ -700,7 +718,7 @@ def test_a_second_component_is_refused_naming_the_first(first, kind):
         AggregateDispatch("A", "a", Rebuilder(counter_pb2.CounterState)),
     )
     assert (err.code, err.grpc, err.extras) == (
-        "DUPLICATE_COMPONENT",
+        "ROUTER_REASON_DUPLICATE_COMPONENT",
         GrpcCode.INTERNAL,
         {"component": first.name, "component_kind": kind},
     )
@@ -750,7 +768,10 @@ def test_an_input_with_no_body_is_an_unknown_command_type():
     request = _command()
     request.command.page.ClearField("command")
     err = _raises(_aggregate(lambda *_: None).dispatch, request)
-    assert (err.code, err.extras) == ("UNKNOWN_COMMAND_TYPE", {"type_url": ""})
+    assert (err.code, err.extras) == (
+        "ROUTER_REASON_UNKNOWN_COMMAND_TYPE",
+        {"type_url": ""},
+    )
 
 
 def _covers_seen(request) -> list:
@@ -784,7 +805,7 @@ def test_a_page_after_the_expected_sequence_failing_is_a_persisted_fold_failure(
     request = _command(0, 1)
     request.command.handling.expected_sequence = 0
     router = _aggregate(lambda *_: None, _raising(UnclassifiedError("x")))
-    assert _raises(router.dispatch, request).code == "FOLD_FAILED"
+    assert _raises(router.dispatch, request).code == "ROUTER_REASON_FOLD_FAILED"
 
 
 def test_a_page_with_no_applier_does_not_stop_the_fold():
@@ -856,4 +877,4 @@ def test_a_projector_fold_failing_is_a_fold_failure_and_sees_no_cover_when_none(
     book = _values("", 1)
     book.ClearField("cover")
     err = _raises(router.dispatch_projector, book)
-    assert (err.code, seen) == ("FOLD_FAILED", [None])
+    assert (err.code, seen) == ("ROUTER_REASON_FOLD_FAILED", [None])

@@ -75,9 +75,9 @@ HANDLER_UNKNOWN_KIND = "unknown handler kind"
 ROUTER_NO_HANDLERS = "no handlers registered on Router"
 
 # Component host
-HANDLER_PANICKED = "handler panicked during dispatch"
-NO_COMPONENTS_REGISTERED = "the host has no components registered"
-UPCASTER_WITH_COMPONENT = (
+ROUTER_REASON_HANDLER_PANICKED = "handler panicked during dispatch"
+HOST_REASON_NO_COMPONENTS_REGISTERED = "the host has no components registered"
+HOST_REASON_UPCASTER_WITH_COMPONENT = (
     "an upcaster is served by its own sidecar host, not beside a component"
 )
-DUPLICATE_REGISTRATION = "a host serves exactly one component"
+ROUTER_REASON_DUPLICATE_COMPONENT = "a host serves exactly one component"

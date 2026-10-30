@@ -129,7 +129,7 @@ def prior_increases(n: int):
 
 def corrupt_history():
     """One parsed Increased page whose payload is overwritten with an
-    undecodable varint, so the fold fails (FOLD_FAILED)."""
+    undecodable varint, so the fold fails (ROUTER_REASON_FOLD_FAILED)."""
     page = _increased_page_at(0)
     page.payload.value = bytes([0xFF, 0xFF, 0xFF])
     return types_pb2.EventBook(pages=[page], next_sequence=1)

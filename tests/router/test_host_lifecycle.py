@@ -442,7 +442,9 @@ def test_every_rpc_reports_a_coded_router_failure_as_its_status(hosts, call):
     assert (info.reason, dict(info.metadata)) == ("SCRIPTED_FAILURE", {"k": "v"})
 
 
-_UNIMPLEMENTED = CodedError(code="NO_COMPONENT_OF_KIND", grpc=GrpcCode.UNIMPLEMENTED)
+_UNIMPLEMENTED = CodedError(
+    code="ROUTER_REASON_NO_COMPONENT_OF_KIND", grpc=GrpcCode.UNIMPLEMENTED
+)
 
 
 @pytest.mark.parametrize("kind", ["aggregate", "policy"])
@@ -463,7 +465,7 @@ def test_an_unimplemented_dispatch_is_reported_not_acknowledged(hosts, kind):
                 _command(), timeout=5
             )
     assert err.value.code() == grpc.StatusCode.UNIMPLEMENTED
-    assert _error_info(err.value).reason == "NO_COMPONENT_OF_KIND"
+    assert _error_info(err.value).reason == "ROUTER_REASON_NO_COMPONENT_OF_KIND"
 
 
 def test_a_policy_answers_no_reaction_to_a_domain_it_does_not_consume(hosts):

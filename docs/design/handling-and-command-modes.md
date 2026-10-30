@@ -78,7 +78,7 @@ hosts. Co-hosted components share one binary, so they share one version
 | Symbol | Meaning |
 |---|---|
 | `ComponentHost(router=None, *, rules_version: str, ...)` | Applies `rules_version` to every `add_*` table that has none of its own (`with_rules_version`, already in the port). |
-| Start-time check | `start()` fetches the router's hellos (`Router.component_descriptors()`). A missing version fails with `ConfigurationError` naming `MISSING_RULES_VERSION` (decision 14.6), before the server binds. |
+| Readiness check | The host does not check the version: the coordinator validates the descriptor it pulls (decision 14.42) and refuses a component with none as `COORDINATOR_REASON_MISSING_RULES_VERSION` (decision 14.6), a readiness refusal. |
 
 ```python
 from mypkg._version import __version__

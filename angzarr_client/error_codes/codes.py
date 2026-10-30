@@ -2,8 +2,11 @@
 every error this client constructs.
 
 Mirrors ``client-rust/main/src/error_codes.rs::codes`` — same constant
-names, same string values.
+names, same string values — except the component host's codes: those are
+framework reason keys, each named by the generated reason enum value it is.
 """
+
+from ..proto.io.angzarr.v1.reasons_pb2 import HostReason, RouterReason
 
 # Validation
 VALUE_NOT_POSITIVE = "VALUE_NOT_POSITIVE"
@@ -71,18 +74,32 @@ HANDLER_STATE_NOT_TYPE = "HANDLER_STATE_NOT_TYPE"
 HANDLER_UNKNOWN_KIND = "HANDLER_UNKNOWN_KIND"
 ROUTER_NO_HANDLERS = "ROUTER_NO_HANDLERS"
 
-# Component host
+# Component host: framework reason keys (angzarr-project
+# proto/io/angzarr/v1/reasons.proto, decision 14.44), each its enum value's
+# full name, the prefix included.
 # An error escaped a handler, or it failed as a bug; its cause names why
 # (decision 14.37).
-UNHANDLED_HANDLER_ERROR = "UNHANDLED_HANDLER_ERROR"
-# The cause of an UNHANDLED_HANDLER_ERROR when an exception escaped.
-HANDLER_PANICKED = "HANDLER_PANICKED"
-NO_COMPONENTS_REGISTERED = "NO_COMPONENTS_REGISTERED"
+ROUTER_REASON_UNHANDLED_HANDLER_ERROR = RouterReason.Name(
+    RouterReason.ROUTER_REASON_UNHANDLED_HANDLER_ERROR
+)
+# The cause of a ROUTER_REASON_UNHANDLED_HANDLER_ERROR when an exception
+# escaped.
+ROUTER_REASON_HANDLER_PANICKED = RouterReason.Name(
+    RouterReason.ROUTER_REASON_HANDLER_PANICKED
+)
+HOST_REASON_NO_COMPONENTS_REGISTERED = HostReason.Name(
+    HostReason.HOST_REASON_NO_COMPONENTS_REGISTERED
+)
 # An upcaster is its own sidecar host (decision 14.39): a host given a
 # component and an upcaster is refused (details: component).
-UPCASTER_WITH_COMPONENT = "UPCASTER_WITH_COMPONENT"
-# A host serves exactly one component; a second registration is refused.
-DUPLICATE_REGISTRATION = "DUPLICATE_REGISTRATION"
+HOST_REASON_UPCASTER_WITH_COMPONENT = HostReason.Name(
+    HostReason.HOST_REASON_UPCASTER_WITH_COMPONENT
+)
+# A host serves exactly one component; a second registration is refused
+# (details: registered, refused).
+ROUTER_REASON_DUPLICATE_COMPONENT = RouterReason.Name(
+    RouterReason.ROUTER_REASON_DUPLICATE_COMPONENT
+)
 
 # Child process (angzarr_client.child)
 # A line that is not a v1 handshake (details: line).

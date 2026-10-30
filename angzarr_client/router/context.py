@@ -34,7 +34,8 @@ def as_any(msg) -> any_pb2.Any:
 
 
 def decode(message_type, data: bytes):
-    """``data`` decoded as ``message_type``, or ANY_DECODE_FAILED."""
+    """``data`` decoded as ``message_type``, or
+    ``ROUTER_REASON_ANY_DECODE_FAILED``."""
     msg = message_type()
     try:
         msg.ParseFromString(data)
@@ -203,8 +204,9 @@ def start_state(factory: Callable[[], Message], book: types_pb2.EventBook) -> Me
 
 def fold(state, pages, cover, appliers: dict[str, Applier], code: str) -> None:
     """Fold every page whose type has an applier into ``state``, in order;
-    a failing applier fails the fold as ``code`` (FOLD_FAILED or
-    FOLD_FAILED_EMITTED), naming the page and its cause."""
+    a failing applier fails the fold as ``code``
+    (``ROUTER_REASON_FOLD_FAILED`` or ``ROUTER_REASON_FOLD_FAILED_EMITTED``),
+    naming the page and its cause."""
     for page in pages:
         applier = appliers.get(type_name(page.payload.type_url))
         if applier is None:
