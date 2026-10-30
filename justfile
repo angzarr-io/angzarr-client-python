@@ -138,8 +138,12 @@ mutation-test: prepare
 # `mutation-push`.
 MUTATION_THRESHOLD := "90"
 
-# lefthook's pre-push step, given the remote's name and git's pushed refs on
-# stdin: mutmut over what each pushed ref changes, judged by
+# By hand (no git hook runs mutation), given the remote's name and git's
+# pre-push refs on stdin; for the current branch against origin:
+#
+#     echo "refs/heads/B $(git rev-parse HEAD) refs/heads/B 0" | just mutation-push origin
+#
+# mutmut over what each ref given changes, judged by
 # MUTATION_THRESHOLD. mutmut has no diff option, so the diff is narrowed to
 # functions: each changed line of a [tool.mutmut] source file is mapped (by
 # `ast`) to the top-level function or class method holding it, and mutmut
@@ -158,8 +162,7 @@ MUTATION_THRESHOLD := "90"
 # Red tests (mutmut's clean run or stats collection fails) cannot be judged:
 # pushed to a branch other than the default one they pass, with a warning that
 # the branch cannot merge until they pass; pushed to the default branch they
-# are refused. `lefthook` is what lefthook.yml passes to stop lefthook
-# skipping it, and is ignored.
+# are refused. `lefthook` is ignored.
 [positional-arguments]
 mutation-push remote *lefthook:
     #!/usr/bin/env bash
