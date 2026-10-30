@@ -89,7 +89,7 @@ host.run()
 ```
 
 `with_rules_version(version)` on each dispatch table (`AggregateDispatch`,
-`SagaDispatch`, `ProcessManagerDispatch`, `ProjectorDispatch`) is already
+`PolicyDispatch`, `ProcessManagerDispatch`, `ProjectorDispatch`) is already
 part of the port. It mirrors Rust `with_rules_version` and is how
 `ComponentHost` would apply the version.
 

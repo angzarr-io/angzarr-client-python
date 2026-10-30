@@ -1,6 +1,5 @@
-"""Wheel build hook: the generated protos and the router-ffi library are built
-into every wheel, which is tagged with the manylinux platform the library
-supports (scripts/native_build.py)."""
+"""Wheel build hook: the generated protos are built into every wheel
+(scripts/proto_build.py). The wheel is pure Python."""
 
 from __future__ import annotations
 
@@ -9,24 +8,20 @@ import pathlib
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "scripts" / "native_build.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "scripts" / "proto_build.py"
 
 
-def _native_build():
-    spec = importlib.util.spec_from_file_location("native_build", _SCRIPT)
+def _proto_build():
+    spec = importlib.util.spec_from_file_location("proto_build", _SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-class NativeBuildHook(BuildHookInterface):
+class ProtoBuildHook(BuildHookInterface):
     PLUGIN_NAME = "custom"
 
     def initialize(self, version: str, build_data: dict) -> None:
         if self.target_name != "wheel":
             return
-        native = _native_build()
-        native.generate_protos()
-        lib = native.build_router_lib()
-        build_data["pure_python"] = False
-        build_data["tag"] = f"py3-none-{native.wheel_platform_tag(lib)}"
+        _proto_build().generate_protos()

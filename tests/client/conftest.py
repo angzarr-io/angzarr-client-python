@@ -13,6 +13,23 @@ from tests.conftest import SCENARIO_IDS_ATTR
 PENDING = {
     "C-0336": "angzarr_client exposes no connect-timeout option on connect()",
     "C-0337": "angzarr_client exposes no keep-alive option on connect()",
+    # Decision 14.37 on the client side: a ClientError's text is its code
+    # then its args, and message() renders from a catalog by the code. The
+    # client still carries English; these scenarios came in with the
+    # angzarr-project pin to 74690c7.
+    **dict.fromkeys(
+        (
+            "C-0131",
+            "C-0341",
+            "C-0344",
+            "C-0345",
+            "C-0349",
+            "C-0352",
+            "C-0355",
+            "C-0363",
+        ),
+        "ClientError still carries English, not its code and args (14.37)",
+    ),
 }
 
 

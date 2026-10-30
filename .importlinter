@@ -3,8 +3,8 @@
 # imports live in .importlinter-external.
 #
 # Shape of the package:
-#   router/           the router binding: cffi over the router-ffi cdylib plus
-#                     the dispatch tables. Bottom layer; transport-free.
+#   router/           the router: native dispatch to business code.
+#                     Bottom layer; transport-free.
 #   child             run_child: a host as the child process of an in-app
 #                     runtime (handshake on stdout, Unix socket).
 #   host              ComponentHost: serves registered components over gRPC,
@@ -16,7 +16,7 @@
 #   proto/            generated framework types (any layer may use them).
 # Codegen templates (codegen/) and build tooling (scripts/, grpcio-tools) are
 # outside the runtime: nothing in the package imports them. The tests package
-# (including the rendered conformance fixture tests/router/gen) is the only
+# (including the generated tier fixture messages, tests/router/gen) is the only
 # business-shaped code here, and the package never imports it.
 
 [importlinter]

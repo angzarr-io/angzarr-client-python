@@ -1,9 +1,10 @@
 """Angzarr for Python.
 
-- ``angzarr_client.router``: the router binding — the shared Rust engine
-  (angzarr-router) that hosts components; ``angzarr codegen python`` renders
-  this repository's codegen/ templates against it. Import it explicitly: it
-  loads the router-ffi native library, which the clients below do not need.
+- ``angzarr_client.router``: the router, native Python, that dispatches to a
+  component's business code; ``angzarr codegen python`` renders this
+  repository's codegen/ templates against it. ``UnclassifiedError``, the
+  error business code raises for a failure it does not classify, is also
+  here at the top level (decision 14.42).
 - The coordinator clients (``CommandHandlerClient``, ``QueryClient``,
   ``DomainClient``) and their builders.
 - ``angzarr_client.testing``: test helpers, imported from that module
@@ -61,6 +62,7 @@ from .retry import (
     RetryPolicy,
     default_retry_policy,
 )
+from .router.errors import UnclassifiedError
 from .server import (
     DEFAULT_BIND_HOST,
     ENV_BIND_ADDRESS,
@@ -134,6 +136,7 @@ __all__ = [
     "RetryPolicy",
     "TransportError",
     "TransportMode",
+    "UnclassifiedError",
     # Wrappers (user-facing object surface for framework protos)
     "Wrapped",
     # Identity

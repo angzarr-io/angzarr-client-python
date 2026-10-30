@@ -9,7 +9,7 @@ For every component wiring module (``*_angzarr.py``) under the tree:
   method of the ``<Component>Handler`` protocol with the protocol's
   parameters;
 - ``register_<component>`` registers the stub on a fresh router — the
-  router-ffi library accepts the component's descriptor.
+  router accepts the component.
 
     check_rendered.py <dir containing the rendered package>/<package>
 

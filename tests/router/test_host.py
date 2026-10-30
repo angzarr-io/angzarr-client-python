@@ -1,5 +1,5 @@
-"""ComponentHost over gRPC with the router conformance fixture components
-(tests/router/gen, rendered from angzarr-router's conformance protos)."""
+"""ComponentHost over gRPC with the handler-contract tier's components
+(tests/router/contract.py)."""
 
 from __future__ import annotations
 
@@ -17,42 +17,26 @@ from angzarr_client.error_codes import codes
 from angzarr_client.host import (
     COMMAND_HANDLER_SERVICE,
     COMPONENT_SERVICE,
-    PROCESS_MANAGER_SERVICE,
+    POLICY_SERVICE,
     PROJECTOR_SERVICE,
-    SAGA_SERVICE,
     UPCASTER_SERVICE,
     grpc_status_code,
 )
 from angzarr_client.proto.io.angzarr.v1 import (
-    command_handler_pb2,
     command_handler_pb2_grpc,
-    process_manager_pb2,
-    process_manager_pb2_grpc,
+    policy_pb2,
+    policy_pb2_grpc,
     projector_pb2_grpc,
-    saga_pb2,
-    saga_pb2_grpc,
     types_pb2,
     upcaster_pb2,
     upcaster_pb2_grpc,
 )
-from angzarr_client.router import (
-    AggregateDispatch,
-    CodedError,
-    GrpcCode,
-    Rebuilder,
-    Router,
-)
+from angzarr_client.router import CodedError, GrpcCode, Router, pack
 
 from . import builders
 from .builders import TEST_RULES_VERSION
-from .fixture import CounterAggregate, CounterProjector, OrderProcessManager, OrderSaga
-from .gen.test.counter import (
-    counter_aggregate_angzarr,
-    counter_pb2,
-    counter_projector_angzarr,
-    order_process_manager_angzarr,
-    order_saga_angzarr,
-)
+from .contract import counter_aggregate, counter_projector, fulfillment, order_policy
+from .gen import counter_pb2, order_pb2
 
 _SERVING = health_pb2.HealthCheckResponse.SERVING
 _NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
@@ -93,9 +77,7 @@ def _wait_serving(channel, service: str = "") -> None:
 
 def _counter_host(**kwargs) -> ComponentHost:
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION, **kwargs)
-    host.add_aggregate(
-        counter_aggregate_angzarr.new_counter_aggregate_dispatch(CounterAggregate())
-    )
+    host.add_aggregate(counter_aggregate([]))
     return host
 
 
@@ -155,11 +137,7 @@ def test_an_unclassified_handler_failure_is_a_coded_internal_error(started):
         stub.Handle(builders.fail_hard_command(), timeout=5)
     assert err.value.details() == "UNHANDLED_HANDLER_ERROR"
     info = _error_info(err.value)
-    assert (info.reason, info.metadata["cause"]) == (
-        "UNHANDLED_HANDLER_ERROR",
-        "HANDLER_PANICKED",
-    )
-    assert "hard failure" not in dict(info.metadata).values()
+    assert (info.reason, dict(info.metadata)) == ("UNHANDLED_HANDLER_ERROR", {})
 
 
 def test_a_fact_without_a_fact_handler_is_refused(started):
@@ -172,82 +150,68 @@ def test_a_fact_without_a_fact_handler_is_refused(started):
     )
     with pytest.raises(grpc.RpcError) as err:
         stub.Handle(request, timeout=5)
-    assert err.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert err.value.code() == grpc.StatusCode.INTERNAL
     assert _error_info(err.value).reason == "NO_FACT_HANDLER"
 
 
-# --- Saga / process manager / projector / upcaster ---------------------------
+# --- Policy / process manager / projector / upcaster -------------------------
 
 
-def _saga_host() -> ComponentHost:
+def _policy_host() -> ComponentHost:
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
+    host.add_policy(order_policy("inventory", []))
     return host
 
 
-def test_saga_handle_returns_the_emitted_commands(started):
-    channel = started(_saga_host())
-    stub = saga_pb2_grpc.SagaServiceStub(channel)
-    resp = stub.Handle(_increased_book("order"), timeout=5)
-    assert len(resp.commands) == 1
-    assert resp.commands[0].cover.domain == "inventory"
+def test_policy_handle_returns_the_commands_grouped_by_trigger(started):
+    channel = started(_policy_host())
+    stub = policy_pb2_grpc.PolicyServiceStub(channel)
+    resp = stub.Handle(_increased_book("order", 2), timeout=5)
+    assert [r.trigger_sequence for r in resp.reactions] == [0, 1]
+    assert [c.cover.domain for r in resp.reactions for c in r.commands] == [
+        "inventory",
+        "inventory",
+    ]
 
 
-def test_saga_acknowledges_an_event_it_does_not_consume(started):
-    channel = started(_saga_host())
-    stub = saga_pb2_grpc.SagaServiceStub(channel)
+def test_policy_answers_no_reaction_to_an_event_it_does_not_consume(started):
+    channel = started(_policy_host())
+    stub = policy_pb2_grpc.PolicyServiceStub(channel)
     resp = stub.Handle(_unconsumed_book("order"), timeout=5)
-    assert resp == saga_pb2.SagaResponse()
+    assert resp == policy_pb2.PolicyResponse()
 
 
-def test_saga_reports_a_malformed_request(started):
-    channel = started(_saga_host())
-    stub = saga_pb2_grpc.SagaServiceStub(channel)
-    with pytest.raises(grpc.RpcError) as err:
-        stub.Handle(types_pb2.EventBook(), timeout=5)
-    assert err.value.code() != grpc.StatusCode.UNIMPLEMENTED
-    assert _error_info(err.value).reason
+def test_policy_on_refused_answers_no_translation(started):
+    channel = started(_policy_host())
+    stub = policy_pb2_grpc.PolicyServiceStub(channel)
+    refusal = policy_pb2.Refusal()
+    refusal.command.page.command.payload.type_url = builders.type_url(
+        builders.FQ_RESERVE
+    )
+    assert stub.OnRefused(refusal, timeout=5) == policy_pb2.OnRefusedResponse()
 
 
 def _pm_host() -> ComponentHost:
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_process_manager(
-        order_process_manager_angzarr.new_order_process_manager_dispatch(
-            OrderProcessManager()
-        )
-    )
+    host.add_process_manager(fulfillment("", True, []))
     return host
 
 
-def test_process_manager_handle_returns_its_response(started):
+def test_a_process_manager_is_a_domain_served_as_a_command_handler(started):
     channel = started(_pm_host())
-    stub = process_manager_pb2_grpc.ProcessManagerServiceStub(channel)
-    request = process_manager_pb2.ProcessManagerHandleRequest(
-        trigger=_increased_book("counter")
-    )
+    stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
+    request = types_pb2.ContextualCommand()
+    request.command.page.command.payload.CopyFrom(pack(order_pb2.StartFulfillment()))
     resp = stub.Handle(request, timeout=5)
-    assert len(resp.commands) == 1
-    assert resp.commands[0].cover.domain == "inventory"
-
-
-def test_process_manager_acknowledges_an_event_it_does_not_consume(started):
-    channel = started(_pm_host())
-    stub = process_manager_pb2_grpc.ProcessManagerServiceStub(channel)
-    request = process_manager_pb2.ProcessManagerHandleRequest(
-        trigger=_unconsumed_book("counter")
-    )
-    resp = stub.Handle(request, timeout=5)
-    # Nothing reacts, but the answer still reports the build version.
-    assert resp == process_manager_pb2.ProcessManagerHandleResponse(
-        rules_version=TEST_RULES_VERSION
-    )
+    assert [builders.fq_from_url(p.payload.type_url) for p in resp.events.pages] == [
+        "orders.v1.FulfillmentStarted"
+    ]
+    assert resp.rules_version == TEST_RULES_VERSION
 
 
 def test_projector_handle_returns_the_projection(started):
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_projector(
-        counter_projector_angzarr.new_counter_projector_dispatch(CounterProjector())
-    )
+    host.add_projector(counter_projector([]))
     channel = started(host)
     stub = projector_pb2_grpc.ProjectorServiceStub(channel)
     book = _increased_book("counter", 2)
@@ -339,8 +303,8 @@ def test_services_are_the_component_then_its_kind_then_application_services():
     ("kind", "service"),
     [
         ("aggregate", COMMAND_HANDLER_SERVICE),
-        ("saga", SAGA_SERVICE),
-        ("process_manager", PROCESS_MANAGER_SERVICE),
+        ("policy", POLICY_SERVICE),
+        ("process_manager", COMMAND_HANDLER_SERVICE),
         ("projector", PROJECTOR_SERVICE),
     ],
 )
@@ -354,18 +318,10 @@ def test_a_host_serves_its_one_component_kind(kind, service):
 
 
 _TABLES = {
-    "aggregate": lambda: counter_aggregate_angzarr.new_counter_aggregate_dispatch(
-        CounterAggregate()
-    ),
-    "saga": lambda: order_saga_angzarr.new_order_saga_dispatch(OrderSaga()),
-    "process_manager": lambda: (
-        order_process_manager_angzarr.new_order_process_manager_dispatch(
-            OrderProcessManager()
-        )
-    ),
-    "projector": lambda: counter_projector_angzarr.new_counter_projector_dispatch(
-        CounterProjector()
-    ),
+    "aggregate": lambda: counter_aggregate([]),
+    "policy": lambda: order_policy("inventory", []),
+    "process_manager": lambda: fulfillment("", True, []),
+    "projector": lambda: counter_projector([]),
 }
 
 
@@ -401,7 +357,7 @@ def test_every_served_service_reports_serving_after_not_serving(started):
         _wait_serving(channel, name)
         history = host.health_history(name)
         assert history[0] == _NOT_SERVING and history[-1] == _SERVING
-    assert host.health_status(SAGA_SERVICE) is None
+    assert host.health_status(POLICY_SERVICE) is None
 
 
 def test_stop_reports_not_serving_and_refuses_new_calls():
@@ -425,9 +381,7 @@ def test_stop_reports_not_serving_and_refuses_new_calls():
 
 def test_an_owned_router_is_closed_on_stop():
     host = ComponentHost(rules_version=TEST_RULES_VERSION)
-    host.add_aggregate(
-        counter_aggregate_angzarr.new_counter_aggregate_dispatch(CounterAggregate())
-    )
+    host.add_aggregate(counter_aggregate([]))
     host.start("127.0.0.1:0")
     host.stop(grace=0)
     with pytest.raises(Exception):  # noqa: B017 — a closed router refuses dispatch
@@ -437,9 +391,7 @@ def test_an_owned_router_is_closed_on_stop():
 def test_a_borrowed_router_stays_open_after_stop():
     router = Router()
     host = ComponentHost(router, rules_version=TEST_RULES_VERSION)
-    host.add_aggregate(
-        counter_aggregate_angzarr.new_counter_aggregate_dispatch(CounterAggregate())
-    )
+    host.add_aggregate(counter_aggregate([]))
     host.start("127.0.0.1:0")
     host.stop(grace=0)
     try:

@@ -1,5 +1,5 @@
-"""Skeleton-parsing command/event builders, shared by the targeted tests and
-the pytest-bdd conformance harness.
+"""Skeleton-parsing command/event builders for the targeted router and host
+tests, over the handler-contract tier's fixture envelopes.
 
 Every builder PARSES the orthogonal ``.txtpb`` skeleton first, then sets the
 scenario's data BY FIELD on the structured message — the textproto is never
@@ -11,24 +11,17 @@ expands the Any payloads in the skeletons.
 
 from __future__ import annotations
 
-import pathlib
 import uuid
 
 from google.protobuf import any_pb2, text_format
 
 from angzarr_client.proto.io.angzarr.v1 import types_pb2
 
-from .gen.test.counter import counter_pb2
+from .contract import FIXTURE
+from .gen import counter_pb2
 
-# The shared conformance fixtures — the same orthogonal envelope skeletons the
-# Rust and Go harnesses parse. Resolved relative to this file (repo
-# conformance/ tree), not copied.
-_FIXTURES_DIR = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "angzarr-router"
-    / "conformance"
-    / "fixtures"
-)
+# The tier's orthogonal envelope skeletons, read in place.
+_FIXTURES_DIR = FIXTURE / "txtpb"
 
 # The framework's canonical type-URL prefix is a bare "/" (router
 # TYPE_URL_PREFIX); angzarr-produced URLs take that form, not the
@@ -112,31 +105,8 @@ def fail_hard_command():
 
 
 def unhandled_command():
-    """Parse the Reserve skeleton — a command with no registered handler
-    (drives NO_HANDLER_REGISTERED before rebuild)."""
+    """Parse the Reserve skeleton: a command no handler claims."""
     return _load_skeleton("command_unhandled.txtpb", types_pb2.ContextualCommand())
-
-
-# Envelope-guard negatives: a well-formed parsed command with exactly one
-# structural field cleared, so the guard fires regardless of the rest.
-
-
-def command_missing_book():
-    cc = increase_command(1)
-    cc.ClearField("command")
-    return cc
-
-
-def command_missing_page():
-    cc = increase_command(1)
-    cc.command.ClearField("page")
-    return cc
-
-
-def command_missing_payload():
-    cc = increase_command(1)
-    cc.command.page.command.ClearField("payload")
-    return cc
 
 
 def _increased_page_at(seq: int):
@@ -159,20 +129,7 @@ def prior_increases(n: int):
 
 def corrupt_history():
     """One parsed Increased page whose payload is overwritten with an
-    undecodable varint, so the fold fails (a handler bug,
-    UNHANDLED_HANDLER_ERROR)."""
+    undecodable varint, so the fold fails (FOLD_FAILED)."""
     page = _increased_page_at(0)
     page.payload.value = bytes([0xFF, 0xFF, 0xFF])
     return types_pb2.EventBook(pages=[page], next_sequence=1)
-
-
-def snapshot_history():
-    """Seed count 10 at sequence 10, plus a covered page (10, skipped) and an
-    uncovered page (11, applied) — a rebuild observes 11."""
-    book = types_pb2.EventBook(next_sequence=12)
-    book.snapshot.sequence = 10
-    book.snapshot.state.type_url = type_url("test.counter.CounterState")
-    book.snapshot.state.value = counter_pb2.CounterState(count=10).SerializeToString()
-    book.pages.append(_increased_page_at(10))
-    book.pages.append(_increased_page_at(11))
-    return book

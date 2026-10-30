@@ -31,8 +31,8 @@ from google.protobuf import descriptor_pb2, descriptor_pool
 
 from angzarr_client.proto.io.angzarr.v1 import (
     command_handler_pb2,
+    policy_pb2,
     process_manager_pb2,
-    saga_pb2,
     types_pb2,
 )
 from angzarr_client.proto.sererr.v1 import sererr_pb2
@@ -63,7 +63,7 @@ _SHARED_FRAMEWORK = [
     sererr_pb2,
     types_pb2,
     command_handler_pb2,
-    saga_pb2,
+    policy_pb2,
     process_manager_pb2,
 ]
 

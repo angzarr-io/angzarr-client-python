@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prove an installed angzarr-client works without a source checkout: the
-framework protos import, the router-ffi library bundled in the wheel loads
-and accepts a component, and nothing is imported from the source tree."""
+framework protos import, the router accepts a component, and nothing is
+imported from the source tree."""
 
 from __future__ import annotations
 
@@ -15,15 +15,11 @@ def main() -> int:
 
     import angzarr_client
     from angzarr_client.proto.io.angzarr.v1 import types_pb2
-    from angzarr_client.router import AggregateDispatch, Rebuilder, Router, abi_version
+    from angzarr_client.router import AggregateDispatch, Rebuilder, Router
 
     package = pathlib.Path(angzarr_client.__file__).resolve().parent
     if here in package.parents:
         print(f"FAIL: angzarr_client imported from the source tree ({package})")
-        return 1
-    lib = package / "router" / "_lib" / "libangzarr_router_ffi.so"
-    if not lib.is_file():
-        print(f"FAIL: the wheel carries no router library at {lib}")
         return 1
     router = Router()
     try:
@@ -32,9 +28,7 @@ def main() -> int:
         )
     finally:
         router.close()
-    print(
-        f"ok: angzarr-client {angzarr_client.__version__} from {package}, router ABI {abi_version()}"
-    )
+    print(f"ok: angzarr-client {angzarr_client.__version__} from {package}")
     return 0
 
 

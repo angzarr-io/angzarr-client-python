@@ -59,13 +59,10 @@ uv.lock
 angzarr_client/proto/io/
 angzarr_client/proto/sererr/
 
-# Router-ffi build (just router-lib) and the vendored library it produces.
-.router-target/
-angzarr_client/router/_lib/
-
 # angzarr CLI installed by `just cli`.
 .tools/
 
-# Code rendered by this repository's templates for tests and checks.
+# The router tier's fixture messages (just contract-gen) and code rendered by
+# this repository's templates for checks.
 tests/router/gen/
 .codegen-check/

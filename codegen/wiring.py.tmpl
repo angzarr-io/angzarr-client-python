@@ -21,9 +21,9 @@ class {{ $c.name }}Handler(Protocol):
 
 {{- if eq $c.kind "SAGA" }}
 
-def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.SagaDispatch:
+def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.PolicyDispatch:
 {{- if ne (len $c.output_domains) 1 }}{{ fail (printf "saga %s must declare exactly one output domain" $c.name) }}{{ end }}
-    dispatch = _az.SagaDispatch({{ quote $c.name }}, {{ quote $c.input_domain }}, {{ quote (index $c.output_domains 0) }})
+    dispatch = _az.PolicyDispatch({{ quote $c.name }}, {{ quote $c.input_domain }}, {{ quote (index $c.output_domains 0) }})
 {{- range $c.handlers }}
     def _on_{{ snake .method }}(event_any, source):
         event = {{ typeRef .message }}()
@@ -54,7 +54,7 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.AggregateDisp
     dispatch.on_command({{ quote .message.full_name }}, _on_{{ snake .method }})
 {{- end }}
 {{- range $c.facts }}
-    def _fact_{{ snake .method }}(fact_any, state):
+    def _fact_{{ snake .method }}(fact_any, state, _cctx):
         fact = {{ typeRef .message }}()
 {{- include "py.unpack" (dict "target" "fact" "any" "fact_any") }}
         rec = handler.{{ snake .method }}(fact, state)
@@ -95,5 +95,9 @@ def new_{{ $name }}_dispatch(handler: {{ $c.name }}Handler) -> _az.ProjectorDisp
 {{- end }}
 
 def register_{{ $name }}(router: _az.Router, handler: {{ $c.name }}Handler) -> None:
+{{- if eq $c.kind "SAGA" }}
+    router.register_policy(new_{{ $name }}_dispatch(handler))
+{{- else }}
     router.register_{{ lower $c.kind }}(new_{{ $name }}_dispatch(handler))
+{{- end }}
 

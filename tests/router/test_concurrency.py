@@ -1,9 +1,7 @@
-"""P5 GIL-threaded concurrent dispatch. Drives parallel dispatches from
-multiple threads against one router and asserts isolation: every callback is
-stateless and the router owns each dispatch's state, so the state a handler
-sees reflects only that dispatch's own prior history — never another
-thread's. A Send/Sync or state-bleed defect surfaces here, through the cffi
-callback's GIL acquisition."""
+"""Concurrent dispatch: parallel dispatches from several threads against
+one router stay isolated. The router keeps no state between deliveries, so
+the state a handler sees reflects only its own delivery's history, never
+another thread's."""
 
 import threading
 
@@ -11,7 +9,7 @@ from angzarr_client.proto.io.angzarr.v1 import types_pb2
 from angzarr_client.router import AggregateDispatch, Rebuilder, Router, pack
 
 from . import builders
-from .gen.test.counter import counter_pb2
+from .gen import counter_pb2
 
 _THREADS = 8
 _ITERATIONS = 50

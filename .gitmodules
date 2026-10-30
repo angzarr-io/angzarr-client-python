@@ -1,6 +1,3 @@
 [submodule "angzarr-project"]
 	path = angzarr-project
 	url = https://github.com/angzarr-io/angzarr-project.git
-[submodule "angzarr-router"]
-	path = angzarr-router
-	url = https://github.com/angzarr-io/angzarr-router.git

@@ -1,8 +1,8 @@
 """ComponentHost: serves the one component registered with the router
 binding over gRPC, next to the gRPC health service.
 
-One business process hosts exactly one component (an aggregate, saga,
-process manager or projector) for its one coordinator; a second registration
+One business process hosts exactly one component (an aggregate, process
+manager, policy or projector) for its one coordinator; a second registration
 is not hosted, and the host refuses to start, naming both
 (``DUPLICATE_REGISTRATION``). The host knows framework concepts
 only. An application registers its component (a generated
@@ -13,9 +13,10 @@ optionally, an upcaster and its own gRPC services; the host exposes:
   the component. The coordinator pulls it; the host never calls its
   coordinator. The component carries the binary's build version, given as
   ``ComponentHost(rules_version=...)``;
-- the component's kind service: ``CommandHandlerService`` (an aggregate:
-  Handle, for commands and facts alike), ``SagaService``,
-  ``ProcessManagerService`` or ``ProjectorService`` (Handle);
+- the component's kind service: ``CommandHandlerService`` (an aggregate or
+  a process manager, a domain: Handle, for commands and facts alike),
+  ``PolicyService`` (Handle and OnRefused) or ``ProjectorService``
+  (Handle);
 - ``UpcasterService``: Upcast, over an application upcaster.
 
 Dispatch is the router's. A coded failure from the router travels as its
@@ -24,9 +25,7 @@ status message is the error's code, and the ``grpc-status-details-bin``
 trailer carries a ``google.rpc.Status`` whose ``ErrorInfo`` has the code as
 its reason and the args as its metadata. Any other exception is
 ``UNHANDLED_HANDLER_ERROR`` with cause ``HANDLER_PANICKED``; its text goes
-to the host's log only. Saga and process-manager
-coordinators deliver every event of their source domains, so an event the
-component does not handle is acknowledged with an empty response.
+to the host's log only.
 
 Health doubles as readiness: every served service (and the overall server,
 ``""``) reports ``NOT_SERVING`` until the readiness supervisor has seen the
@@ -63,12 +62,10 @@ from .proto.io.angzarr.v1 import (
     command_handler_pb2_grpc,
     component_pb2,
     component_pb2_grpc,
-    process_manager_pb2,
-    process_manager_pb2_grpc,
+    policy_pb2,
+    policy_pb2_grpc,
     projector_pb2,
     projector_pb2_grpc,
-    saga_pb2,
-    saga_pb2_grpc,
     upcaster_pb2,
     upcaster_pb2_grpc,
 )
@@ -89,10 +86,7 @@ COMMAND_HANDLER_SERVICE = command_handler_pb2.DESCRIPTOR.services_by_name[
 COMPONENT_SERVICE = component_pb2.DESCRIPTOR.services_by_name[
     "ComponentService"
 ].full_name
-SAGA_SERVICE = saga_pb2.DESCRIPTOR.services_by_name["SagaService"].full_name
-PROCESS_MANAGER_SERVICE = process_manager_pb2.DESCRIPTOR.services_by_name[
-    "ProcessManagerService"
-].full_name
+POLICY_SERVICE = policy_pb2.DESCRIPTOR.services_by_name["PolicyService"].full_name
 PROJECTOR_SERVICE = projector_pb2.DESCRIPTOR.services_by_name[
     "ProjectorService"
 ].full_name
@@ -103,8 +97,7 @@ UPCASTER_SERVICE = upcaster_pb2.DESCRIPTOR.services_by_name["UpcasterService"].f
 FRAMEWORK_SERVICES = (
     COMPONENT_SERVICE,
     COMMAND_HANDLER_SERVICE,
-    SAGA_SERVICE,
-    PROCESS_MANAGER_SERVICE,
+    POLICY_SERVICE,
     PROJECTOR_SERVICE,
     UPCASTER_SERVICE,
 )
@@ -152,16 +145,13 @@ class _Dispatcher:
         self._executor = executor
         self._log = logger
 
-    async def call(self, context, fn: Callable, request, *, ack_unconsumed=None):
+    async def call(self, context, fn: Callable, request):
         from .router import CodedError, GrpcCode
-        from .router._dispatch import _build_status_bytes
 
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(self._executor, fn, request)
         except CodedError as exc:
-            if ack_unconsumed is not None and exc.grpc == GrpcCode.UNIMPLEMENTED:
-                return ack_unconsumed()
             failure = exc
         # The transport edge reports every other failure as a coded INTERNAL;
         # what escaped stays in the host's log.
@@ -172,7 +162,7 @@ class _Dispatcher:
                 GrpcCode.INTERNAL,
                 {keys.CAUSE: codes.HANDLER_PANICKED},
             )
-        details = _build_status_bytes(failure.grpc, failure.code, failure.extras)
+        details = failure.status().SerializeToString()
         context.set_trailing_metadata(((_STATUS_DETAILS_KEY, details),))
         await context.abort(grpc_status_code(failure.grpc), failure.code)
 
@@ -198,31 +188,19 @@ class _ComponentServicer(component_pb2_grpc.ComponentServiceServicer):
         return await self._dispatcher.call(context, self._describe, request)
 
 
-class _SagaServicer(saga_pb2_grpc.SagaServiceServicer):
+class _PolicyServicer(policy_pb2_grpc.PolicyServiceServicer):
     def __init__(self, router, dispatcher: _Dispatcher) -> None:
         self._router = router
         self._dispatcher = dispatcher
 
     async def Handle(self, request, context):
         return await self._dispatcher.call(
-            context,
-            self._router.dispatch_saga,
-            request,
-            ack_unconsumed=saga_pb2.SagaResponse,
+            context, self._router.dispatch_policy, request
         )
 
-
-class _ProcessManagerServicer(process_manager_pb2_grpc.ProcessManagerServiceServicer):
-    def __init__(self, router, dispatcher: _Dispatcher) -> None:
-        self._router = router
-        self._dispatcher = dispatcher
-
-    async def Handle(self, request, context):
+    async def OnRefused(self, request, context):
         return await self._dispatcher.call(
-            context,
-            self._router.dispatch_process_manager,
-            request,
-            ack_unconsumed=process_manager_pb2.ProcessManagerHandleResponse,
+            context, self._router.dispatch_refusal, request
         )
 
 
@@ -264,12 +242,11 @@ class ComponentHost:
 
     ``router`` defaults to a new :class:`angzarr_client.router.Router`, which
     the host then closes on :meth:`stop`. ``max_workers`` bounds concurrent
-    dispatches (router dispatch blocks on the native call and on handler
-    code). ``rules_version`` is the business binary's full build version
+    dispatches (router dispatch blocks on handler code). ``rules_version`` is the business binary's full build version
     (``__version__`` from the module ``versionator output emit python``
     writes): it is stamped on the hosted table unless it declares its own,
-    so every answer and the component's description carry it, and the host
-    refuses to start while the component lacks one (MISSING_RULES_VERSION).
+    so every answer and the component's description carry it. The
+    coordinator judges the description (decision 14.42).
     """
 
     def __init__(
@@ -318,18 +295,19 @@ class ComponentHost:
             self._kind = COMMAND_HANDLER_SERVICE
         return self
 
-    def add_saga(self, dispatch) -> ComponentHost:
-        """Register a saga's dispatch table; serves SagaService."""
+    def add_policy(self, dispatch) -> ComponentHost:
+        """Register a policy's dispatch table; serves PolicyService."""
         if self._claim(dispatch):
-            self.router.register_saga(self._versioned(dispatch))
-            self._kind = SAGA_SERVICE
+            self.router.register_policy(self._versioned(dispatch))
+            self._kind = POLICY_SERVICE
         return self
 
     def add_process_manager(self, dispatch) -> ComponentHost:
-        """Register a process manager's dispatch table; serves ProcessManagerService."""
+        """Register a process manager's dispatch table: a domain, so it
+        serves CommandHandlerService (decision 14.31)."""
         if self._claim(dispatch):
             self.router.register_process_manager(self._versioned(dispatch))
-            self._kind = PROCESS_MANAGER_SERVICE
+            self._kind = COMMAND_HANDLER_SERVICE
         return self
 
     def add_projector(self, dispatch) -> ComponentHost:
@@ -413,7 +391,6 @@ class ComponentHost:
             )
         if self._thread is not None:
             raise ConfigurationError("the host is already started")
-        self._check_descriptors()
         if address is None:
             _transport, address = get_transport_config()
         self._loop = asyncio.new_event_loop()
@@ -484,19 +461,6 @@ class ComponentHost:
             if started:
                 self._log.info("server_shutdown", services=self.services)
 
-    def _check_descriptors(self) -> None:
-        """Refuse to start while the coordinator would refuse the host's
-        components (decision 14.6): every one must describe itself, with a
-        build version."""
-        from .router import CodedError
-
-        try:
-            self.router.component_descriptor()
-        except CodedError as exc:
-            raise ConfigurationError(
-                str(exc), code=exc.code, details=exc.extras
-            ) from exc
-
     def __enter__(self) -> Self:
         return self
 
@@ -534,13 +498,9 @@ class ComponentHost:
                 _CommandHandlerServicer(router, dispatcher),
                 server,
             )
-        if self._kind == SAGA_SERVICE:
-            saga_pb2_grpc.add_SagaServiceServicer_to_server(
-                _SagaServicer(router, dispatcher), server
-            )
-        if self._kind == PROCESS_MANAGER_SERVICE:
-            process_manager_pb2_grpc.add_ProcessManagerServiceServicer_to_server(
-                _ProcessManagerServicer(router, dispatcher), server
+        if self._kind == POLICY_SERVICE:
+            policy_pb2_grpc.add_PolicyServiceServicer_to_server(
+                _PolicyServicer(router, dispatcher), server
             )
         if self._kind == PROJECTOR_SERVICE:
             projector_pb2_grpc.add_ProjectorServiceServicer_to_server(

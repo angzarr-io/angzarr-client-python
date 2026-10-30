@@ -24,24 +24,21 @@ from angzarr_client import ComponentHost, ConfigurationError
 from angzarr_client.host import (
     COMMAND_HANDLER_SERVICE,
     COMPONENT_SERVICE,
-    SAGA_SERVICE,
+    POLICY_SERVICE,
 )
 from angzarr_client.proto.io.angzarr.v1 import (
     command_handler_pb2,
     command_handler_pb2_grpc,
-    process_manager_pb2,
-    process_manager_pb2_grpc,
+    policy_pb2,
+    policy_pb2_grpc,
     projector_pb2_grpc,
-    saga_pb2,
-    saga_pb2_grpc,
     types_pb2,
 )
 from angzarr_client.router import CodedError, GrpcCode, Router
 
 from . import builders
 from .builders import TEST_RULES_VERSION
-from .fixture import OrderSaga
-from .gen.test.counter import order_saga_angzarr
+from .contract import order_policy
 from .test_host import _counter_host, _error_info, _increased_book, _wait_serving
 
 _SERVING = health_pb2.HealthCheckResponse.SERVING
@@ -50,8 +47,8 @@ _LOOP_THREAD = "angzarr-component-host"
 
 _RESPONSES = {
     "dispatch": command_handler_pb2.CommandHandlerResponse,
-    "dispatch_saga": saga_pb2.SagaResponse,
-    "dispatch_process_manager": process_manager_pb2.ProcessManagerHandleResponse,
+    "dispatch_policy": policy_pb2.PolicyResponse,
+    "dispatch_refusal": policy_pb2.OnRefusedResponse,
     "dispatch_projector": types_pb2.Projection,
 }
 
@@ -71,7 +68,7 @@ class _ScriptedRouter:
     def register_aggregate(self, dispatch) -> None:
         pass
 
-    def register_saga(self, dispatch) -> None:
+    def register_policy(self, dispatch) -> None:
         pass
 
     def register_process_manager(self, dispatch) -> None:
@@ -89,11 +86,11 @@ class _ScriptedRouter:
     def dispatch(self, request):
         return self._run("dispatch", request)
 
-    def dispatch_saga(self, request):
-        return self._run("dispatch_saga", request)
+    def dispatch_policy(self, request):
+        return self._run("dispatch_policy", request)
 
-    def dispatch_process_manager(self, request):
-        return self._run("dispatch_process_manager", request)
+    def dispatch_refusal(self, request):
+        return self._run("dispatch_refusal", request)
 
     def dispatch_projector(self, request):
         return self._run("dispatch_projector", request)
@@ -405,16 +402,22 @@ _CALLS = {
             _command(), timeout=5
         ),
     ),
-    "saga": (
-        "saga",
-        lambda ch: saga_pb2_grpc.SagaServiceStub(ch).Handle(
+    "policy": (
+        "policy",
+        lambda ch: policy_pb2_grpc.PolicyServiceStub(ch).Handle(
             types_pb2.EventBook(), timeout=5
+        ),
+    ),
+    "policy_refusal": (
+        "policy",
+        lambda ch: policy_pb2_grpc.PolicyServiceStub(ch).OnRefused(
+            policy_pb2.Refusal(), timeout=5
         ),
     ),
     "process_manager": (
         "process_manager",
-        lambda ch: process_manager_pb2_grpc.ProcessManagerServiceStub(ch).Handle(
-            process_manager_pb2.ProcessManagerHandleRequest(), timeout=5
+        lambda ch: command_handler_pb2_grpc.CommandHandlerServiceStub(ch).Handle(
+            _command(), timeout=5
         ),
     ),
     "projector": (
@@ -440,38 +443,37 @@ def test_every_rpc_reports_a_coded_router_failure_as_its_status(hosts, call):
     assert (info.reason, dict(info.metadata)) == ("SCRIPTED_FAILURE", {"k": "v"})
 
 
-_UNIMPLEMENTED = CodedError(code="NO_HANDLER_REGISTERED", grpc=GrpcCode.UNIMPLEMENTED)
+_UNIMPLEMENTED = CodedError(code="NO_COMPONENT_OF_KIND", grpc=GrpcCode.UNIMPLEMENTED)
 
 
-def test_a_process_manager_acknowledges_an_unimplemented_dispatch(hosts):
-    def answer(kind, *args):
+@pytest.mark.parametrize("kind", ["aggregate", "policy"])
+def test_an_unimplemented_dispatch_is_reported_not_acknowledged(hosts, kind):
+    def answer(_kind, *args):
         raise _UNIMPLEMENTED
 
     host = ComponentHost(_ScriptedRouter(answer))
-    host.add_process_manager(SimpleNamespace())
-    stub = process_manager_pb2_grpc.ProcessManagerServiceStub(hosts(host))
-    resp = stub.Handle(process_manager_pb2.ProcessManagerHandleRequest(), timeout=5)
-    assert resp == process_manager_pb2.ProcessManagerHandleResponse()
-
-
-def test_an_aggregate_reports_an_unimplemented_dispatch(hosts):
-    def answer(kind, *args):
-        raise _UNIMPLEMENTED
-
-    host, _router = _aggregate_host(answer)
-    stub = command_handler_pb2_grpc.CommandHandlerServiceStub(hosts(host))
+    _register(kind, host)
+    channel = hosts(host)
     with pytest.raises(grpc.RpcError) as err:
-        stub.Handle(_command(), timeout=5)
+        if kind == "policy":
+            policy_pb2_grpc.PolicyServiceStub(channel).Handle(
+                types_pb2.EventBook(), timeout=5
+            )
+        else:
+            command_handler_pb2_grpc.CommandHandlerServiceStub(channel).Handle(
+                _command(), timeout=5
+            )
     assert err.value.code() == grpc.StatusCode.UNIMPLEMENTED
-    assert _error_info(err.value).reason == "NO_HANDLER_REGISTERED"
+    assert _error_info(err.value).reason == "NO_COMPONENT_OF_KIND"
 
 
-def test_a_saga_acknowledges_an_event_from_a_domain_it_does_not_consume(hosts):
+def test_a_policy_answers_no_reaction_to_a_domain_it_does_not_consume(hosts):
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
-    stub = saga_pb2_grpc.SagaServiceStub(hosts(host))
-    resp = stub.Handle(_increased_book("elsewhere"), timeout=5)
-    assert resp == saga_pb2.SagaResponse()
+    host.add_policy(order_policy("inventory", []))
+    stub = policy_pb2_grpc.PolicyServiceStub(hosts(host))
+    book = _increased_book("elsewhere")
+    book.pages[0].payload.type_url = builders.type_url("test.counter.Unconsumed")
+    assert stub.Handle(book, timeout=5) == policy_pb2.PolicyResponse()
 
 
 # --- state before start, exact configuration errors -------------------------
@@ -561,9 +563,9 @@ def fast_probes(monkeypatch):
     monkeypatch.setenv("ANGZARR_READINESS_PROBE_TIMEOUT", "0.2")
 
 
-def _saga_host() -> ComponentHost:
+def _policy_host() -> ComponentHost:
     host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
-    host.add_saga(order_saga_angzarr.new_order_saga_dispatch(OrderSaga()))
+    host.add_policy(order_policy("inventory", []))
     return host
 
 
@@ -576,13 +578,13 @@ def test_the_host_takes_no_sync_output_domains():
         )
 
 
-def test_a_saga_host_serves_whatever_the_bus_endpoint(
+def test_a_policy_host_serves_whatever_the_bus_endpoint(
     monkeypatch, fast_probes, tmp_path, hosts
 ):
     monkeypatch.setenv("ANGZARR_BUS_ENDPOINT", f"unix:{tmp_path}/bus.sock")
-    host = _saga_host()
+    host = _policy_host()
     hosts(host, serving=False)
-    assert _until(lambda: host.health_status(SAGA_SERVICE) == _SERVING)
+    assert _until(lambda: host.health_status(POLICY_SERVICE) == _SERVING)
 
 
 # --- run() ---------------------------------------------------------------------

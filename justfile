@@ -17,17 +17,11 @@ CLI := env_var_or_default("ANGZARR_CLI", TOP / ".tools" / "angzarr")
 default:
     @just --list
 
-# Python types for the framework contract and the router ABI
-# (angzarr_client/proto/, gitignored), generated with grpcio-tools and with
-# imports rerooted under the package (scripts/native_build.py; the wheel build
-# runs the same code).
+# Python types for the framework contract (angzarr_client/proto/,
+# gitignored), generated with grpcio-tools and with imports rerooted under
+# the package (scripts/proto_build.py; the wheel build runs the same code).
 proto:
-    cd {{TOP}} && uv run --extra dev python scripts/native_build.py proto
-
-# Build the router-ffi cdylib from the pinned angzarr-router submodule against
-# this repository's angzarr-project protos, and vendor it into the package.
-router-lib:
-    cd {{TOP}} && uv run --extra dev python scripts/native_build.py router-lib
+    cd {{TOP}} && uv run --extra dev python scripts/proto_build.py proto
 
 # Install the angzarr CLI at CLI_REV into .tools/ (skipped when ANGZARR_CLI
 # names another binary).
@@ -82,11 +76,11 @@ render out package +paths: cli
     done
     uv run python scripts/fixup_gen_imports.py "$out" "${framework[@]}" "${own[@]}"
 
-# The conformance fixture (angzarr-router/conformance/proto) rendered into
-# tests/router/gen: the components the conformance steps register.
-conformance-gen:
-    rm -rf {{TOP}}/tests/router/gen
-    just render {{TOP}}/tests/router/gen tests.router.gen angzarr-router/conformance/proto/test
+# The handler-contract tier's fixture messages
+# (angzarr-project/features/handler-contract/fixture/*.proto) generated into
+# tests/router/gen: the messages the tier's steps build their components over.
+contract-gen:
+    cd {{TOP}} && uv run --extra dev python scripts/proto_build.py fixtures
 
 # Render the angzarr-project example protos with the templates and prove the
 # result loads: every wiring module imports and every scaffold stub declares
@@ -96,8 +90,8 @@ codegen-check:
     just render {{TOP}}/.codegen-check/gen gen angzarr-project/proto/io/angzarr/examples
     cd {{TOP}} && uv run python scripts/check_rendered.py .codegen-check/gen
 
-# Everything the tests need: protos, the router library, the fixture wiring.
-prepare: proto router-lib conformance-gen
+# Everything the tests need: the protos and the tier's fixture messages.
+prepare: proto contract-gen
 
 # Unit, binding, conformance and client-feature tests.
 test: prepare
@@ -397,9 +391,9 @@ mutation-functions +globs: prepare
     sys.exit(1)
     PY
 
-# Build the sdist and the manylinux wheel (the wheel build generates the protos
-# and builds the router library itself), then prove the wheel installs and
-# loads in a clean environment.
+# Build the sdist and the pure-Python wheel (the wheel build generates the
+# protos itself), then prove the wheel installs and loads in a clean
+# environment.
 build:
     rm -rf {{TOP}}/dist
     cd {{TOP}} && uv build
@@ -409,11 +403,10 @@ build:
 publish: build
     cd {{TOP}} && uv run --with twine twine upload dist/*
 
-# Remove build outputs and caches (generated protos, router build, rendered code).
+# Remove build outputs and caches (generated protos, rendered code).
 clean:
     cd {{TOP}} && rm -rf dist/ build/ *.egg-info/ htmlcov/ mutants/ .pytest_cache \
-        .router-target .codegen-check tests/router/gen angzarr_client/router/_lib \
-        angzarr_client/proto/io angzarr_client/proto/sererr
+        .codegen-check tests/router/gen angzarr_client/proto/io angzarr_client/proto/sererr
 
 # Check formatting (ruff + black)
 fmt:

@@ -1,5 +1,5 @@
-"""Shared pytest fixtures for the binding tests: a router with the
-CounterAggregate fixture registered, and the handler's observation log."""
+"""Shared pytest fixtures for the router tests: a router hosting the tier's
+CounterAggregate (tests/router/contract.py), and what its handler saw."""
 
 from __future__ import annotations
 
@@ -7,21 +7,19 @@ import pytest
 
 from angzarr_client.router import Router
 
-from .fixture import CounterAggregate, Observation
-from .gen.test.counter import counter_aggregate_angzarr
+from .contract import Observed, counter_aggregate
 
 
 @pytest.fixture
-def observed() -> list[Observation]:
-    """The handler's observation log — what each command handler saw."""
+def observed() -> list[Observed]:
+    """What each IncreaseBy call saw."""
     return []
 
 
 @pytest.fixture
-def router(observed: list[Observation]):
-    """A router with the CounterAggregate fixture registered. Closed after
-    each test."""
+def router(observed: list[Observed]):
+    """A router hosting the CounterAggregate."""
     r = Router()
-    counter_aggregate_angzarr.register_counter_aggregate(r, CounterAggregate(observed))
+    r.register_aggregate(counter_aggregate(observed))
     yield r
     r.close()

@@ -137,7 +137,7 @@ def _then_router_module() -> None:
     for name in (
         "Router",
         "AggregateDispatch",
-        "SagaDispatch",
+        "PolicyDispatch",
         "ProcessManagerDispatch",
         "ProjectorDispatch",
         "Rebuilder",
@@ -180,8 +180,7 @@ def _then_host_serves_framework_services() -> None:
     assert set(FRAMEWORK_SERVICES) == {
         "io.angzarr.v1.ComponentService",
         "io.angzarr.v1.CommandHandlerService",
-        "io.angzarr.v1.SagaService",
-        "io.angzarr.v1.ProcessManagerService",
+        "io.angzarr.v1.PolicyService",
         "io.angzarr.v1.ProjectorService",
         "io.angzarr.v1.UpcasterService",
     }

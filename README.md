@@ -2,13 +2,18 @@
 
 The home of [Angzarr](https://angzarr.io) for Python:
 
-- **`angzarr_client.router`** — the router binding. Components (aggregates,
-  sagas, process managers, projectors) are hosted by the shared Rust router
-  ([angzarr-router](https://github.com/angzarr-io/angzarr-router)'s
-  `router-ffi` cdylib, C ABI 4), loaded in-process through cffi. Dispatch,
-  state rebuild and conflict resolution run in the router, which owns every
-  component's state; Python holds the business handlers, called statelessly
-  over decoded protobuf messages.
+- **`angzarr_client.router`** — the router, native Python (decision
+  14.42). It hosts one component (an aggregate, a process manager, a policy
+  or a projector) and does only dispatch: it routes by type URL, folds the
+  starting state and the pages the coordinator delivers, runs decide,
+  ingest, a policy's handlers and translating callbacks, and a projector,
+  reports a stale command's conflicts, and turns whatever escapes business
+  code into a key and its args. Admission, upcasting, snapshots, descriptor
+  validation, policy output checks and conflict judgement are the
+  coordinator's. Its complete contract is angzarr-project's
+  `features/handler-contract/` tier, which the Rust router
+  ([angzarr-router](https://github.com/angzarr-io/angzarr-router), the
+  reference) runs too.
 - **`codegen/`** — the templates `angzarr codegen python` / `angzarr scaffold
   python` render from your proto component declarations: a typed
   `<Component>Handler` protocol plus the dispatch wiring (regenerated), and a
@@ -26,9 +31,8 @@ The home of [Angzarr](https://angzarr.io) for Python:
 
 ## Installing
 
-Linux x86_64 only. Wheels are tagged `manylinux_2_<N>_x86_64` and carry the
-generated framework protos and the router-ffi library. Installing from git
-builds the wheel, which needs a Rust toolchain (`cargo`) on `PATH`:
+Pure Python. Wheels carry the generated framework protos; installing from
+git builds the wheel, generating them with grpcio-tools:
 
 ```bash
 pip install "angzarr-client @ git+https://github.com/angzarr-io/angzarr-client-python@<commit>"
@@ -151,28 +155,26 @@ contains `:`.
 
 ## Development
 
-Submodules: `angzarr-project` (the spec: protos and feature files) and
-`angzarr-router` (the router at a pinned revision: the cdylib source, its ABI
-protos and the conformance suite). Initialise them with `--recursive`: the
-router builds its wire types from its own angzarr-project submodule.
+Submodule: `angzarr-project` (the spec: protos, feature files and the
+router tier's fixtures).
 
 | recipe | does |
 |---|---|
-| `just proto` | generate the framework + ABI protos into `angzarr_client/proto/` (grpcio-tools) |
-| `just router-lib` | build the router-ffi cdylib from `angzarr-router/` (cargo) and vendor it into `angzarr_client/router/_lib/` |
-| `just build` | sdist + manylinux wheel (the wheel build runs both of the above; `scripts/native_build.py`), then install the wheel in a clean environment and check it loads |
+| `just proto` | generate the framework protos into `angzarr_client/proto/` (grpcio-tools; `scripts/proto_build.py`) |
+| `just build` | sdist + pure-Python wheel (the wheel build runs `just proto`'s code), then install the wheel in a clean environment and check it loads |
 | `just cli` | install the angzarr CLI at the pinned `CLI_REV` into `.tools/` (`ANGZARR_CLI=<binary>` uses another build) |
-| `just conformance-gen` | render the router's conformance fixture with `codegen/` into `tests/router/gen/` |
-| `just test` | all of the above, then unit, binding, router-conformance and client-feature tests |
+| `just contract-gen` | generate the handler-contract tier's fixture messages into `tests/router/gen/` |
+| `just test` | `proto` and `contract-gen`, then unit, router (handler-contract tier) and client-feature tests |
 | `just codegen-check` | render angzarr-project's example protos with `codegen/` and check every component imports, its stub implements its protocol, and it registers on the router |
 | `just ci` | format check + lint + `test` + `codegen-check` (what CI runs) |
-| `just clean` | remove generated protos, the router build, rendered code |
+| `just clean` | remove generated protos and rendered code |
 
 Tests:
 
-- `tests/router/` — the binding's unit tests and angzarr-router's
-  `conformance/features`, run against the binding with handlers implementing
-  the generated protocols (`tests/router/fixture.py`).
+- `tests/router/` — angzarr-project's `features/handler-contract/` tier,
+  the router's complete contract, run in place against the router over the
+  tier's fixtures (`test_handler_contract.py`, business code in
+  `contract.py`), the router's unit tests and the host's.
 - `tests/client/` — angzarr-project's `features/client` client-surface tier and
   `parity/client` against the coordinator clients and a test backend.
 - `tests/test_*.py` — unit tests.

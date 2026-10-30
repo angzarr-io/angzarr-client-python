@@ -1,10 +1,10 @@
 name: CI
 
 # Thin by design: every step is a just recipe (see justfile). `just ci` runs
-# format + lint, builds the router-ffi cdylib from the pinned angzarr-router
-# submodule, runs the unit / binding / router-conformance / client-feature
-# suites, and renders the angzarr-project example protos with this
-# repository's codegen templates and checks the result loads and registers.
+# format + lint, the unit / router (angzarr-project's handler-contract tier)
+# / client-feature suites, and renders the angzarr-project example protos
+# with this repository's codegen templates and checks the result loads and
+# registers.
 
 on:
   push:
