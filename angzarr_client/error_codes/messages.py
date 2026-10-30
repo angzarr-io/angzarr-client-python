@@ -77,4 +77,7 @@ ROUTER_NO_HANDLERS = "no handlers registered on Router"
 # Component host
 HANDLER_PANICKED = "handler panicked during dispatch"
 NO_COMPONENTS_REGISTERED = "the host has no components registered"
+UPCASTER_WITH_COMPONENT = (
+    "an upcaster is served by its own sidecar host, not beside a component"
+)
 DUPLICATE_REGISTRATION = "a host serves exactly one component"

@@ -7,7 +7,7 @@ is not hosted, and the host refuses to start, naming both
 (``DUPLICATE_REGISTRATION``). The host knows framework concepts
 only. An application registers its component (a generated
 ``new_<component>_dispatch(handler)`` table, or a hand-built one) and,
-optionally, an upcaster and its own gRPC services; the host exposes:
+optionally, its own gRPC services; the host exposes:
 
 - ``ComponentService``: Describe, answered with the ComponentDescriptor
   angzarr-cli generated for the component, given with it, unchanged
@@ -18,7 +18,11 @@ optionally, an upcaster and its own gRPC services; the host exposes:
   a process manager, a domain: Handle, for commands and facts alike),
   ``PolicyService`` (Handle and OnRefused) or ``ProjectorService``
   (Handle);
-- ``UpcasterService``: Upcast, over an application upcaster.
+
+An upcaster is its component's sidecar, a process of its own (decision
+14.39): a host given only an upcaster serves ``UpcasterService`` and health,
+and nothing else; a host given a component and an upcaster refuses to start
+(``UPCASTER_WITH_COMPONENT``).
 
 Dispatch is the router's. A coded failure from the router travels as its
 gRPC status, a key and an argument map, never text (decision 14.37): the
@@ -114,16 +118,6 @@ class Upcaster(Protocol):
     def upcast(
         self, request: upcaster_pb2.UpcastRequest
     ) -> upcaster_pb2.UpcastResponse: ...
-
-
-class PassThroughUpcaster:
-    """The upcaster of a domain with no legacy event shapes: events come back
-    unchanged."""
-
-    def upcast(
-        self, request: upcaster_pb2.UpcastRequest
-    ) -> upcaster_pb2.UpcastResponse:
-        return upcaster_pb2.UpcastResponse(events=request.events)
 
 
 def grpc_status_code(code: int) -> grpc.StatusCode:
@@ -339,11 +333,10 @@ class ComponentHost:
         return dispatch
 
     def add_upcaster(self, upcaster: Upcaster) -> ComponentHost:
-        """Serve UpcasterService over ``upcaster``, beside the hosted
-        component: an upcaster is part of its component, and the component's
-        coordinator calls its own business process's UpcasterService. It is
-        never a component on its own: a host with an upcaster and no
-        component refuses to start (NO_COMPONENTS_REGISTERED)."""
+        """Serve UpcasterService over ``upcaster``: the host is its
+        component's upcaster sidecar (decision 14.39), serving the upcaster
+        and health only. Its component's coordinator calls it; a host given
+        a component too refuses to start (UPCASTER_WITH_COMPONENT)."""
         self._upcaster = upcaster
         return self
 
@@ -379,7 +372,13 @@ class ComponentHost:
         to the transport the environment selects
         (:func:`angzarr_client.server.get_transport_config`); a TCP port of 0
         binds a free port, reflected in the returned address."""
-        if self._kind is None:
+        if self._kind is not None and self._upcaster is not None:
+            raise ConfigurationError(
+                codes.UPCASTER_WITH_COMPONENT,
+                code=codes.UPCASTER_WITH_COMPONENT,
+                details={"component": self._component_name},
+            )
+        if self._kind is None and self._upcaster is None:
             raise ConfigurationError(
                 codes.NO_COMPONENTS_REGISTERED, code=codes.NO_COMPONENTS_REGISTERED
             )
@@ -493,9 +492,10 @@ class ComponentHost:
         dispatcher = _Dispatcher(self._executor, self._log)
         server = grpc.aio.server()
         router = self.router
-        component_pb2_grpc.add_ComponentServiceServicer_to_server(
-            _ComponentServicer(self.descriptor), server
-        )
+        if self._kind is not None:
+            component_pb2_grpc.add_ComponentServiceServicer_to_server(
+                _ComponentServicer(self.descriptor), server
+            )
         if self._kind == COMMAND_HANDLER_SERVICE:
             command_handler_pb2_grpc.add_CommandHandlerServiceServicer_to_server(
                 _CommandHandlerServicer(router, dispatcher),

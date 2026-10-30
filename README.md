@@ -66,10 +66,15 @@ host.run()   # binds the transport the environment selects; stops on SIGTERM / S
 
 A host serves exactly ONE component (one business process is one component):
 `add_policy`, `add_process_manager` or `add_projector` instead of
-`add_aggregate`, and `add_upcaster` beside it (an upcaster is part of its
-component). A host given a second component refuses to start. `rules_version` is the binary's full build version: every hosted
-component reports it on every answer. The host always serves `ComponentService.Describe`, which the coordinator
-calls to learn the components it hosts. The transport comes from the environment: `TRANSPORT_TYPE=tcp`
+`add_aggregate`, each with its generated descriptor. A host given a second
+component refuses to start. An upcaster is its component's sidecar, a
+process of its own (decision 14.39): a host given only `add_upcaster`
+serves `UpcasterService` and health, and a host given a component and an
+upcaster refuses to start. `rules_version` is the binary's full build
+version: every hosted component reports it on every answer. A component's
+host always serves `ComponentService.Describe`, answered with its generated
+descriptor unchanged, which the coordinator calls to learn the component
+it hosts and validates. The transport comes from the environment: `TRANSPORT_TYPE=tcp`
 (default; `ANGZARR_BIND_ADDRESS`, else `[::]:$PORT`) or `TRANSPORT_TYPE=uds`
 (`$UDS_BASE_PATH/$SERVICE_NAME[-<qualifier>].sock`, removed on shutdown).
 Health reports `NOT_SERVING` until the server listens, and again once shutdown

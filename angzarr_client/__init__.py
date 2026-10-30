@@ -55,7 +55,7 @@ from .helpers import (
     type_url_matches_exact,
     uuid_to_proto,
 )
-from .host import ComponentHost, ConfigurationError, PassThroughUpcaster
+from .host import ComponentHost, ConfigurationError
 from .identity import compute_root, to_proto_bytes
 from .retry import (
     ExponentialBackoffRetry,
@@ -128,7 +128,6 @@ __all__ = [
     "GRPCError",
     "InvalidArgumentError",
     "InvalidTimestampError",
-    "PassThroughUpcaster",
     "Query",
     "QueryBuilder",
     "QueryClient",

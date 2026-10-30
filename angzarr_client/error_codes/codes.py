@@ -78,6 +78,9 @@ UNHANDLED_HANDLER_ERROR = "UNHANDLED_HANDLER_ERROR"
 # The cause of an UNHANDLED_HANDLER_ERROR when an exception escaped.
 HANDLER_PANICKED = "HANDLER_PANICKED"
 NO_COMPONENTS_REGISTERED = "NO_COMPONENTS_REGISTERED"
+# An upcaster is its own sidecar host (decision 14.39): a host given a
+# component and an upcaster is refused (details: component).
+UPCASTER_WITH_COMPONENT = "UPCASTER_WITH_COMPONENT"
 # A host serves exactly one component; a second registration is refused.
 DUPLICATE_REGISTRATION = "DUPLICATE_REGISTRATION"
 
