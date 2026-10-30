@@ -169,14 +169,17 @@ class TlsProbe:
                 continue
             except OSError:
                 return
+            # Recorded before the connection closes: the close is what fails
+            # the client's handshake, so the client may read the probe the
+            # moment it sees it.
             with conn:
                 conn.settimeout(2)
                 try:
                     data = conn.recv(16)
                 except OSError:
                     data = b""
-            with self._lock:
-                self._first_bytes.append(data)
+                with self._lock:
+                    self._first_bytes.append(data)
 
     def first_bytes(self) -> list[bytes]:
         with self._lock:
