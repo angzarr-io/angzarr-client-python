@@ -15,7 +15,7 @@ import re
 import pytest
 from google.protobuf import any_pb2, timestamp_pb2
 from google.rpc import error_details_pb2
-from pytest_bdd import given, parsers, scenario, then, when
+from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.proto.io.angzarr.v1 import policy_pb2, types_pb2
 from angzarr_client.router import (
@@ -40,14 +40,7 @@ from angzarr_client.router import (
 from . import contract as fx
 from .gen import counter_pb2, order_pb2
 
-
-@scenario(
-    str(fx.FIXTURE.parent / "counter_dispatch.feature"),
-    "Increasing a new counter records that many events",
-)
-def test_c0693_increasing_a_new_counter_records_that_many_events():
-    pass
-
+scenarios(str(fx.FIXTURE.parent))
 
 _QUOTED = re.compile(r'"([^"]*)"')
 
