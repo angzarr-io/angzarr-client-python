@@ -12,7 +12,7 @@ import pytest
 from google.rpc import error_details_pb2, status_pb2
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
-from angzarr_client import ComponentHost, ConfigurationError, PassThroughUpcaster
+from angzarr_client import ComponentHost, ConfigurationError
 from angzarr_client.error_codes import codes
 from angzarr_client.host import (
     COMMAND_HANDLER_SERVICE,
@@ -24,6 +24,8 @@ from angzarr_client.host import (
 )
 from angzarr_client.proto.io.angzarr.v1 import (
     command_handler_pb2_grpc,
+    component_pb2,
+    component_pb2_grpc,
     policy_pb2,
     policy_pb2_grpc,
     projector_pb2_grpc,
@@ -237,12 +239,52 @@ class _FailingUpcaster:
         raise self.error
 
 
+class _EchoUpcaster:
+    """An upcaster with no legacy shapes: the events come back unchanged."""
+
+    def upcast(self, request):
+        return upcaster_pb2.UpcastResponse(events=request.events)
+
+
 def _upcaster_host(upcaster) -> ComponentHost:
-    return _counter_host().add_upcaster(upcaster)
+    """An upcaster sidecar's host: the upcaster alone (decision 14.39)."""
+    return ComponentHost(Router()).add_upcaster(upcaster)
 
 
-def test_pass_through_upcaster_returns_the_events_unchanged(started):
-    channel = started(_upcaster_host(PassThroughUpcaster()))
+def test_an_upcaster_only_host_serves_upcaster_service_and_health(started):
+    host = _upcaster_host(_EchoUpcaster())
+    assert host.services == [UPCASTER_SERVICE]
+    channel = started(host)
+    for name in ("", UPCASTER_SERVICE):
+        _wait_serving(channel, name)
+    assert host.health_status(COMPONENT_SERVICE) is None
+    with pytest.raises(grpc.RpcError) as err:
+        component_pb2_grpc.ComponentServiceStub(channel).Describe(
+            component_pb2.DescribeRequest(), timeout=5
+        )
+    assert err.value.code() == grpc.StatusCode.UNIMPLEMENTED
+
+
+def test_a_component_host_refuses_an_upcaster():
+    # Decision 14.39: an upcaster is served by its own sidecar process,
+    # never beside the component's business code.
+    host = _counter_host().add_upcaster(_EchoUpcaster())
+    try:
+        with pytest.raises(ConfigurationError) as refused:
+            host.start("127.0.0.1:0")
+        assert (refused.value.code, str(refused.value)) == (
+            codes.UPCASTER_WITH_COMPONENT,
+            codes.UPCASTER_WITH_COMPONENT,
+        )
+        assert refused.value.details == {"component": "CounterAggregate"}
+        assert host.address == ""
+        assert host.health_status() is None
+    finally:
+        host.stop()
+
+
+def test_an_upcaster_returns_the_events_it_upcasts(started):
+    channel = started(_upcaster_host(_EchoUpcaster()))
     stub = upcaster_pb2_grpc.UpcasterServiceStub(channel)
     events = builders.prior_increases(2).pages
     resp = stub.Upcast(upcaster_pb2.UpcastRequest(events=events), timeout=5)
@@ -293,12 +335,10 @@ def test_the_host_puts_no_catalog_text_on_the_wire():
 
 def test_services_are_the_component_then_its_kind_then_application_services():
     host = _counter_host()
-    host.add_upcaster(PassThroughUpcaster())
     host.add_service(lambda s, server: None, object(), "app.ReportService")
     assert host.services == [
         COMPONENT_SERVICE,
         COMMAND_HANDLER_SERVICE,
-        UPCASTER_SERVICE,
         "app.ReportService",
     ]
     assert COMMAND_HANDLER_SERVICE == "io.angzarr.v1.CommandHandlerService"
@@ -357,9 +397,9 @@ def test_a_host_given_a_second_component_refuses_to_start(first, second):
 
 
 def test_every_served_service_reports_serving_after_not_serving(started):
-    host = _counter_host().add_upcaster(PassThroughUpcaster())
+    host = _counter_host()
     channel = started(host)
-    for name in ("", COMMAND_HANDLER_SERVICE, UPCASTER_SERVICE):
+    for name in ("", COMPONENT_SERVICE, COMMAND_HANDLER_SERVICE):
         _wait_serving(channel, name)
         history = host.health_history(name)
         assert history[0] == _NOT_SERVING and history[-1] == _SERVING
@@ -414,12 +454,12 @@ def test_stopping_an_unstarted_owning_host_closes_its_router():
         host.router.dispatch(builders.increase_command(1))
 
 
-def test_start_refuses_an_upcaster_only_host_and_a_second_start():
-    host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION).add_upcaster(
-        PassThroughUpcaster()
-    )
+def test_start_serves_an_upcaster_only_host_and_refuses_a_second_start():
+    host = _upcaster_host(_EchoUpcaster())
+    assert host.start("127.0.0.1:0")
+    host.stop(grace=0)
     with pytest.raises(ConfigurationError) as refused:
-        host.start("127.0.0.1:0")
+        ComponentHost(Router()).start("127.0.0.1:0")
     assert (refused.value.code, str(refused.value)) == (
         codes.NO_COMPONENTS_REGISTERED,
         codes.NO_COMPONENTS_REGISTERED,
@@ -494,3 +534,12 @@ def test_grpc_status_code_maps_numbers_and_defaults_to_internal():
     assert grpc_status_code(3) == grpc.StatusCode.INVALID_ARGUMENT
     assert grpc_status_code(12) == grpc.StatusCode.UNIMPLEMENTED
     assert grpc_status_code(999) == grpc.StatusCode.INTERNAL
+
+
+def test_the_client_offers_no_pass_through_upcaster():
+    # Decision 14.39: a domain with no legacy shapes runs no sidecar at all.
+    import angzarr_client
+    import angzarr_client.host as host_module
+
+    assert not hasattr(angzarr_client, "PassThroughUpcaster")
+    assert not hasattr(host_module, "PassThroughUpcaster")
