@@ -588,6 +588,26 @@ def test_an_empty_book_leaves_the_projector_at_the_books_next_sequence():
     assert _projector().dispatch_projector(_values("any")).next_sequence == 9
 
 
+def test_a_page_with_no_applier_is_passed_over_and_the_fold_goes_on():
+    book = types_pb2.EventBook(cover=types_pb2.Cover(domain="any"))
+    book.pages.add(sequence=0, payload=pack(wrappers_pb2.StringValue(value="x")))
+    book.pages.add(sequence=1, payload=pack(wrappers_pb2.Int64Value(value=7)))
+    projection = _projector().dispatch_projector(book)
+    assert wrappers_pb2.Int64Value.FromString(projection.projection.value).value == 7
+
+
+@pytest.mark.parametrize(
+    "dispatch",
+    [
+        PolicyDispatch("P", "order", "stock"),
+        ProjectorDispatch("Sum", wrappers_pb2.Int64Value),
+    ],
+)
+def test_a_policy_or_projector_takes_the_build_version_it_is_given(dispatch):
+    assert dispatch.with_rules_version("1.4.2") is dispatch
+    assert dispatch.rules_version == "1.4.2"
+
+
 @pytest.mark.parametrize(
     ("domains", "domain", "folded"),
     [
