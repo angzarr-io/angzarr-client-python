@@ -1,8 +1,8 @@
 name: Toolchains
 description: >
-  The tools the justfile recipes call: just, uv, buf (renders the codegen
-  templates) and Go (builds the angzarr CLI at the justfile's CLI_REV);
-  protoc comes from grpcio-tools.
+  The tools the justfile recipes call: just, uv, buf (the CLI's scaffold
+  runs it) and Rust (cargo builds the angzarr CLI at the justfile's
+  CLI_REV; ubuntu-latest has it); protoc comes from grpcio-tools.
 runs:
   using: composite
   steps:
@@ -11,7 +11,3 @@ runs:
     - uses: bufbuild/buf-action@v1
       with:
         setup_only: true
-    - uses: actions/setup-go@v5
-      with:
-        go-version: "1.25"
-        cache: false

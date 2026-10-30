@@ -2,9 +2,9 @@ name: CI
 
 # Thin by design: every step is a just recipe (see justfile). `just ci` runs
 # format + lint, the unit / router (angzarr-project's handler-contract tier)
-# / client-feature suites, and renders the angzarr-project example protos
-# with this repository's codegen templates and checks the result loads and
-# registers.
+# / client-feature suites, and scaffolds the angzarr-project example's
+# Python domain with the angzarr CLI and checks it works against this
+# package.
 
 on:
   push:

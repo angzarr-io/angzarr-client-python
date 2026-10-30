@@ -1,9 +1,8 @@
-"""The package and its codegen templates carry no example or business
-vocabulary (parity C-0496); documentation is not scanned."""
+"""The package carries no example or business vocabulary (parity C-0496);
+documentation is not scanned."""
 
 from __future__ import annotations
 
-import pathlib
 
 from tests.business_terms import (
     AMBIGUOUS_TERMS,
@@ -12,19 +11,10 @@ from tests.business_terms import (
     package_files,
 )
 
-CODEGEN = pathlib.Path(__file__).resolve().parents[1] / "codegen"
-
 
 def test_package_sources_name_no_business_concept():
     files = package_files()
     assert len(files) > 20, "the scan found too few package files to be meaningful"
-    hits = {str(f): business_terms_in(f) for f in files}
-    assert {f: h for f, h in hits.items() if h} == {}
-
-
-def test_codegen_templates_name_no_business_concept():
-    files = sorted(CODEGEN.iterdir())
-    assert files, "no codegen templates found"
     hits = {str(f): business_terms_in(f) for f in files}
     assert {f: h for f, h in hits.items() if h} == {}
 

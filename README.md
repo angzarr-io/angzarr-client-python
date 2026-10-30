@@ -14,10 +14,6 @@ The home of [Angzarr](https://angzarr.io) for Python:
   `features/handler-contract/` tier, which the Rust router
   ([angzarr-router](https://github.com/angzarr-io/angzarr-router), the
   reference) runs too.
-- **`codegen/`** — the templates `angzarr codegen python` / `angzarr scaffold
-  python` render from your proto component declarations: a typed
-  `<Component>Handler` protocol plus the dispatch wiring (regenerated), and a
-  handler stub (written once).
 - **Coordinator clients** — `CommandHandlerClient`, `QueryClient`, `DomainClient`
   and the `CommandBuilder` /
   `QueryBuilder` fluent builders, for code that talks to a running
@@ -42,60 +38,36 @@ pip install "angzarr-client @ git+https://github.com/angzarr-io/angzarr-client-p
 
 Declare components in proto with the `(io.angzarr.v1.component)`,
 `(io.angzarr.v1.command)` and `(io.angzarr.v1.event)` options (see
-angzarr-project's `options.proto`), then render this repository's templates
-with the [angzarr CLI](https://github.com/angzarr-io/angzarr-cli):
-
-```yaml
-# buf.gen.yaml
-version: v2
-managed:
-  enabled: true          # the CLI needs a go_package on every file
-plugins:
-  - remote: buf.build/protocolbuffers/python:v35.1
-    out: gen
-  - local: ["angzarr", "codegen", "python"]
-    out: gen
-    opt:
-      - paths=source_relative
-      - templates=github.com/angzarr-io/angzarr-client-python@<commit>
-    strategy: all
-  - local: ["angzarr", "scaffold", "python"]
-    out: src
-    opt:
-      - paths=source_relative
-      - out_dir=src
-      - templates=github.com/angzarr-io/angzarr-client-python@<commit>
-    strategy: all
-```
-
-The wiring imports the router binding as `angzarr_client.router` and the
-framework protos from `angzarr_client.proto`; the template parameters
-`param.runtime_module=` and `param.framework_package=` override either
-(`codegen/manifest.yaml`). The template contract is angzarr-cli's
-`docs/templates.md`.
+angzarr-project's `options.proto`), then scaffold the domain's project with
+the [angzarr CLI](https://github.com/angzarr-io/angzarr-cli): `angzarr
+scaffold python --domain <domain>` writes the domain's logic interface and
+its implementation (yours), and regenerates its plain types (`domain.py`),
+its dispatch for this package's router (`_gen`), its `ComponentDescriptor`
+(`_descriptor.py`) and its child-process entry point (`main.py`). The CLI's
+README says what each file holds. `just codegen-check` runs it against this
+package.
 
 Implement the stub and host it:
 
 ```python
 from angzarr_client import ComponentHost, configure_logging
 from myapp._version import __version__  # versionator output emit python > myapp/_version.py
-from myapp.gen.my.v1.thing_aggregate_angzarr import new_thing_aggregate_dispatch
-from myapp.thing_aggregate_angzarr_handler import ThingAggregate
+from myapp._gen.my.v1.thing_aggregate_angzarr import new_thing_aggregate_dispatch
+from myapp.logic_impl import ThingLogicImpl
 
 configure_logging()
 host = ComponentHost(rules_version=__version__)
-host.add_aggregate(new_thing_aggregate_dispatch(ThingAggregate()))
+host.add_aggregate(new_thing_aggregate_dispatch(ThingLogicImpl()))
 # An application's own gRPC service, served and health-reported alongside:
 # host.add_service(add_MyQueryServiceServicer_to_server, MyQueryServicer(), "my.v1.MyQueryService")
 host.run()   # binds the transport the environment selects; stops on SIGTERM / SIGINT
 ```
 
 A host serves exactly ONE component (one business process is one component):
-`add_saga`, `add_process_manager` or `add_projector` instead of
+`add_policy`, `add_process_manager` or `add_projector` instead of
 `add_aggregate`, and `add_upcaster` beside it (an upcaster is part of its
 component). A host given a second component refuses to start. `rules_version` is the binary's full build version: every hosted
-component reports it on every answer, and the host refuses to start without
-it. The host always serves `ComponentService.Describe`, which the coordinator
+component reports it on every answer. The host always serves `ComponentService.Describe`, which the coordinator
 calls to learn the components it hosts. The transport comes from the environment: `TRANSPORT_TYPE=tcp`
 (default; `ANGZARR_BIND_ADDRESS`, else `[::]:$PORT`) or `TRANSPORT_TYPE=uds`
 (`$UDS_BASE_PATH/$SERVICE_NAME[-<qualifier>].sock`, removed on shutdown).
@@ -162,10 +134,10 @@ router tier's fixtures).
 |---|---|
 | `just proto` | generate the framework protos into `angzarr_client/proto/` (grpcio-tools; `scripts/proto_build.py`) |
 | `just build` | sdist + pure-Python wheel (the wheel build runs `just proto`'s code), then install the wheel in a clean environment and check it loads |
-| `just cli` | install the angzarr CLI at the pinned `CLI_REV` into `.tools/` (`ANGZARR_CLI=<binary>` uses another build) |
+| `just cli` | install the angzarr CLI at the pinned `CLI_REV` into `.tools/` with cargo (`ANGZARR_CLI=<binary>` uses another build) |
 | `just contract-gen` | generate the handler-contract tier's fixture messages into `tests/router/gen/` |
 | `just test` | `proto` and `contract-gen`, then unit, router (handler-contract tier) and client-feature tests |
-| `just codegen-check` | render angzarr-project's example protos with `codegen/` and check every component imports, its stub implements its protocol, and it registers on the router |
+| `just codegen-check` | scaffold angzarr-project's example Python domain (the player) with the CLI and check its dispatch imports, its host registers it and its descriptor loads |
 | `just ci` | format check + lint + `test` + `codegen-check` (what CI runs) |
 | `just clean` | remove generated protos and rendered code |
 

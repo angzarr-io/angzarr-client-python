@@ -7,11 +7,11 @@ TOP := justfile_directory()
 # Shared hooks from the spec submodule (scan-secrets, submodule guards).
 import? 'angzarr-project/submodule.just'
 
-# The angzarr CLI that renders this repository's codegen templates, built from
-# angzarr-cli at this revision into .tools/ (`just cli`). ANGZARR_CLI points at
-# another binary instead (e.g. a local angzarr-cli build).
-CLI_REV := "734b1bbdd4e913f19f8cb87f3f1dd95c06053d99"
-CLI := env_var_or_default("ANGZARR_CLI", TOP / ".tools" / "angzarr")
+# The angzarr CLI whose Python scaffold `codegen-check` runs, built from
+# angzarr-cli at this revision into .tools/ (`just cli`). ANGZARR_CLI points
+# at another binary instead (e.g. a local angzarr-cli build).
+CLI_REV := "e9efa1a57d0df31de15c2d8e3beaecd4879a8b6d"
+CLI := env_var_or_default("ANGZARR_CLI", TOP / ".tools" / "bin" / "angzarr")
 
 
 default:
@@ -23,58 +23,15 @@ default:
 proto:
     cd {{TOP}} && uv run --extra dev python scripts/proto_build.py proto
 
-# Install the angzarr CLI at CLI_REV into .tools/ (skipped when ANGZARR_CLI
-# names another binary).
+# Install the angzarr CLI at CLI_REV into .tools/ with cargo (skipped when
+# ANGZARR_CLI names another binary).
 cli:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "${ANGZARR_CLI:-}" ]; then echo "using ANGZARR_CLI=$ANGZARR_CLI"; exit 0; fi
     if [ -x "{{CLI}}" ] && [ "$(cat {{TOP}}/.tools/angzarr.rev 2>/dev/null)" = "{{CLI_REV}}" ]; then exit 0; fi
-    GOBIN={{TOP}}/.tools GOFLAGS=-mod=mod go install github.com/angzarr-io/angzarr-cli@{{CLI_REV}}
-    mv {{TOP}}/.tools/angzarr-cli {{CLI}}
+    cargo install --quiet --locked --git https://github.com/angzarr-io/angzarr-cli --rev {{CLI_REV}} angzarr-cli --root {{TOP}}/.tools
     echo "{{CLI_REV}}" > {{TOP}}/.tools/angzarr.rev
-
-# Render this repository's templates (codegen/) over a proto tree with the CLI:
-# wiring (codegen) and stubs (scaffold) for the given paths, plus their protobuf
-# types, into <out>. Framework imports resolve to angzarr_client.proto; imports
-# of the rendered protos resolve under <package> (the dotted package <out> is
-# imported as).
-render out package +paths: cli
-    #!/usr/bin/env bash
-    set -euo pipefail
-    out="{{out}}"
-    mkdir -p "$out"
-    tmpl="$(mktemp --suffix=.gen.yaml)"
-    trap 'rm -f "$tmpl"' EXIT
-    cat > "$tmpl" <<YAML
-    version: v2
-    managed:
-      enabled: true
-      override:
-        - file_option: go_package_prefix
-          value: angzarr.local/gen
-    plugins:
-      - remote: buf.build/protocolbuffers/python:v35.1
-        out: $out
-      - local: ["{{CLI}}", "codegen", "python"]
-        out: $out
-        opt: [paths=source_relative, templates={{TOP}}/codegen]
-        strategy: all
-      - local: ["{{CLI}}", "scaffold", "python"]
-        out: $out
-        opt: [paths=source_relative, out_dir=$out, templates={{TOP}}/codegen]
-        strategy: all
-    YAML
-    args=()
-    for p in {{paths}}; do args+=(--path "$p"); done
-    cd {{TOP}} && buf generate --template "$tmpl" "${args[@]}"
-    framework=(io.angzarr.v1=angzarr_client.proto.io.angzarr.v1 io.angzarr.status=angzarr_client.proto.io.angzarr.status sererr=angzarr_client.proto.sererr)
-    own=()
-    for p in {{paths}}; do
-        mod="$(echo "${p#*/proto/}" | tr / .)"
-        own+=("$mod={{package}}.$mod")
-    done
-    uv run python scripts/fixup_gen_imports.py "$out" "${framework[@]}" "${own[@]}"
 
 # The handler-contract tier's fixture messages
 # (angzarr-project/features/handler-contract/fixture/*.proto) generated into
@@ -82,13 +39,22 @@ render out package +paths: cli
 contract-gen:
     cd {{TOP}} && uv run --extra dev python scripts/proto_build.py fixtures
 
-# Render the angzarr-project example protos with the templates and prove the
-# result loads: every wiring module imports and every scaffold stub declares
-# each method of its <Component>Handler protocol.
-codegen-check:
+# Scaffold the angzarr-project example's Python domain (the player) with the
+# CLI at CLI_REV and prove the project works against this package: its
+# generated dispatch imports, its host registers the domain, its descriptor
+# loads (scripts/check_scaffold.py). buf reads the protos at the submodule's
+# commit from git: the CLI's directory input resolves its paths from the
+# project, not the directory.
+codegen-check: cli
+    #!/usr/bin/env bash
+    set -euo pipefail
     rm -rf {{TOP}}/.codegen-check
-    just render {{TOP}}/.codegen-check/gen gen angzarr-project/proto/io/angzarr/examples
-    cd {{TOP}} && uv run python scripts/check_rendered.py .codegen-check/gen
+    rev="$(git -C {{TOP}}/angzarr-project rev-parse HEAD)"
+    "{{CLI}}" --format text scaffold python -I {{TOP}}/angzarr-project/proto \
+        --src {{TOP}}/.codegen-check/player --domain player --no-lock \
+        --proto-git https://github.com/angzarr-io/angzarr-project.git --proto-ref "$rev" \
+        io/angzarr/examples/v1/player.proto > /dev/null
+    cd {{TOP}} && uv run python scripts/check_scaffold.py .codegen-check/player player
 
 # Everything the tests need: the protos and the tier's fixture messages.
 prepare: proto contract-gen

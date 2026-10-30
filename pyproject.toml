@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 [project]
 name = "angzarr-client"
 dynamic = ["version"]
-description = "Angzarr for Python: the router, codegen templates, and the coordinator clients"
+description = "Angzarr for Python: the router, the component host, and the coordinator clients"
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.10"
@@ -87,7 +87,6 @@ path = "hatch_build.py"
 # and the spec protos at their pinned revision.
 include = [
     "angzarr_client/**/*.py",
-    "codegen/",
     "hatch_build.py",
     "scripts/",
     "VERSION",
@@ -152,7 +151,7 @@ source_paths = [
 pytest_add_cli_args_test_selection = ["tests/"]
 # mutmut runs the suite from a copy under mutants/: the tests read the spec
 # features and fixtures (angzarr-project) and scripts/ in place.
-also_copy = ["angzarr_client/", "angzarr-project/", "scripts/", "codegen/"]
+also_copy = ["angzarr_client/", "angzarr-project/", "scripts/"]
 # Workers fork from a fork server free of the suite's gRPC threads: forked
 # straight from the process that ran the host tests, a worker can hang or
 # crash in gRPC's fork handling, which reads as a timeout, not a verdict.
