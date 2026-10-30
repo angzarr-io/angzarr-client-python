@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from google.protobuf import any_pb2
 
 from ..proto.io.angzarr.v1 import types_pb2
-from .context import Applier
+from .context import Applier, fold
+from .errors import FOLD_FAILED, pack
 
 # A projector that consumes every domain.
 WILDCARD_DOMAIN = "*"
@@ -60,4 +61,15 @@ class ProjectorDispatch:
         """Fold the book (nothing when its domain is not consumed) and answer
         the Projection: the cover, the projector, the position after the
         book and the projection."""
-        raise NotImplementedError
+        projection = self.factory()
+        consumed = not self.domains or WILDCARD_DOMAIN in self.domains
+        if consumed or book.cover.domain in self.domains:
+            cover = book.cover if book.HasField("cover") else None
+            fold(projection, book.pages, cover, self.events, FOLD_FAILED)
+        after = book.pages[-1].sequence + 1 if book.pages else book.next_sequence
+        return types_pb2.Projection(
+            cover=book.cover,
+            projector=self.name,
+            next_sequence=after,
+            projection=pack(projection),
+        )

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from google.protobuf import any_pb2
 
 from ..proto.io.angzarr.v1 import policy_pb2, types_pb2
-from .context import CommandContext, PageContext
+from .context import CommandContext, PageContext, as_any, book_context, call, type_name
 
 # Business code's shapes:
 #   event:    (event Any, PageContext of its trigger) -> list of CommandBook
@@ -68,9 +68,29 @@ class PolicyDispatch:
 
     def handle(self, source: types_pb2.EventBook) -> policy_pb2.PolicyResponse:
         """``PolicyService.Handle``: one reaction per handled page."""
-        raise NotImplementedError
+        resp = policy_pb2.PolicyResponse()
+        cover = source.cover if source.HasField("cover") else None
+        for page in source.pages:
+            thunk = self.events.get(type_name(page.payload.type_url))
+            if thunk is None:
+                continue
+            ctx = PageContext(
+                cover, page.sequence, page.meta if page.HasField("meta") else None
+            )
+            commands = call(ctx, thunk, page.payload, ctx) or []
+            resp.reactions.add(trigger_sequence=page.sequence, commands=commands)
+        return resp
 
     def refused(self, refusal: policy_pb2.Refusal) -> policy_pb2.OnRefusedResponse:
         """``PolicyService.OnRefused``: the translated fact's payload, alone,
         or no fact when nothing translates the refused command's type."""
-        raise NotImplementedError
+        command = refusal.command
+        thunk = self.refusals.get(type_name(command.page.command.payload.type_url))
+        if thunk is None:
+            return policy_pb2.OnRefusedResponse()
+        ctx = book_context(command)
+        payload = as_any(call(PageContext(ctx.cover), thunk, refusal, ctx))
+        fact = types_pb2.CommandBook(
+            page=types_pb2.CommandPage(fact=types_pb2.Fact(payload=payload))
+        )
+        return policy_pb2.OnRefusedResponse(fact=fact)

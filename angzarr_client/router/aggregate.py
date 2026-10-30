@@ -17,11 +17,29 @@ from dataclasses import dataclass, field
 
 from google.protobuf import any_pb2
 
-from ..proto.io.angzarr.v1 import types_pb2
+from ..proto.io.angzarr.v1 import command_handler_pb2, types_pb2
 from .context import (
     Applier,
     CommandContext,
+    Conflict,
     FactRecord,
+    PageContext,
+    book_context,
+    call,
+    decode,
+    fold,
+    start_state,
+    type_name,
+)
+from .errors import (
+    CONFLICT_RESOLUTION_UNSUPPORTED,
+    FOLD_FAILED,
+    FOLD_FAILED_EMITTED,
+    NO_FACT_HANDLER,
+    NO_REFUSAL_HANDLER,
+    UNKNOWN_COMMAND_TYPE,
+    CodedError,
+    unknown_type,
 )
 
 # Business code's shapes. ``state`` is a fresh instance of the state message.
@@ -120,13 +138,74 @@ class AggregateDispatch:
     def handle(self, request: types_pb2.ContextualCommand):
         """``CommandHandlerService.Handle``: one ContextualCommand in, its
         CommandHandlerResponse out, or the CodedError that refuses it."""
-        raise NotImplementedError
+        page = request.command.page
+        arm = page.WhichOneof("body") or "command"
+        payload = getattr(page, arm).payload
+        events = request.events
+        mode = request.command.handling.conflict_resolution
+        if arm == "fact":
+            decide = self._ingest(payload)
+        else:
+            decide = self._decide(payload)
+            if mode == _COMMUTATIVE and self.changed is None:
+                raise CodedError(CONFLICT_RESOLUTION_UNSUPPORTED)
+        ctx = book_context(request.command, events.next_sequence)
+        ctx.had_prior_events = bool(events.pages) or events.HasField("snapshot")
+        ctx.recorded_at = (
+            request.recorded_at if request.HasField("recorded_at") else None
+        )
+
+        appliers = self.rebuilder.appliers
+        cover = events.cover if events.HasField("cover") else None
+        state = start_state(self.rebuilder.factory, events)
+        pages = list(events.pages)
+        seen = sum(1 for p in pages if p.sequence < ctx.expected_sequence)
+        fold(state, pages[:seen], cover, appliers, FOLD_FAILED)
+        before = _copy(state) if mode == _COMMUTATIVE else None
+        fold(state, pages[seen:], cover, appliers, FOLD_FAILED)
+        if mode == _AGGREGATE_HANDLES:
+            ctx.conflict = Conflict(pages[seen:], request.conflict_nonce)
+
+        out = call(PageContext(ctx.cover), decide, state, ctx)
+        head = _copy(state) if before is not None else None
+        emitted = [types_pb2.EventPage() for _ in out.pages]
+        for offset, (copy, page) in enumerate(zip(emitted, out.pages)):
+            copy.CopyFrom(page)
+            copy.sequence = events.next_sequence + offset
+        fold(state, emitted, cover, appliers, FOLD_FAILED_EMITTED)
+
+        resp = command_handler_pb2.CommandHandlerResponse(
+            events=out, rules_version=self.rules_version
+        )
+        resp.events.snapshot.state.Pack(state, type_url_prefix="/")
+        if ctx.conflict is not None:
+            resp.conflict.resolved_nonce = ctx.conflict.resolved_nonce
+        if head is not None:
+            window = call(PageContext(), self.changed, before, head)
+            mine = call(PageContext(), self.changed, head, state)
+            resp.conflict.window_units.extend(window)
+            resp.conflict.command_units.extend(mine)
+        return resp
 
     def _decide(self, payload: any_pb2.Any):
-        raise NotImplementedError
+        thunk = self.commands.get(type_name(payload.type_url))
+        if thunk is None:
+            raise unknown_type(UNKNOWN_COMMAND_TYPE, payload.type_url)
+        return lambda state, ctx: _book(thunk(payload, state, ctx))
 
     def _ingest(self, payload: any_pb2.Any):
-        raise NotImplementedError
+        fq = type_name(payload.type_url)
+        thunk = self.facts.get(fq)
+        if thunk is not None:
+            return lambda state, ctx: thunk(payload, state, ctx).book()
+        if fq != _REFUSED:
+            raise unknown_type(NO_FACT_HANDLER, payload.type_url)
+        refused = decode(types_pb2.CommandRefused, payload.value)
+        command_type = refused.command.page.command.payload.type_url
+        on_refused = self.refusals.get(type_name(command_type))
+        if on_refused is None:
+            raise CodedError(NO_REFUSAL_HANDLER, extras={"command_type": command_type})
+        return lambda state, ctx: on_refused(refused, state, ctx).book()
 
 
 class ProcessManagerDispatch(AggregateDispatch):
