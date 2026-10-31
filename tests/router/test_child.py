@@ -15,6 +15,7 @@ from pathlib import Path
 import grpc
 import pytest
 
+from angzarr_client import child as child_module
 from angzarr_client.child import (
     HANDSHAKE_PREFIX,
     SOCKET_ENV,
@@ -36,11 +37,14 @@ REPO = Path(__file__).resolve().parents[2]
 STARTUP_TIMEOUT = 30
 
 
-# --- the line itself ---------------------------------------------------------------------
+# --- the line itself (docs/design/child-protocol.md, section 2) -------------------------
 
 
 def test_the_handshake_line_names_the_format_version_and_the_address():
-    assert HANDSHAKE_PREFIX == "angzarr-handshake v1 "
+    # The line's first word and its format version, as angzarr-embedded's
+    # handshake module names them.
+    assert HANDSHAKE_PREFIX == "angzarr-handshake"
+    assert child_module.PROTOCOL_VERSION == "v1"
     assert SOCKET_ENV == "ANGZARR_SOCKET"
     assert (
         handshake_line("unix:/run/app/player.sock")
@@ -54,21 +58,49 @@ def test_a_handshake_line_parses_back_to_its_address():
     assert parse_handshake(line.rstrip("\n")) == "unix:/run/app/player.sock"
 
 
+def test_a_crlf_line_ending_is_not_part_of_the_path():
+    line = "angzarr-handshake v1 unix:/run/app/player.sock\r\n"
+    assert parse_handshake(line) == "unix:/run/app/player.sock"
+
+
+def test_the_path_is_the_rest_of_the_line_spaces_included():
+    line = "angzarr-handshake v1 unix:/run/my app/player.sock\n"
+    assert parse_handshake(line) == "unix:/run/my app/player.sock"
+
+
 @pytest.mark.parametrize(
     "line",
     [
         "",
+        "\n",
         "hello\n",
+        "angzarr-handshaker v1 unix:/run/app/player.sock\n",
+        "angzarr-handshake\tv1 unix:/run/app/player.sock\n",
+    ],
+)
+def test_a_line_whose_first_word_is_not_the_prefix_is_not_a_handshake(line):
+    assert parse_handshake(line) is None
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "angzarr-handshake\n",
+        "angzarr-handshake \n",
+        "angzarr-handshake v1\n",
         "angzarr-handshake v2 unix:/run/app/player.sock\n",
         "angzarr-handshake v1 127.0.0.1:5000\n",
         "angzarr-handshake v1 unix:relative.sock\n",
+        "angzarr-handshake v1 unix:\r\n",
+        "angzarr-handshake  v1 unix:/run/app/player.sock\n",
     ],
 )
-def test_anything_else_is_a_malformed_handshake(line):
+def test_a_line_starting_with_the_prefix_and_not_a_v1_handshake_is_malformed(line):
     with pytest.raises(ConfigurationError) as info:
         parse_handshake(line)
-    assert info.value.code == "HANDSHAKE_MALFORMED"
-    assert info.value.details == {"line": line}
+    assert info.value.code == "HOST_REASON_HANDSHAKE_MALFORMED"
+    # The line as read, its line ending removed.
+    assert info.value.details == {"line": line.removesuffix("\n").removesuffix("\r")}
 
 
 # --- the child process -------------------------------------------------------------------
