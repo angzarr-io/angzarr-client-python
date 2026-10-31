@@ -15,7 +15,6 @@ from angzarr_client.helpers import (
     PROJECTION_DOMAIN_PREFIX,
     TYPE_URL_PREFIX,
     UNKNOWN_DOMAIN,
-    WILDCARD_DOMAIN,
     decode_event,
     events_from_response,
     new_command_book,
@@ -40,8 +39,14 @@ class TestConstants:
     def test_unknown_domain(self) -> None:
         assert UNKNOWN_DOMAIN == "unknown"
 
-    def test_wildcard_domain(self) -> None:
-        assert WILDCARD_DOMAIN == "*"
+    def test_there_is_no_wildcard_domain(self) -> None:
+        # Decision 14.53: a projector lists every domain it reads.
+        import angzarr_client
+        import angzarr_client.helpers
+        import angzarr_client.router
+
+        for module in (angzarr_client, angzarr_client.helpers, angzarr_client.router):
+            assert not hasattr(module, "WILDCARD_DOMAIN"), module.__name__
 
     def test_default_edition(self) -> None:
         assert DEFAULT_EDITION == ""

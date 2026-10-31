@@ -20,7 +20,6 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from angzarr_client import ComponentHost
 from angzarr_client.proto.io.angzarr.v1 import policy_pb2, types_pb2
 from angzarr_client.router import (
-    WILDCARD_DOMAIN,
     AggregateDispatch,
     Bug,
     CodedError,
@@ -283,7 +282,7 @@ def _ledger(world):
 @given("a tracking projector")
 def _tracker(world):
     world.router = Router()
-    world.router.register_projector(fx.counter_projector(world.seen, WILDCARD_DOMAIN))
+    world.router.register_projector(fx.counter_projector(world.seen))
 
 
 def _ledger_command(label: str, sequences=()) -> types_pb2.ContextualCommand:
@@ -431,11 +430,10 @@ def _policy_saw(world, seq):
 # ===========================================================================
 
 
-@given(parsers.re(r"a counter projection(?P<every> over every domain)?$"))
-def _counter_projection(world, every):
+@given("a counter projection")
+def _counter_projection(world):
     world.router = Router()
-    domains = (WILDCARD_DOMAIN,) if every else ()
-    world.router.register_projector(fx.counter_projector(world.seen, *domains))
+    world.router.register_projector(fx.counter_projector(world.seen))
 
 
 @when(parsers.re(r'(?P<n>\d+) events are delivered in domain "(?P<domain>[^"]*)"'))

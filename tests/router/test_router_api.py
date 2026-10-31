@@ -13,7 +13,6 @@ from google.rpc import error_details_pb2
 
 from angzarr_client.proto.io.angzarr.v1 import policy_pb2, types_pb2
 from angzarr_client.router import (
-    WILDCARD_DOMAIN,
     AggregateDispatch,
     Bug,
     CodedError,
@@ -625,7 +624,10 @@ def test_a_policy_or_projector_takes_the_build_version_it_is_given(dispatch):
     [
         (("a", "b"), "b", 7),
         (("a", "b"), "c", 0),
-        (("a", WILDCARD_DOMAIN), "c", 7),
+        # Decision 14.53: no wildcard; "*" is refused like any domain not
+        # listed, and folds nothing.
+        (("a", "*"), "c", 0),
+        (("*",), "c", 0),
     ],
 )
 def test_a_projector_folds_only_its_domains(domains, domain, folded):
