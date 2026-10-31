@@ -338,7 +338,7 @@ class ComponentHost:
             raise ConfigurationError(
                 "a projector names no domain it reads",
                 code=codes.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN,
-                details={"component": getattr(dispatch, "name", "")},
+                details={"component": dispatch.name},
             )
         if self._claim(dispatch):
             getattr(self.router, f"register_{kind}")(self._versioned(dispatch))
