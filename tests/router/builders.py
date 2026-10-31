@@ -17,7 +17,7 @@ from google.protobuf import any_pb2, text_format
 
 from angzarr_client.proto.io.angzarr.v1 import types_pb2
 
-from .contract import FIXTURE, TEST_RULES_VERSION
+from .contract import FIXTURE, TEST_RULES_VERSION  # noqa: F401 — re-exported
 from .gen import counter_pb2
 
 # The tier's orthogonal envelope skeletons, read in place.
