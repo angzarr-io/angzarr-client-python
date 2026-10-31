@@ -173,6 +173,15 @@ exclude = [
     "angzarr-project/",
 ]
 
+# Complexity gate (architecture-fixes G1): mccabe complexity over 10, and
+# pylint's branch, statement and argument counts at ruff's defaults (12, 50
+# and 5). No noqa or per-file escapes; a violator is refactored.
+[tool.ruff.lint]
+extend-select = ["C901", "PLR0912", "PLR0915", "PLR0913"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
 [tool.black]
 target-version = ["py310", "py311", "py312"]
 extend-exclude = '''
