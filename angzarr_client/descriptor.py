@@ -50,6 +50,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from .error_codes import codes
 from .host import ConfigurationError
 from .proto.io.angzarr.v1 import options_pb2, types_pb2
 from .proto.io.angzarr.v1.reasons_pb2 import CoordinatorReason
@@ -68,8 +69,7 @@ BASE_RESOLUTIONS = (
     types_pb2.CONFLICT_RESOLUTION_AGGREGATE_HANDLES,
 )
 
-#: A resolution of UNSPECIFIED given to :func:`describe` (details: component).
-RESOLUTION_UNSPECIFIED = "DESCRIPTOR_RESOLUTION_UNSPECIFIED"
+RESOLUTION_UNSPECIFIED = codes.DESCRIPTOR_RESOLUTION_UNSPECIFIED
 
 
 def _reason(value: int) -> str:

@@ -17,7 +17,7 @@ from google.protobuf import any_pb2, text_format
 
 from angzarr_client.proto.io.angzarr.v1 import types_pb2
 
-from .contract import FIXTURE
+from .contract import FIXTURE, TEST_RULES_VERSION
 from .gen import counter_pb2
 
 # The tier's orthogonal envelope skeletons, read in place.
@@ -30,8 +30,6 @@ _FIXTURES_DIR = FIXTURE / "txtpb"
 # error model is the one exception — pinned to type.googleapis.com.)
 _TYPE_URL_PREFIX = "/"
 
-# The build version the test hosts declare (ComponentHost(rules_version=...)).
-TEST_RULES_VERSION = "0.0.0+test"
 
 # Fully-qualified type names the CounterAggregate keys on (FIXTURE.md).
 FQ_INCREASED = "test.counter.Increased"

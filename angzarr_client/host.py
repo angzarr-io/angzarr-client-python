@@ -13,7 +13,9 @@ optionally, its own gRPC services; the host exposes:
   angzarr-cli generated for the component, given with it, unchanged
   (decision 14.42). The coordinator pulls it and validates it; the host
   never calls its coordinator. The component carries the binary's build version, given as
-  ``ComponentHost(rules_version=...)``;
+  ``ComponentHost(rules_version=...)``, and its descriptor must carry the
+  same: the host refuses one of another version when it is registered
+  (``DESCRIPTOR_RULES_VERSION_MISMATCH``);
 - the component's kind service: ``CommandHandlerService`` (an aggregate or
   a process manager, a domain: Handle, for commands and facts alike),
   ``PolicyService`` (Handle and OnRefused) or ``ProjectorService``
@@ -307,7 +309,25 @@ class ComponentHost:
     def _add(self, dispatch, descriptor, kind: str, service: str) -> ComponentHost:
         """Register the host's one component: ``descriptor`` is the
         ComponentDescriptor angzarr-cli generated for it, which Describe
-        answers unchanged (decision 14.42)."""
+        answers unchanged (decision 14.42). Its ``rules_version`` must be
+        the version the component's answers report (the table's own, else
+        the host's ``rules_version``): the coordinator refuses an answer
+        reporting any other, so a mismatch is refused here, at once, with
+        :class:`ConfigurationError` code ``DESCRIPTOR_RULES_VERSION_MISMATCH``
+        (details: component, described, reported), and nothing is
+        registered."""
+        reported = getattr(dispatch, "rules_version", "") or self.rules_version
+        if descriptor.rules_version != reported:
+            raise ConfigurationError(
+                "the descriptor's rules_version is not the version the "
+                "component reports",
+                code=codes.DESCRIPTOR_RULES_VERSION_MISMATCH,
+                details={
+                    "component": getattr(dispatch, "name", ""),
+                    "described": descriptor.rules_version,
+                    "reported": reported,
+                },
+            )
         if self._claim(dispatch):
             getattr(self.router, f"register_{kind}")(self._versioned(dispatch))
             self._kind = service

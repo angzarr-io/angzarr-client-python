@@ -104,3 +104,10 @@ ROUTER_REASON_DUPLICATE_COMPONENT = RouterReason.Name(
 # Child process (angzarr_client.child)
 # A line that is not a v1 handshake (details: line).
 HANDSHAKE_MALFORMED = "HANDSHAKE_MALFORMED"
+
+# Component descriptors (angzarr_client.descriptor, ComponentHost)
+# A descriptor whose rules_version is not the version the component's
+# answers report (details: component, described, reported).
+DESCRIPTOR_RULES_VERSION_MISMATCH = "DESCRIPTOR_RULES_VERSION_MISMATCH"
+# A conflict resolution of UNSPECIFIED given to describe (details: component).
+DESCRIPTOR_RESOLUTION_UNSPECIFIED = "DESCRIPTOR_RESOLUTION_UNSPECIFIED"

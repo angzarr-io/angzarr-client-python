@@ -78,7 +78,7 @@ def world(tmp_path, monkeypatch):
 def _described(dispatch: AggregateDispatch) -> tuple:
     """``dispatch`` and the descriptor it registers with."""
     return dispatch, types_pb2.ComponentDescriptor(
-        name=dispatch.name, kind=dispatch.kind
+        name=dispatch.name, kind=dispatch.kind, rules_version=TEST_RULES_VERSION
     )
 
 

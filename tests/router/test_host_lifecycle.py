@@ -42,7 +42,9 @@ from .contract import described, order_policy
 from .test_host import _counter_host, _error_info, _increased_book, _wait_serving
 
 # The descriptor a scripted component registers with.
-_DESCRIPTOR = types_pb2.ComponentDescriptor(name="Scripted")
+_DESCRIPTOR = types_pb2.ComponentDescriptor(
+    name="Scripted", rules_version=TEST_RULES_VERSION
+)
 _SERVING = health_pb2.HealthCheckResponse.SERVING
 _NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
 _LOOP_THREAD = "angzarr-component-host"
@@ -431,7 +433,7 @@ _CALLS = {
 @pytest.mark.parametrize("call", sorted(_CALLS))
 def test_every_rpc_reports_a_coded_router_failure_as_its_status(hosts, call):
     kind, invoke = _CALLS[call]
-    host = ComponentHost(_ScriptedRouter(_fail))
+    host = ComponentHost(_ScriptedRouter(_fail), rules_version=TEST_RULES_VERSION)
     _register(kind, host)
     channel = hosts(host)
     with pytest.raises(grpc.RpcError) as err:
@@ -452,7 +454,7 @@ def test_an_unimplemented_dispatch_is_reported_not_acknowledged(hosts, kind):
     def answer(_kind, *args):
         raise _UNIMPLEMENTED
 
-    host = ComponentHost(_ScriptedRouter(answer))
+    host = ComponentHost(_ScriptedRouter(answer), rules_version=TEST_RULES_VERSION)
     _register(kind, host)
     channel = hosts(host)
     with pytest.raises(grpc.RpcError) as err:

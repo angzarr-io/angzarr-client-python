@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from angzarr_client import ComponentHost
+from angzarr_client import ComponentHost, ConfigurationError, describe
+from angzarr_client.error_codes import codes
 from angzarr_client.host import COMPONENT_SERVICE
 from angzarr_client.proto.io.angzarr.v1 import (
     command_handler_pb2_grpc,
@@ -38,13 +39,13 @@ BUILD_VERSION = "1.4.2+build.7"
 
 def _aggregate_host(**kwargs) -> ComponentHost:
     host = ComponentHost(Router(), **kwargs)
-    host.add_aggregate(*described(counter_aggregate([])))
+    host.add_aggregate(*described(counter_aggregate([]), host.rules_version))
     return host
 
 
 def _pm_host(**kwargs) -> ComponentHost:
     host = ComponentHost(Router(), **kwargs)
-    host.add_process_manager(*described(fulfillment("", False, [])))
+    host.add_process_manager(*described(fulfillment("", False, []), host.rules_version))
     return host
 
 
@@ -83,7 +84,7 @@ def test_describe_answers_the_generated_descriptor_unchanged(started):  # noqa: 
         starting_types=["test.counter.IncreaseBy"],
     )
     generated.state.type_url = "/test.counter.CounterState"
-    host = ComponentHost(Router(), rules_version="0.0.1")
+    host = ComponentHost(Router(), rules_version=BUILD_VERSION)
     host.add_aggregate(counter_aggregate([]), generated)
     assert host.descriptor == generated
     assert _describe(started(host)) == generated
@@ -120,3 +121,76 @@ def test_a_table_with_its_own_version_keeps_it(started):  # noqa: F811
     host.add_aggregate(*described(counter_aggregate([]).with_rules_version("9.9.9")))
     stub = command_handler_pb2_grpc.CommandHandlerServiceStub(started(host))
     assert stub.Handle(builders.increase_command(1), timeout=5).rules_version == "9.9.9"
+
+
+# --- the descriptor's rules version is the one every answer reports ---------------
+
+
+def _tables():
+    return {
+        "aggregate": counter_aggregate([]),
+        "policy": order_policy("inventory", []),
+        "process_manager": fulfillment("", False, []),
+        "projector": counter_projector([]),
+    }
+
+
+@pytest.mark.parametrize(
+    "kind", ["aggregate", "policy", "process_manager", "projector"]
+)
+def test_a_descriptor_of_another_rules_version_is_refused(kind):
+    table = _tables()[kind]
+    host = ComponentHost(Router(), rules_version=BUILD_VERSION)
+    described_as = describe(table, rules_version="0.0.1")
+    with pytest.raises(ConfigurationError) as info:
+        getattr(host, f"add_{kind}")(table, described_as)
+    assert info.value.code == "DESCRIPTOR_RULES_VERSION_MISMATCH"
+    assert info.value.details == {
+        "component": table.name,
+        "described": "0.0.1",
+        "reported": BUILD_VERSION,
+    }
+    # Nothing is registered: the host still has no component.
+    assert host.descriptor is None
+    with pytest.raises(ConfigurationError) as start:
+        host.start("127.0.0.1:0")
+    assert start.value.code == codes.HOST_REASON_NO_COMPONENTS_REGISTERED
+
+
+@pytest.mark.parametrize(
+    "kind", ["aggregate", "policy", "process_manager", "projector"]
+)
+def test_a_descriptor_of_the_hosts_rules_version_is_registered(kind):
+    table = _tables()[kind]
+    host = ComponentHost(Router(), rules_version=BUILD_VERSION)
+    descriptor = describe(table, rules_version=BUILD_VERSION)
+    getattr(host, f"add_{kind}")(table, descriptor)
+    assert host.descriptor is descriptor
+    host.stop()
+
+
+def test_a_table_with_its_own_version_is_described_with_it():
+    # The table's own version is the one its answers report, so it is the
+    # one its descriptor must carry, whatever the host's.
+    table = counter_aggregate([]).with_rules_version("9.9.9")
+    host = ComponentHost(Router(), rules_version=BUILD_VERSION)
+    with pytest.raises(ConfigurationError) as info:
+        host.add_aggregate(table, describe(table, rules_version=BUILD_VERSION))
+    assert info.value.details["reported"] == "9.9.9"
+    host.add_aggregate(table, describe(table))
+    assert host.descriptor.rules_version == "9.9.9"
+    host.stop()
+
+
+def test_a_descriptor_with_a_version_on_a_host_without_one_is_refused():
+    # Answers would report no version, and the coordinator refuses an
+    # answer reporting any version but the registered one.
+    host = ComponentHost(Router())
+    table = counter_aggregate([])
+    with pytest.raises(ConfigurationError) as info:
+        host.add_aggregate(table, describe(table, rules_version=BUILD_VERSION))
+    assert info.value.details == {
+        "component": "CounterAggregate",
+        "described": BUILD_VERSION,
+        "reported": "",
+    }

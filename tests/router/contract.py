@@ -354,17 +354,27 @@ def order_fulfillment(
     return policy
 
 
-def descriptor_of(dispatch) -> types_pb2.ComponentDescriptor:
+# The build version the test hosts declare (ComponentHost(rules_version=...)).
+TEST_RULES_VERSION = "0.0.0+test"
+
+
+def descriptor_of(
+    dispatch, rules_version: str = TEST_RULES_VERSION
+) -> types_pb2.ComponentDescriptor:
     """A stand-in for the ComponentDescriptor angzarr-cli generates for
-    ``dispatch``'s component (decision 14.42): its name, kind and version."""
+    ``dispatch``'s component (decision 14.42): its name, kind and the version
+    its answers report, the table's own, else ``rules_version`` (the host's)."""
     return types_pb2.ComponentDescriptor(
-        name=dispatch.name, kind=dispatch.kind, rules_version=dispatch.rules_version
+        name=dispatch.name,
+        kind=dispatch.kind,
+        rules_version=dispatch.rules_version or rules_version,
     )
 
 
-def described(dispatch) -> tuple:
-    """``dispatch`` and its descriptor, as a host registers a component."""
-    return dispatch, descriptor_of(dispatch)
+def described(dispatch, rules_version: str = TEST_RULES_VERSION) -> tuple:
+    """``dispatch`` and its descriptor, as a host of ``rules_version``
+    registers a component."""
+    return dispatch, descriptor_of(dispatch, rules_version)
 
 
 def log_for_itself(text: str) -> None:
