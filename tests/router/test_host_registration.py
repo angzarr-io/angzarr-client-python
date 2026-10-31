@@ -146,7 +146,7 @@ def test_a_descriptor_of_another_rules_version_is_refused(kind):
     described_as = describe(table, rules_version="0.0.1")
     with pytest.raises(ConfigurationError) as info:
         getattr(host, f"add_{kind}")(table, described_as)
-    assert info.value.code == "DESCRIPTOR_RULES_VERSION_MISMATCH"
+    assert info.value.code == "HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH"
     assert str(info.value) == (
         "the descriptor's rules_version is not the version the component reports"
     )

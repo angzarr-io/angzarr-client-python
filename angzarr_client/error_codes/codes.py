@@ -107,7 +107,9 @@ HANDSHAKE_MALFORMED = "HANDSHAKE_MALFORMED"
 
 # Component descriptors (angzarr_client.descriptor, ComponentHost)
 # A descriptor whose rules_version is not the version the component's
-# answers report (details: component, described, reported).
-DESCRIPTOR_RULES_VERSION_MISMATCH = "DESCRIPTOR_RULES_VERSION_MISMATCH"
+# answers report (details: component, described, reported; C-0743).
+HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH = HostReason.Name(
+    HostReason.HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH
+)
 # A conflict resolution of UNSPECIFIED given to describe (details: component).
 DESCRIPTOR_RESOLUTION_UNSPECIFIED = "DESCRIPTOR_RESOLUTION_UNSPECIFIED"

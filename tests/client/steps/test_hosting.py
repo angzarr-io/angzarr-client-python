@@ -39,6 +39,8 @@ class _World:
     host: ComponentHost | None = None
     address: str = ""
     start_error: Exception | None = None
+    registration_error: Exception | None = None
+    component: AggregateDispatch | None = None
     socket_path: pathlib.Path | None = None
     release: threading.Event = field(default_factory=threading.Event)
     entered: threading.Event = field(default_factory=threading.Event)
@@ -211,7 +213,34 @@ def _app_service(world: _World, name: str) -> None:
     )
 
 
+@given(
+    parsers.parse(
+        'a component host whose aggregate component "{name}" for domain "{domain}" '
+        'reports rules version "{version}"'
+    )
+)
+def _host_reporting(world: _World, name: str, domain: str, version: str) -> None:
+    world.host = ComponentHost(Router(), rules_version=version)
+    world.component = _aggregate(world, domain)
+    world.component.name = name
+
+
 # --- When ------------------------------------------------------------------
+
+
+@when(
+    parsers.parse(
+        'the component is registered with a descriptor carrying rules version "{version}"'
+    )
+)
+def _register_described(world: _World, version: str) -> None:
+    descriptor = types_pb2.ComponentDescriptor(
+        name=world.component.name, kind=world.component.kind, rules_version=version
+    )
+    try:
+        world.host.add_aggregate(world.component, descriptor)
+    except ConfigurationError as err:
+        world.registration_error = err
 
 
 @when("the host starts on a TCP port")
@@ -353,6 +382,32 @@ def _config_error_naming_both(world: _World) -> None:
         "registered": "order-component",
         "refused": "payment-component",
     }
+
+
+@then(
+    parsers.parse(
+        'the registration fails with reason {reason}, component "{component}", '
+        'described "{described}" and reported "{reported}"'
+    )
+)
+def _registration_refused(
+    world: _World, reason: str, component: str, described: str, reported: str
+) -> None:
+    assert isinstance(world.registration_error, ConfigurationError)
+    assert world.registration_error.code == reason
+    assert world.registration_error.details == {
+        "component": component,
+        "described": described,
+        "reported": reported,
+    }
+
+
+@then("no component is registered")
+def _none_registered(world: _World) -> None:
+    assert world.host.descriptor is None
+    with pytest.raises(ConfigurationError) as info:
+        world.host.start("127.0.0.1:0")
+    assert info.value.code == "HOST_REASON_NO_COMPONENTS_REGISTERED"
 
 
 @then("no service is served")

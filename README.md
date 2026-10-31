@@ -123,7 +123,7 @@ it from the table:
 |---|---|---|
 | `name` | every kind | the table's `name` |
 | `kind` | every kind | `COMPONENT_KIND_AGGREGATE`, `_PROCESS_MANAGER`, `_POLICY` or `_PROJECTOR` |
-| `rules_version` | every kind, required | the build version: `rules_version=`, else the table's own; it must be the version every answer reports (the table's own, else `ComponentHost(rules_version=...)`), and the host refuses a descriptor of any other at once (`ConfigurationError`, code `DESCRIPTOR_RULES_VERSION_MISMATCH`, details `component`, `described`, `reported`) |
+| `rules_version` | every kind, required | the build version: `rules_version=`, else the table's own; it must be the version every answer reports (the table's own, else `ComponentHost(rules_version=...)`), and the host refuses a descriptor of any other at once (`ConfigurationError`, code `HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH`, details `component`, `described`, `reported`) |
 | `inputs` | policy, projector | the domains it subscribes to: a policy's one `input_domain`; a projector's source domains (`for_domains`; none given, the wildcard, names none) |
 | `state.type_url` | aggregate, process manager, required | `"/"` and the state message's full name (`"/orders.v1.OrderState"`): `state_type=` (a message class or a full name), else the class the table's `Rebuilder` makes |
 | `state.options.conflict_resolutions` | aggregate, process manager | the full resolved list: `STRICT` and `AGGREGATE_HANDLES`, which every state supports, plus `resolutions=` (else what the state message's `(io.angzarr.v1.state)` option lists; in practice `COMMUTATIVE`), deduplicated, in enum-number order: `[STRICT, AGGREGATE_HANDLES]` or `[COMMUTATIVE, STRICT, AGGREGATE_HANDLES]`. Never `UNSPECIFIED` |
