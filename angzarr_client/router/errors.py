@@ -159,15 +159,19 @@ class Rejection(CodedError):
 
 class Refused(CodedError):
     """A typed refusal: one of the command's ``refuses`` messages. It
-    travels as FAILED_PRECONDITION ``ROUTER_REASON_COMMAND_REFUSED``,
-    ``refusal_type`` naming the object's type, and the object in the status details."""
+    travels as ``ROUTER_REASON_COMMAND_REFUSED``, ``refusal_type`` naming the
+    object's type, and the object in the status details, under ``status``,
+    given positionally: its Reason value's ``refusal_status`` (decision
+    14.52), one of the business set, FAILED_PRECONDITION (the default),
+    INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE or
+    PERMISSION_DENIED; any other is a :class:`ValueError`."""
 
-    def __init__(self, refusal) -> None:
+    def __init__(self, refusal, status: int = GrpcCode.FAILED_PRECONDITION, /) -> None:
         packed = refusal if isinstance(refusal, any_pb2.Any) else pack(refusal)
         refusal_type = type_name(packed.type_url)
         super().__init__(
             COMMAND_REFUSED,
-            GrpcCode.FAILED_PRECONDITION,
+            _check(status, _BUSINESS, "a typed refusal"),
             {"refusal_type": refusal_type},
             packed,
         )
