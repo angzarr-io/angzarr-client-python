@@ -392,8 +392,12 @@ def _fail(kind, *args):
 
 
 def _register(kind: str, host: ComponentHost) -> None:
-    dispatch = SimpleNamespace(domain="counter")
-    getattr(host, f"add_{kind}")(dispatch, _DESCRIPTOR)
+    dispatch = SimpleNamespace(domain="counter", domains=["counter"])
+    descriptor = types_pb2.ComponentDescriptor()
+    descriptor.CopyFrom(_DESCRIPTOR)
+    # A projector names the domains it reads (decision 14.55).
+    descriptor.inputs.add(domain="counter")
+    getattr(host, f"add_{kind}")(dispatch, descriptor)
 
 
 _CALLS = {

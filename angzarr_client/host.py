@@ -15,7 +15,8 @@ optionally, its own gRPC services; the host exposes:
   never calls its coordinator. The component carries the binary's build version, given as
   ``ComponentHost(rules_version=...)``, and its descriptor must carry the
   same: the host refuses one of another version when it is registered
-  (``HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH``);
+  (``HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH``), and a projector
+  naming no domain it reads (``HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN``);
 - the component's kind service: ``CommandHandlerService`` (an aggregate or
   a process manager, a domain: Handle, for commands and facts alike),
   ``PolicyService`` (Handle and OnRefused) or ``ProjectorService``
@@ -315,7 +316,12 @@ class ComponentHost:
         reporting any other, so a mismatch is refused here, at once, with
         :class:`ConfigurationError` code
         ``HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH`` (details: component,
-        described, reported), and nothing is registered."""
+        described, reported), and nothing is registered. A projector must
+        name the domains it reads, in its table (``for_domains``) and its
+        descriptor's ``inputs``: there is no wildcard domain (decision
+        14.53), so one naming none is refused too, code
+        ``HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN`` (details: component;
+        decision 14.55)."""
         reported = getattr(dispatch, "rules_version", "") or self.rules_version
         if descriptor.rules_version != reported:
             raise ConfigurationError(
@@ -327,6 +333,12 @@ class ComponentHost:
                     "described": descriptor.rules_version,
                     "reported": reported,
                 },
+            )
+        if kind == "projector" and not (dispatch.domains and descriptor.inputs):
+            raise ConfigurationError(
+                "a projector names no domain it reads",
+                code=codes.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN,
+                details={"component": getattr(dispatch, "name", "")},
             )
         if self._claim(dispatch):
             getattr(self.router, f"register_{kind}")(self._versioned(dispatch))

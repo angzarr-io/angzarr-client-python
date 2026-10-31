@@ -19,7 +19,10 @@ class ProjectorDispatch:
     factory, the domains it consumes, each named, and its fold handlers by
     fully-qualified event type. There is no wildcard domain (decision
     14.53): a book from a domain not listed, ``"*"`` among them, folds
-    nothing. A table given no domains folds every book."""
+    nothing. A table given no domains folds every book when the router is
+    driven directly; a host refuses to register it, as describe() refuses
+    to describe it (``HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN``, decision
+    14.55)."""
 
     name: str
     factory: Callable[[], object]

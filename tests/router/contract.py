@@ -363,11 +363,15 @@ def descriptor_of(
 ) -> types_pb2.ComponentDescriptor:
     """A stand-in for the ComponentDescriptor angzarr-cli generates for
     ``dispatch``'s component (decision 14.42): its name, kind and the version
-    its answers report, the table's own, else ``rules_version`` (the host's)."""
+    its answers report, the table's own, else ``rules_version`` (the host's),
+    and a projector's input domains, which the host requires (decision
+    14.55)."""
+    inputs = getattr(dispatch, "domains", None) or ()
     return types_pb2.ComponentDescriptor(
         name=dispatch.name,
         kind=dispatch.kind,
         rules_version=dispatch.rules_version or rules_version,
+        inputs=[types_pb2.Target(domain=d) for d in inputs],
     )
 
 

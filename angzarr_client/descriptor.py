@@ -44,7 +44,9 @@ exactly one input (``..._POLICY_INPUT_COUNT``) or with no output domain
 (``..._POLICY_NO_OUTPUT_DOMAIN``); an output domain on any other kind
 (``..._OUTPUT_DOMAIN_ON_NON_POLICY``). ``describe`` never builds one: it
 raises :class:`~angzarr_client.host.ConfigurationError` with that key as its
-code instead.
+code instead. A projector naming no domain it reads is the host's refusal
+(``HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN``, decision 14.55), raised after
+the coordinator's.
 """
 
 from __future__ import annotations
@@ -133,7 +135,8 @@ def describe(
 
     A descriptor the coordinator would refuse is not built: raises
     :class:`~angzarr_client.host.ConfigurationError`, its code the
-    ``CoordinatorReason`` key. A table of no component kind raises
+    ``CoordinatorReason`` key; nor is a projector's naming no input domain,
+    code ``HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN``. A table of no component kind raises
     ``TypeError``.
     """
     kind = getattr(dispatch, "kind", None)
@@ -173,6 +176,9 @@ def describe(
     if refused is not None:
         code, details = refused
         raise ConfigurationError(code, code=code, details=details)
+    if kind == _PROJECTOR and not descriptor.inputs:
+        code = codes.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN
+        raise ConfigurationError(code, code=code, details={"component": name})
     return descriptor
 
 

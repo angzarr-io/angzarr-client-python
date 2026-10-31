@@ -111,5 +111,10 @@ HANDSHAKE_MALFORMED = "HANDSHAKE_MALFORMED"
 HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH = HostReason.Name(
     HostReason.HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH
 )
+# A projector naming no domain it reads: its table's domains or its
+# descriptor's inputs empty (details: component; C-0747, decision 14.55).
+HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN = HostReason.Name(
+    HostReason.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN
+)
 # A conflict resolution of UNSPECIFIED given to describe (details: component).
 DESCRIPTOR_RESOLUTION_UNSPECIFIED = "DESCRIPTOR_RESOLUTION_UNSPECIFIED"
