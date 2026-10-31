@@ -21,7 +21,13 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client import ComponentHost, ConfigurationError
 from angzarr_client.proto.io.angzarr.v1 import command_handler_pb2_grpc, types_pb2
-from angzarr_client.router import AggregateDispatch, Rebuilder, Router, pack
+from angzarr_client.router import (
+    AggregateDispatch,
+    ProjectorDispatch,
+    Rebuilder,
+    Router,
+    pack,
+)
 
 # The build version the hosts declare (ComponentHost(rules_version=...)).
 TEST_RULES_VERSION = "0.0.0+test"
@@ -225,7 +231,27 @@ def _host_reporting(world: _World, name: str, domain: str, version: str) -> None
     world.component.name = name
 
 
+@given("a component host")
+def _host_bare(world: _World) -> None:
+    world.host = ComponentHost(Router(), rules_version=TEST_RULES_VERSION)
+
+
 # --- When ------------------------------------------------------------------
+
+
+@when(
+    parsers.parse('a projector component "{name}" naming no input domain is registered')
+)
+def _register_sourceless_projector(world: _World, name: str) -> None:
+    # A hand-written descriptor: describe() refuses such a table too.
+    dispatch = ProjectorDispatch(name, wrappers_pb2.Int64Value)
+    descriptor = types_pb2.ComponentDescriptor(
+        name=name, kind=dispatch.kind, rules_version=TEST_RULES_VERSION
+    )
+    try:
+        world.host.add_projector(dispatch, descriptor)
+    except ConfigurationError as err:
+        world.registration_error = err
 
 
 @when(
@@ -400,6 +426,17 @@ def _registration_refused(
         "described": described,
         "reported": reported,
     }
+
+
+@then(
+    parsers.parse(
+        'the registration fails with reason {reason} and component "{component}"'
+    )
+)
+def _registration_refused_naming(world: _World, reason: str, component: str) -> None:
+    assert isinstance(world.registration_error, ConfigurationError)
+    assert world.registration_error.code == reason
+    assert world.registration_error.details == {"component": component}
 
 
 @then("no component is registered")

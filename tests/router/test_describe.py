@@ -105,9 +105,22 @@ def test_a_projector_has_an_input_per_source_domain_and_no_state():
     )
 
 
-def test_a_projector_of_every_domain_names_no_input():
+def test_a_projector_naming_no_input_domain_is_not_described():
+    # Decision 14.55: there is no wildcard domain (14.53), so a projector
+    # naming no domain it reads is refused, under the host's key.
     projector = ProjectorDispatch("All", counter_pb2.CounterProjectorState)
-    assert list(describe(projector, rules_version=VERSION).inputs) == []
+    with pytest.raises(ConfigurationError) as info:
+        describe(projector, rules_version=VERSION)
+    assert info.value.code == "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN"
+    assert str(info.value) == "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN"
+    assert info.value.details == {"component": "All"}
+
+
+def test_the_coordinators_refusals_come_before_the_projectors_input():
+    projector = ProjectorDispatch("All", counter_pb2.CounterProjectorState)
+    with pytest.raises(ConfigurationError) as info:
+        describe(projector)
+    assert info.value.code == "COORDINATOR_REASON_MISSING_RULES_VERSION"
 
 
 # --- the rules version ---------------------------------------------------------

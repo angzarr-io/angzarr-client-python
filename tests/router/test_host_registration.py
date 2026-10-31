@@ -174,6 +174,49 @@ def test_a_descriptor_of_the_hosts_rules_version_is_registered(kind):
     host.stop()
 
 
+# --- a projector names the domains it reads (decision 14.55) ---------------------
+
+
+def _assert_projector_refused(host: ComponentHost, table, descriptor) -> None:
+    with pytest.raises(ConfigurationError) as info:
+        host.add_projector(table, descriptor)
+    assert info.value.code == "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN"
+    assert str(info.value) == "a projector names no domain it reads"
+    assert info.value.details == {"component": table.name}
+    # Nothing is registered: the host still has no component.
+    assert host.descriptor is None
+    with pytest.raises(ConfigurationError) as start:
+        host.start("127.0.0.1:0")
+    assert start.value.code == codes.HOST_REASON_NO_COMPONENTS_REGISTERED
+
+
+def test_a_projector_table_naming_no_domain_is_refused():
+    table = counter_projector([])
+    descriptor = describe(table, rules_version=BUILD_VERSION)
+    table.for_domains()
+    _assert_projector_refused(
+        ComponentHost(Router(), rules_version=BUILD_VERSION), table, descriptor
+    )
+
+
+def test_a_projector_descriptor_naming_no_input_is_refused():
+    table = counter_projector([])
+    descriptor = describe(table, rules_version=BUILD_VERSION)
+    del descriptor.inputs[:]
+    _assert_projector_refused(
+        ComponentHost(Router(), rules_version=BUILD_VERSION), table, descriptor
+    )
+
+
+def test_a_projector_naming_its_domains_is_registered():
+    table = counter_projector([], "counter", "ledger")
+    host = ComponentHost(Router(), rules_version=BUILD_VERSION)
+    descriptor = describe(table, rules_version=BUILD_VERSION)
+    host.add_projector(table, descriptor)
+    assert host.descriptor is descriptor
+    host.stop()
+
+
 def test_a_table_with_its_own_version_is_described_with_it():
     # The table's own version is the one its answers report, so it is the
     # one its descriptor must carry, whatever the host's.
