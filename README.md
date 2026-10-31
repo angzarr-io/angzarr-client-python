@@ -83,6 +83,71 @@ grace period. A coded failure from a handler travels as its gRPC status, with
 a `google.rpc.Status` / `ErrorInfo` (reason = the error code) in
 `grpc-status-details-bin`.
 
+### Writing a component by hand
+
+Everything the CLI generates can be replaced by hand. The dispatch table
+is `angzarr_client.router`'s `AggregateDispatch`, `ProcessManagerDispatch`,
+`PolicyDispatch` or `ProjectorDispatch`, filled in with its handlers;
+handlers are ordinary synchronous functions (the host runs them on its
+worker pool). The descriptor, which the CLI writes as a hex-encoded
+protobuf in `_descriptor.py`, is built from the table by `describe`:
+
+```python
+from angzarr_client import ComponentHost, describe
+from angzarr_client.router import PolicyDispatch, ProcessManagerDispatch, ProjectorDispatch, Rebuilder
+
+# A projector over several source domains: one input per domain.
+totals = (
+    ProjectorDispatch("Totals", TotalsView)
+    .for_domains("order", "refund")
+    .on_event("orders.v1.OrderPlaced", add_order)
+    .on_event("refunds.v1.Refunded", subtract_refund)
+)
+host = ComponentHost(rules_version=__version__)
+host.add_projector(totals, describe(totals, rules_version=__version__))
+
+# A policy: its one input domain and its one output domain.
+reserve = PolicyDispatch("ReserveStock", "order", "inventory").on_event("orders.v1.OrderPlaced", reserve_items)
+describe(reserve, rules_version=__version__)
+
+# A process manager: a state, and the types that start an instance.
+fulfil = ProcessManagerDispatch("Fulfilment", "fulfilment", Rebuilder(FulfilmentState)).on_command(...)
+describe(fulfil, rules_version=__version__, starting_types=[StartFulfilment])
+```
+
+The `ComponentDescriptor` (angzarr-project `types.proto`) the coordinator
+pulls with `ComponentService.Describe`, field by field, as `describe` fills
+it from the table:
+
+| field | set for | value |
+|---|---|---|
+| `name` | every kind | the table's `name` |
+| `kind` | every kind | `COMPONENT_KIND_AGGREGATE`, `_PROCESS_MANAGER`, `_POLICY` or `_PROJECTOR` |
+| `rules_version` | every kind, required | the build version: `rules_version=`, else the table's own; it must be the version every answer reports |
+| `inputs` | policy, projector | the domains it subscribes to: a policy's one `input_domain`; a projector's source domains (`for_domains`; none given, the wildcard, names none) |
+| `state.type_url` | aggregate, process manager, required | `"/"` and the state message's full name (`"/orders.v1.OrderState"`): `state_type=` (a message class or a full name), else the class the table's `Rebuilder` makes |
+| `state.options.conflict_resolutions` | aggregate, process manager | the full resolved list: `STRICT` and `AGGREGATE_HANDLES`, which every state supports, plus `resolutions=` (else what the state message's `(io.angzarr.v1.state)` option lists; in practice `COMMUTATIVE`), deduplicated, in enum-number order: `[STRICT, AGGREGATE_HANDLES]` or `[COMMUTATIVE, STRICT, AGGREGATE_HANDLES]`. Never `UNSPECIFIED` |
+| `starting_types` | process manager only | the full type NAMES, no type URL prefix (`"orders.v1.StartFulfilment"`), of the commands and facts that start an instance: `starting_types=` (message classes or names; a type URL is cut to its name). An input for a correlation with no instance whose type is not listed is not delivered |
+| `output_domain` | policy only, required | the one domain its commands go to: the table's `output_domain` |
+
+The coordinator refuses a descriptor that breaks one of these rules (in this
+order, each its `CoordinatorReason` key): an empty `rules_version`
+(`COORDINATOR_REASON_MISSING_RULES_VERSION`); `starting_types` on a kind
+other than a process manager (`COORDINATOR_REASON_STARTING_TYPES_ON_NON_PM`);
+no `state` on an aggregate or a process manager
+(`COORDINATOR_REASON_MISSING_STATE_TYPE`), or a `state` on a policy or a
+projector (`COORDINATOR_REASON_STATE_ON_STATELESS_KIND`); a policy without
+exactly one input (`COORDINATOR_REASON_POLICY_INPUT_COUNT`) or without an
+`output_domain` (`COORDINATOR_REASON_POLICY_NO_OUTPUT_DOMAIN`); an
+`output_domain` on any other kind
+(`COORDINATOR_REASON_OUTPUT_DOMAIN_ON_NON_POLICY`). A refused component is
+never delivered to. `describe` never builds such a descriptor: it raises
+`ConfigurationError` with that key as its code.
+
+A descriptor built any other way (by hand, as a `types_pb2.ComponentDescriptor`)
+works the same: the host answers `Describe` with whatever it is given,
+unchanged.
+
 ### As a child of an in-app runtime
 
 angzarr-embedded (the Rust runtime that runs inside an application) launches

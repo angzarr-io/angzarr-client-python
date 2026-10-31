@@ -18,6 +18,7 @@ pip install angzarr-client
 
 - **Clients** — `DomainClient`, `CommandHandlerClient`, `QueryClient`
 - **Router binding** — `angzarr_client.router`: `Router`, the `*Dispatch` tables the generated wiring populates, `CommandContext`, `PageContext`, `FactRecord`, `CodedError`
+- **Descriptors** — `angzarr_client.descriptor`: `describe`, a hand-written component's `ComponentDescriptor` from its dispatch table; its module docs (and the README's "Writing a component by hand") give the descriptor's fields and the coordinator's rules
 - **Errors** — `ClientError` hierarchy with `is_*` predicate methods
 - **Retry** — `ExponentialBackoffRetry` with `execute()` and `on_retry` callback
 - **Testing helpers** — `ScenarioContext`, `make_cover`, `make_event_book`, `uuid_for`, …

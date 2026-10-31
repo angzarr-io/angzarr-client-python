@@ -5,6 +5,9 @@
   repository's codegen/ templates against it. ``UnclassifiedError``, the
   error business code raises for a failure it does not classify, is also
   here at the top level (decision 14.42).
+- ``ComponentHost`` hosts one component; ``describe`` builds a hand-written
+  component's ``ComponentDescriptor`` from its dispatch table
+  (``angzarr_client.descriptor``).
 - The coordinator clients (``CommandHandlerClient``, ``QueryClient``,
   ``DomainClient``) and their builders.
 - ``angzarr_client.testing``: test helpers, imported from that module
@@ -24,6 +27,7 @@ from .client import (
     TransportMode,
     resolve_ch_endpoint,
 )
+from .descriptor import describe
 from .errors import (
     ClientError,
     CommandRejectedError,
@@ -144,6 +148,7 @@ __all__ = [
     # Pure utilities (non-accessor — accessors live on wrapper classes)
     "correlated_metadata",
     "default_retry_policy",
+    "describe",
     "full_type_url",
     "full_type_url_for",
     "get_transport_config",

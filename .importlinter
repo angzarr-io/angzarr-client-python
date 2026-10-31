@@ -7,6 +7,8 @@
 #                     Bottom layer; transport-free.
 #   child             run_child: a host as the child process of an in-app
 #                     runtime (handshake on stdout, Unix socket).
+#   descriptor        describe: a component's ComponentDescriptor, built
+#                     from its dispatch table (raises the host's errors).
 #   host              ComponentHost: serves registered components over gRPC,
 #                     on top of the router, readiness and server config.
 #   client, builder,  coordinator clients (gRPC stubs + fluent builders) and
@@ -28,7 +30,7 @@ root_packages =
 name = Host over clients and readiness, router binding at the bottom
 type = layers
 layers =
-    angzarr_client.child
+    angzarr_client.child | angzarr_client.descriptor
     angzarr_client.host
     angzarr_client.readiness | angzarr_client.server
     angzarr_client.builder : angzarr_client.client
