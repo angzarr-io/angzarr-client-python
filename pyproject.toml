@@ -134,6 +134,7 @@ markers = [
 [tool.mutmut]
 source_paths = [
     "angzarr_client/builder.py",
+    "angzarr_client/child.py",
     "angzarr_client/client.py",
     "angzarr_client/descriptor.py",
     "angzarr_client/errors.py",
