@@ -9,7 +9,7 @@ name = "angzarr-client"
 dynamic = ["version"]
 description = "Angzarr for Python: the router, the component host, and the coordinator clients"
 readme = "README.md"
-license = "BSD-3-Clause"
+license = "Apache-2.0 OR BSD-3-Clause"
 requires-python = ">=3.10"
 authors = [
     { name = "Benjamin Abbitt" }
@@ -18,6 +18,7 @@ keywords = ["angzarr", "grpc", "event-sourcing", "cqrs"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -91,7 +92,8 @@ include = [
     "scripts/",
     "VERSION",
     "README.md",
-    "LICENSE",
+    "LICENSE-APACHE",
+    "LICENSE-BSD",
     "angzarr-project/proto/",
 ]
 exclude = ["angzarr_client/proto/io", "angzarr_client/proto/sererr"]
