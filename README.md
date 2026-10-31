@@ -160,6 +160,10 @@ a Python component as a child process (by default `uv run --locked <entry
 point>`) and calls it over gRPC on a Unix socket. The child calls
 `run_child(host)` (`angzarr_client.child`) instead of `host.run()`:
 
+The launch protocol is angzarr-project's `docs/design/child-protocol.md`
+(decision 14.59), the same for every language; this package runs its
+scenarios, `parity/client/child.feature`, against `run_child`.
+
 - the socket is `$ANGZARR_SOCKET` (made absolute), else a fresh path in the
   system temporary directory;
 - once the host is SERVING, the child writes exactly one line to stdout,
@@ -169,7 +173,11 @@ point>`) and calls it over gRPC on a Unix socket. The child calls
 - it serves until stdin reaches end of file or it gets SIGTERM or SIGINT,
   then stops gracefully and removes the socket.
 
-A parent parses the line with `parse_handshake`; `v1` is the format version.
+A parent reads the line with `parse_handshake`: `None` for a line whose first
+word is not `angzarr-handshake` (a banner, which a parent skips), the address
+for a handshake, and a `ConfigurationError` under
+`HOST_REASON_HANDSHAKE_MALFORMED` (details `line`) for a line that starts
+`angzarr-handshake` but is not a v1 handshake. `v1` is the format version.
 
 ## Coordinator clients
 

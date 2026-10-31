@@ -93,6 +93,7 @@ def test_a_line_whose_first_word_is_not_the_prefix_is_not_a_handshake(line):
         "angzarr-handshake v1 unix:relative.sock\n",
         "angzarr-handshake v1 unix:\r\n",
         "angzarr-handshake  v1 unix:/run/app/player.sock\n",
+        "angzarr-handshake v1 unix:/run/app\nplayer.sock\n",
     ],
 )
 def test_a_line_starting_with_the_prefix_and_not_a_v1_handshake_is_malformed(line):

@@ -102,8 +102,11 @@ ROUTER_REASON_DUPLICATE_COMPONENT = RouterReason.Name(
 )
 
 # Child process (angzarr_client.child)
-# A line that is not a v1 handshake (details: line).
-HANDSHAKE_MALFORMED = "HANDSHAKE_MALFORMED"
+# A line whose first word is angzarr-handshake but which is not a v1
+# handshake (details: line, its line ending removed; C-0756, decision 14.59).
+HOST_REASON_HANDSHAKE_MALFORMED = HostReason.Name(
+    HostReason.HOST_REASON_HANDSHAKE_MALFORMED
+)
 
 # Component descriptors (angzarr_client.descriptor, ComponentHost)
 # A descriptor whose rules_version is not the version the component's
