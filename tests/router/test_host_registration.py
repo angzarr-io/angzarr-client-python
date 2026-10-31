@@ -9,6 +9,8 @@ generated, given with the component, unchanged."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from angzarr_client import ComponentHost, ConfigurationError, describe
@@ -145,6 +147,9 @@ def test_a_descriptor_of_another_rules_version_is_refused(kind):
     with pytest.raises(ConfigurationError) as info:
         getattr(host, f"add_{kind}")(table, described_as)
     assert info.value.code == "DESCRIPTOR_RULES_VERSION_MISMATCH"
+    assert str(info.value) == (
+        "the descriptor's rules_version is not the version the component reports"
+    )
     assert info.value.details == {
         "component": table.name,
         "described": "0.0.1",
@@ -193,4 +198,18 @@ def test_a_descriptor_with_a_version_on_a_host_without_one_is_refused():
         "component": "CounterAggregate",
         "described": BUILD_VERSION,
         "reported": "",
+    }
+
+
+def test_a_table_naming_no_component_or_version_is_refused_as_unnamed():
+    # A hand-built table need only route; the host's version is the one it
+    # reports.
+    table = SimpleNamespace(kind=types_pb2.COMPONENT_KIND_AGGREGATE)
+    host = ComponentHost(Router(), rules_version=BUILD_VERSION)
+    with pytest.raises(ConfigurationError) as info:
+        host.add_aggregate(table, types_pb2.ComponentDescriptor(rules_version="x"))
+    assert info.value.details == {
+        "component": "",
+        "described": "x",
+        "reported": BUILD_VERSION,
     }

@@ -68,6 +68,15 @@ def test_a_starting_type_given_as_a_type_url_is_listed_by_its_name():
     assert list(described.starting_types) == ["orders.v1.StartFulfillment"]
 
 
+def test_a_type_url_with_a_path_is_cut_to_the_name_after_its_last_slash():
+    described = describe(
+        fulfillment("", False, []),
+        rules_version=VERSION,
+        starting_types=["example.com/types/v1/orders.v1.StartFulfillment"],
+    )
+    assert list(described.starting_types) == ["orders.v1.StartFulfillment"]
+
+
 def test_a_policy_has_its_one_input_and_its_output_domain_and_no_state():
     assert describe(order_policy("inventory", []), rules_version=VERSION) == (
         types_pb2.ComponentDescriptor(
@@ -113,6 +122,7 @@ def test_without_a_rules_version_nothing_is_described():
     with pytest.raises(ConfigurationError) as info:
         describe(counter_aggregate([]))
     assert info.value.code == "COORDINATOR_REASON_MISSING_RULES_VERSION"
+    assert str(info.value) == "COORDINATOR_REASON_MISSING_RULES_VERSION"
     assert info.value.details == {"component": "CounterAggregate"}
 
 
@@ -150,6 +160,8 @@ def test_unspecified_is_not_a_resolution():
             resolutions=[types_pb2.CONFLICT_RESOLUTION_UNSPECIFIED],
         )
     assert info.value.code == "DESCRIPTOR_RESOLUTION_UNSPECIFIED"
+    assert str(info.value) == "DESCRIPTOR_RESOLUTION_UNSPECIFIED"
+    assert info.value.details == {"component": "CounterAggregate"}
 
 
 def _commutative_state():
@@ -220,6 +232,10 @@ def test_resolutions_on_a_stateless_kind_are_refused(table):
     with pytest.raises(ConfigurationError) as info:
         describe(table, rules_version=VERSION, resolutions=[COMMUTATIVE])
     assert info.value.code == "COORDINATOR_REASON_STATE_ON_STATELESS_KIND"
+    assert info.value.details == {
+        "component": table.name,
+        "component_kind": types_pb2.ComponentKind.Name(table.kind),
+    }
 
 
 def test_a_policy_with_no_output_domain_is_refused():
@@ -239,7 +255,7 @@ def test_a_policy_with_no_input_domain_is_refused():
 
 
 def test_a_table_of_no_known_kind_is_not_described():
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="not a component's dispatch table"):
         describe(object(), rules_version=VERSION)
 
 

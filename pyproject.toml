@@ -133,6 +133,7 @@ markers = [
 source_paths = [
     "angzarr_client/builder.py",
     "angzarr_client/client.py",
+    "angzarr_client/descriptor.py",
     "angzarr_client/errors.py",
     "angzarr_client/helpers.py",
     "angzarr_client/host.py",

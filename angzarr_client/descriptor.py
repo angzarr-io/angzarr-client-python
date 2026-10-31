@@ -79,7 +79,7 @@ def _reason(value: int) -> str:
 def _full_name(message) -> str:
     """A message class's (or a type name's, or a type URL's) full name."""
     if isinstance(message, str):
-        return message.rsplit("/", 1)[-1]
+        return message.rpartition("/")[2]
     return message.DESCRIPTOR.full_name
 
 
@@ -149,21 +149,22 @@ def describe(
         starting_types=[_full_name(t) for t in starting_types],
         output_domain=dispatch.output_domain if kind == _POLICY else "",
     )
-    stated = state_type is not None or resolutions is not None
-    if kind in _STATEFUL or stated:
+    if kind in _STATEFUL or state_type is not None or resolutions is not None:
         state = state_type
-        if state is None:
-            state = _state_class(dispatch) if kind in _STATEFUL else ""
-        listed = list(resolutions) if resolutions is not None else []
+        if state is None and kind in _STATEFUL:
+            state = _state_class(dispatch)
         if resolutions is None:
             listed = _declared_resolutions(state)
+        else:
+            listed = list(resolutions)
         if types_pb2.CONFLICT_RESOLUTION_UNSPECIFIED in listed:
             raise ConfigurationError(
                 RESOLUTION_UNSPECIFIED,
                 code=RESOLUTION_UNSPECIFIED,
                 details={"component": name},
             )
-        descriptor.state.type_url = "/" + _full_name(state) if state else ""
+        if state is not None:
+            descriptor.state.type_url = "/" + _full_name(state)
         descriptor.state.options.conflict_resolutions.extend(
             sorted(set(BASE_RESOLUTIONS) | set(listed))
         )
