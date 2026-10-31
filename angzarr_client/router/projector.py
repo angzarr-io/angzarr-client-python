@@ -12,15 +12,14 @@ from ..proto.io.angzarr.v1 import types_pb2
 from .context import Applier, fold
 from .errors import FOLD_FAILED, pack
 
-# A projector that consumes every domain.
-WILDCARD_DOMAIN = "*"
-
 
 @dataclass
 class ProjectorDispatch:
     """One projector's dispatch table: its name, its projection message's
-    factory, the domains it consumes (none given, or ``*``: every domain)
-    and its fold handlers by fully-qualified event type."""
+    factory, the domains it consumes, each named, and its fold handlers by
+    fully-qualified event type. There is no wildcard domain (decision
+    14.53): a book from a domain not listed, ``"*"`` among them, folds
+    nothing. A table given no domains folds every book."""
 
     name: str
     factory: Callable[[], object]
@@ -62,8 +61,7 @@ class ProjectorDispatch:
         the Projection: the cover, the projector, the position after the
         book and the projection."""
         projection = self.factory()
-        consumed = not self.domains or WILDCARD_DOMAIN in self.domains
-        if consumed or book.cover.domain in self.domains:
+        if not self.domains or book.cover.domain in self.domains:
             cover = book.cover if book.HasField("cover") else None
             fold(projection, book.pages, cover, self.events, FOLD_FAILED)
         after = book.pages[-1].sequence + 1 if book.pages else book.next_sequence

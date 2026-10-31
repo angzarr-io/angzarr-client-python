@@ -32,11 +32,10 @@ from .errors import (
     pack,
 )
 from .policy import PolicyDispatch
-from .projector import WILDCARD_DOMAIN, ProjectorDispatch
+from .projector import ProjectorDispatch
 from .router import Router
 
 __all__ = [
-    "WILDCARD_DOMAIN",
     "AggregateDispatch",
     "Bug",
     "CodedError",

@@ -45,7 +45,6 @@ from .helpers import (
     PROJECTION_TYPE_URL,
     TYPE_URL_PREFIX,
     UNKNOWN_DOMAIN,
-    WILDCARD_DOMAIN,
     correlated_metadata,
     full_type_url,
     full_type_url_for,
@@ -107,7 +106,6 @@ __all__ = [
     "TYPE_URL_PREFIX",
     # Constants
     "UNKNOWN_DOMAIN",
-    "WILDCARD_DOMAIN",
     # Errors
     "ClientError",
     "CommandBook",

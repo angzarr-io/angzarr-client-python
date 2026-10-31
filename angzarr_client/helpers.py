@@ -31,7 +31,6 @@ T = TypeVar("T", bound=Message)
 
 # Constants matching Rust proto_ext::constants
 UNKNOWN_DOMAIN = "unknown"
-WILDCARD_DOMAIN = "*"
 DEFAULT_EDITION = ""
 META_ANGZARR_DOMAIN = "_angzarr"
 PROJECTION_DOMAIN_PREFIX = "_projection"

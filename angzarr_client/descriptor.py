@@ -21,8 +21,9 @@ The descriptor's fields, as the coordinator reads them (``types.proto``,
   reports (``ComponentHost(rules_version=...)``, which the host checks it
   against when the component is registered);
 - ``inputs``: the domains it subscribes to: a policy's one
-  ``input_domain``; a projector's source domains (``for_domains``; none,
-  the wildcard, names none); none for an aggregate or a process manager;
+  ``input_domain``; a projector's source domains (``for_domains``), each
+  named, as there is no wildcard domain (decision 14.53); none for an
+  aggregate or a process manager;
 - ``state`` (an aggregate or a process manager only): the state message's
   ``type_url``, ``"/"`` and its full name, and ``options.conflict_resolutions``,
   the full resolved list: STRICT and AGGREGATE_HANDLES, which every state
