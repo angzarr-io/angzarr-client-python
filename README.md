@@ -144,6 +144,11 @@ exactly one input (`COORDINATOR_REASON_POLICY_INPUT_COUNT`) or without an
 never delivered to. `describe` never builds such a descriptor: it raises
 `ConfigurationError` with that key as its code.
 
+`describe` builds what the CLI generates: `just codegen-check` checks that
+`describe` of each scaffolded component's dispatch equals its generated
+`DESCRIPTOR`, and a test pins a generated descriptor's bytes against the
+construction above.
+
 A descriptor built any other way (by hand, as a `types_pb2.ComponentDescriptor`)
 works the same: the host answers `Describe` with whatever it is given,
 unchanged.

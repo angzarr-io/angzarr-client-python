@@ -21,20 +21,13 @@ from angzarr_client.proto.io.angzarr.v1 import (
     projector_pb2_grpc,
     types_pb2,
 )
-from angzarr_client.router import (
-    FactRecord,
-    PolicyDispatch,
-    ProcessManagerDispatch,
-    ProjectorDispatch,
-    Rebuilder,
-    pack,
-)
+from angzarr_client.router import pack
 
 from .gen import counter_pb2, order_pb2
+from .hand import fulfilment, reserve, reserving, totals
 from .test_host import started  # noqa: F401 — the fixture
 
 VERSION = "2.0.0+hand"
-INCREASED = counter_pb2.Increased.DESCRIPTOR.full_name
 
 
 def _book(domain: str, *events, first: int = 0) -> types_pb2.EventBook:
@@ -53,20 +46,9 @@ def _describe_call(channel) -> types_pb2.ComponentDescriptor:
 # --- a projector over several source domains -----------------------------------
 
 
-def _totals() -> ProjectorDispatch:
-    def increased(view, _event):
-        view.count += 1
-
-    return (
-        ProjectorDispatch("Totals", counter_pb2.CounterProjectorState)
-        .for_domains("alpha", "beta")
-        .on_event(INCREASED, increased)
-    )
-
-
 @pytest.fixture
 def projector_channel(started):  # noqa: F811
-    table = _totals()
+    table = totals()
     host = ComponentHost(rules_version=VERSION)
     host.add_projector(table, describe(table, rules_version=VERSION))
     return started(host)
@@ -105,27 +87,9 @@ def test_a_hand_written_projector_folds_nothing_of_another_domain(projector_chan
 # --- a policy ------------------------------------------------------------------
 
 
-def _reserve(domain: str) -> types_pb2.CommandBook:
-    command = types_pb2.CommandBook()
-    command.cover.domain = domain
-    command.page.command.payload.CopyFrom(pack(counter_pb2.Reserve()))
-    return command
-
-
-def _reserving() -> PolicyDispatch:
-    return (
-        PolicyDispatch("Reserving", "alpha", "beta")
-        .on_event(INCREASED, lambda _event, _cover: [_reserve("beta")])
-        .on_refused(
-            counter_pb2.Reserve.DESCRIPTOR.full_name,
-            lambda _refusal, _ctx: order_pb2.StockUnavailable(item="x"),
-        )
-    )
-
-
 @pytest.fixture
 def policy_channel(started):  # noqa: F811
-    table = _reserving()
+    table = reserving()
     host = ComponentHost(rules_version=VERSION)
     host.add_policy(table, describe(table, rules_version=VERSION))
     return started(host)
@@ -155,7 +119,7 @@ def test_a_hand_written_policy_answers_its_commands_by_trigger(policy_channel):
 def test_a_hand_written_policy_translates_a_refusal(policy_channel):
     stub = policy_pb2_grpc.PolicyServiceStub(policy_channel)
     refusal = policy_pb2.Refusal()
-    refusal.command.CopyFrom(_reserve("beta"))
+    refusal.command.CopyFrom(reserve("beta"))
     response = stub.OnRefused(refusal, timeout=5)
     fact = response.fact.page.fact.payload
     assert fact.type_url == "/orders.v1.StockUnavailable"
@@ -165,32 +129,9 @@ def test_a_hand_written_policy_translates_a_refusal(policy_channel):
 # --- a process manager ---------------------------------------------------------
 
 
-def _fulfilment() -> ProcessManagerDispatch:
-    def started_one(state, _event):
-        state.placed += 1
-
-    def start(_command, state, _ctx):
-        assert state.placed == 0
-        book = types_pb2.EventBook()
-        book.pages.add().payload.CopyFrom(pack(order_pb2.FulfillmentStarted()))
-        return book
-
-    def delivered(fact, _state, _ctx):
-        return FactRecord(fact, [order_pb2.FulfillmentStarted()])
-
-    rebuilder = Rebuilder(order_pb2.FulfillmentState).apply(
-        order_pb2.FulfillmentStarted.DESCRIPTOR.full_name, started_one
-    )
-    return (
-        ProcessManagerDispatch("Fulfilment", "fulfilment", rebuilder)
-        .on_command(order_pb2.StartFulfillment.DESCRIPTOR.full_name, start)
-        .on_fact(order_pb2.ItemDelivered.DESCRIPTOR.full_name, delivered)
-    )
-
-
 @pytest.fixture
 def pm_channel(started):  # noqa: F811
-    table = _fulfilment()
+    table = fulfilment()
     host = ComponentHost(rules_version=VERSION)
     host.add_process_manager(
         table,

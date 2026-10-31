@@ -75,17 +75,20 @@ def test_anything_else_is_a_malformed_handshake(line):
 
 
 class Child:
-    """The counter fixture running as a child process, launched as a parent
+    """A child fixture (``module`` under tests/router, given ``argv``; the
+    counter by default) running as a child process, launched as a parent
     would: stdin and stdout piped, the socket path (optionally) in the
     environment."""
 
-    def __init__(self, socket_path: str | None) -> None:
+    def __init__(
+        self, socket_path: str | None, *argv: str, module: str = "child_counter"
+    ) -> None:
         env = dict(os.environ)
         env.pop(SOCKET_ENV, None)
         if socket_path is not None:
             env[SOCKET_ENV] = socket_path
         self.proc = subprocess.Popen(
-            [sys.executable, "-m", "tests.router.child_counter"],
+            [sys.executable, "-m", f"tests.router.{module}", *argv],
             cwd=REPO,
             env=env,
             stdin=subprocess.PIPE,

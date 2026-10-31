@@ -11,6 +11,7 @@ import pytest
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
 from angzarr_client import ConfigurationError, describe
+from angzarr_client.descriptor import _refusal
 from angzarr_client.proto.io.angzarr.v1 import options_pb2, types_pb2
 from angzarr_client.router import ProjectorDispatch, Rebuilder
 
@@ -240,3 +241,92 @@ def test_a_policy_with_no_input_domain_is_refused():
 def test_a_table_of_no_known_kind_is_not_described():
     with pytest.raises(TypeError):
         describe(object(), rules_version=VERSION)
+
+
+# --- the rules no describe() output can break, each as the coordinator keeps it
+
+
+def test_no_state_on_a_stateful_kind_is_refused():
+    descriptor = types_pb2.ComponentDescriptor(
+        name="Fulfillment",
+        kind=types_pb2.COMPONENT_KIND_PROCESS_MANAGER,
+        rules_version=VERSION,
+    )
+    assert _refusal(descriptor) == (
+        "COORDINATOR_REASON_MISSING_STATE_TYPE",
+        {
+            "component": "Fulfillment",
+            "component_kind": "COMPONENT_KIND_PROCESS_MANAGER",
+        },
+    )
+
+
+def test_an_output_domain_on_another_kind_is_refused():
+    descriptor = types_pb2.ComponentDescriptor(
+        name="CounterProjector",
+        kind=types_pb2.COMPONENT_KIND_PROJECTOR,
+        rules_version=VERSION,
+        output_domain="inventory",
+    )
+    assert _refusal(descriptor) == (
+        "COORDINATOR_REASON_OUTPUT_DOMAIN_ON_NON_POLICY",
+        {"component": "CounterProjector", "component_kind": "COMPONENT_KIND_PROJECTOR"},
+    )
+
+
+def test_the_rules_are_checked_in_the_coordinators_order():
+    # Every rule broken at once: the first, the rules version, is the one.
+    descriptor = types_pb2.ComponentDescriptor(
+        name="P",
+        kind=types_pb2.COMPONENT_KIND_POLICY,
+        starting_types=["x.Y"],
+        state=types_pb2.StateDescriptor(type_url="/x.S"),
+    )
+    assert _refusal(descriptor)[0] == "COORDINATOR_REASON_MISSING_RULES_VERSION"
+    descriptor.rules_version = VERSION
+    assert _refusal(descriptor)[0] == "COORDINATOR_REASON_STARTING_TYPES_ON_NON_PM"
+    del descriptor.starting_types[:]
+    assert _refusal(descriptor)[0] == "COORDINATOR_REASON_STATE_ON_STATELESS_KIND"
+    descriptor.ClearField("state")
+    assert _refusal(descriptor)[0] == "COORDINATOR_REASON_POLICY_INPUT_COUNT"
+    descriptor.inputs.add(domain="a")
+    descriptor.inputs.add(domain="b")
+    assert _refusal(descriptor)[0] == "COORDINATOR_REASON_POLICY_INPUT_COUNT"
+    del descriptor.inputs[1:]
+    assert _refusal(descriptor)[0] == "COORDINATOR_REASON_POLICY_NO_OUTPUT_DOMAIN"
+    descriptor.output_domain = "b"
+    assert _refusal(descriptor) is None
+
+
+# --- what angzarr-cli generates decodes equal to the hand construction --------
+
+# The CounterAggregate's descriptor as angzarr-cli generates it (the hex of
+# the `_descriptor.py` that `angzarr scaffold python` writes), at the
+# justfile's CLI_REV, for the handler-contract fixture, rules version 0.1.0:
+#
+#     angzarr scaffold python -I angzarr-project/features/handler-contract/fixture \
+#         --domain counter --no-lock --src <dir> counter.proto
+#
+# (buf may fail afterwards for want of options.proto; _descriptor.py is
+# written first). Regenerate it when the CLI changes what it generates.
+GENERATED_COUNTER_AGGREGATE = (
+    "0a10436f756e7465724167677265676174652205302e312e30280132220a1a2f"
+    "746573742e636f756e7465722e436f756e746572537461746512040a020203"
+)
+
+
+def test_a_generated_descriptor_decodes_equal_to_the_documented_construction():
+    generated = types_pb2.ComponentDescriptor.FromString(
+        bytes.fromhex(GENERATED_COUNTER_AGGREGATE)
+    )
+    # The README's table, field by field, for an aggregate.
+    by_hand = types_pb2.ComponentDescriptor(
+        name="CounterAggregate",
+        kind=types_pb2.COMPONENT_KIND_AGGREGATE,
+        rules_version="0.1.0",
+        state=_state("/test.counter.CounterState", STRICT, AGGREGATE_HANDLES),
+    )
+    assert generated == by_hand
+    assert describe(counter_aggregate([]), rules_version="0.1.0") == generated
+    # Byte for byte, too: the same fields, in the same order.
+    assert by_hand.SerializeToString() == generated.SerializeToString()

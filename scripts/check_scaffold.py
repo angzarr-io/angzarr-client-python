@@ -7,7 +7,10 @@ python``) works against this repository's package.
 - the project's ``main.host()`` builds its ComponentHost, registering the
   domain on the router;
 - its host answers Describe with ``_descriptor.DESCRIPTOR``, the
-  descriptor the CLI generated, unchanged (decision 14.42).
+  descriptor the CLI generated, unchanged (decision 14.42);
+- that descriptor is hand-replaceable: ``describe`` builds the same from the
+  dispatch ``main.register`` registers, with the descriptor's rules version
+  (a process manager's starting types given as generated).
 
     check_scaffold.py <project dir> <domain>
 
@@ -19,6 +22,25 @@ from __future__ import annotations
 import importlib
 import pathlib
 import sys
+
+from angzarr_client import describe
+
+
+class _Recorder:
+    """Stands in for a ComponentHost: records what ``main.register`` adds."""
+
+    def __init__(self) -> None:
+        self.added: list[tuple] = []
+
+    def __getattr__(self, name: str):
+        if not name.startswith("add_"):
+            raise AttributeError(name)
+
+        def add(dispatch, descriptor):
+            self.added.append((dispatch, descriptor))
+            return self
+
+        return add
 
 
 def check(project: pathlib.Path, domain: str) -> list[str]:
@@ -45,9 +67,24 @@ def check(project: pathlib.Path, domain: str) -> list[str]:
             problems.append(f"{package}._descriptor: the descriptor names no component")
         if host.descriptor is not descriptor:
             problems.append(f"{package}.main: the host describes {host.descriptor!r}")
-        print(
-            f"ok {package}: {descriptor.name} registered, {len(wiring)} dispatch modules"
-        )
+        recorder = _Recorder()
+        main.register(recorder)
+        for dispatch, generated in recorder.added:
+            by_hand = describe(
+                dispatch,
+                rules_version=generated.rules_version,
+                starting_types=generated.starting_types,
+            )
+            if by_hand != generated:
+                problems.append(
+                    f"{package}: describe() builds {by_hand!r}, not the generated "
+                    f"{generated!r}"
+                )
+        if not problems:
+            print(
+                f"ok {package}: {descriptor.name} registered, {len(wiring)} dispatch modules,"
+                f" {len(recorder.added)} descriptors as describe() builds them"
+            )
     finally:
         host.stop()
     return problems
