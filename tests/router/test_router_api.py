@@ -194,6 +194,49 @@ def test_a_typed_refusal_carries_its_object_after_its_error_info():
         assert list(err.status().details)[1:] == [pack(refusal)]
 
 
+@pytest.mark.parametrize(
+    "status",
+    [
+        GrpcCode.FAILED_PRECONDITION,
+        GrpcCode.INVALID_ARGUMENT,
+        GrpcCode.NOT_FOUND,
+        GrpcCode.ALREADY_EXISTS,
+        GrpcCode.OUT_OF_RANGE,
+        GrpcCode.PERMISSION_DENIED,
+    ],
+)
+def test_a_typed_refusal_travels_under_its_reasons_business_status(status):
+    """Decision 14.52: a typed refusal is refused under its Reason value's
+    refusal_status, given positionally, its key and object unchanged."""
+    refusal = order_pb2.ItemOutOfStock(item="apple", on_hand=0)
+    err = Refused(refusal, status)
+    assert (err.code, err.grpc) == ("ROUTER_REASON_COMMAND_REFUSED", status)
+    assert err.status().code == status
+    assert err.extras == {"refusal_type": "orders.v1.ItemOutOfStock"}
+    assert list(err.status().details)[1:] == [pack(refusal)]
+
+
+def test_a_typed_refusal_is_a_failed_precondition_unless_given():
+    refusal = order_pb2.ItemOutOfStock(item="apple", on_hand=0)
+    assert Refused(refusal).grpc == GrpcCode.FAILED_PRECONDITION
+
+
+@pytest.mark.parametrize(
+    "status",
+    [GrpcCode.ABORTED, GrpcCode.INTERNAL, GrpcCode.UNAVAILABLE, GrpcCode.UNKNOWN],
+)
+def test_a_typed_refusal_outside_the_business_set_is_refused(status):
+    names = (
+        "ALREADY_EXISTS, FAILED_PRECONDITION, INVALID_ARGUMENT, NOT_FOUND, "
+        "OUT_OF_RANGE, PERMISSION_DENIED"
+    )
+    with pytest.raises(ValueError) as exc:
+        Refused(order_pb2.ItemOutOfStock(item="apple"), status)
+    assert str(exc.value) == (
+        f"a typed refusal's status is one of ({names}), not {status!r}"
+    )
+
+
 def test_an_undecodable_payload_names_its_message_type_and_the_runtimes_text():
     err = any_decode_error(
         "example.com/types/test.counter.IncreaseBy", ValueError("bad wire")
