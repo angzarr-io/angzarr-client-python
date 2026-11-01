@@ -13,21 +13,6 @@ from tests.conftest import SCENARIO_IDS_ATTR
 PENDING = {
     "C-0336": "angzarr_client exposes no connect-timeout option on connect()",
     "C-0337": "angzarr_client exposes no keep-alive option on connect()",
-    # Decision 14.37 on the client side: a ClientError's text is its code
-    # then its args, and message() renders from a catalog by the code
-    # (C-0131, C-0352 and C-0363 pass). These still lack their steps: a
-    # connection, a builder's, a timestamp's and a permission error named by
-    # code and args, and a gRPC error's full Status.
-    **dict.fromkeys(
-        (
-            "C-0341",
-            "C-0344",
-            "C-0345",
-            "C-0349",
-            "C-0355",
-        ),
-        "no steps yet for the error's code and args (14.37)",
-    ),
 }
 
 

@@ -21,6 +21,8 @@ from collections.abc import Mapping
 from typing import Any
 
 import grpc
+from google.protobuf.message import DecodeError
+from google.rpc import error_details_pb2, status_pb2
 
 from .diagnostic import display, render
 from .error_codes import codes
@@ -107,34 +109,78 @@ class TransportError(ClientError):
         return True
 
 
+# The trailer a gRPC status's details travel in, a serialized
+# ``google.rpc.Status``.
+_STATUS_DETAILS_KEY = "grpc-status-details-bin"
+
+
+def _rpc_status(rpc_error: grpc.RpcError) -> status_pb2.Status:
+    """The ``google.rpc.Status`` an RPC failed with: the one its
+    ``grpc-status-details-bin`` trailer carries, else one holding only its
+    status code and message (an error raised outside a call, or by a
+    server sending no details)."""
+    trailing = getattr(rpc_error, "trailing_metadata", None)
+    for key, value in (trailing() if callable(trailing) else None) or ():
+        if key == _STATUS_DETAILS_KEY:
+            try:
+                return status_pb2.Status.FromString(value)
+            except DecodeError:
+                break
+    return status_pb2.Status(
+        code=rpc_error.code().value[0], message=rpc_error.details() or ""
+    )
+
+
+def _error_info(status: status_pb2.Status) -> error_details_pb2.ErrorInfo | None:
+    """The status's ``google.rpc.ErrorInfo``: its reason key and args."""
+    for detail in status.details:
+        info = error_details_pb2.ErrorInfo()
+        if detail.Unpack(info):
+            return info
+    return None
+
+
 class GRPCError(ClientError):
-    """gRPC error from the server."""
+    """gRPC error from the server.
+
+    Its ``code`` and ``details`` are the server's reason key and args, the
+    ``ErrorInfo`` reason and metadata of the status's details (decision
+    14.37: on the wire the status message is the key, its ``ErrorInfo`` the
+    key and the args); a status with no ``ErrorInfo`` is ``GRPC_ERROR`` with
+    no args. :meth:`status` is the whole ``google.rpc.Status``.
+    """
 
     def __init__(
         self,
         cause: grpc.RpcError,
         *,
-        code: str = codes.GRPC_ERROR,
+        code: str | None = None,
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__(code, cause, details=details)
         self._rpc_error = cause
+        self._status = _rpc_status(cause)
+        info = _error_info(self._status)
+        if code is None:
+            code = info.reason if info is not None else codes.GRPC_ERROR
+        if details is None and info is not None:
+            details = info.metadata
+        super().__init__(code, cause, details=details)
 
     @property
     def grpc_code(self) -> grpc.StatusCode:
         """Return the gRPC status code."""
         return self._rpc_error.code()
 
-    # Back-compat alias — old name was ``code`` (a method); renamed to
-    # ``grpc_code`` so the `.code` attribute can carry the SCREAMING_SNAKE id.
     @property
     def grpc_details(self) -> str:
         """Return the gRPC server-side details string."""
         return self._rpc_error.details()
 
-    def status(self) -> grpc.RpcError:
-        """Return the underlying gRPC RpcError (status)."""
-        return self._rpc_error
+    def status(self) -> status_pb2.Status:
+        """The full ``google.rpc.Status``: its code, its message (the reason
+        key) and its details (the ``ErrorInfo`` first). The RpcError itself
+        is :attr:`cause`."""
+        return self._status
 
     def is_not_found(self) -> bool:
         return self.grpc_code == grpc.StatusCode.NOT_FOUND

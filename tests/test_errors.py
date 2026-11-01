@@ -1,6 +1,8 @@
 """Tests for error types."""
 
 import grpc
+from google.protobuf import any_pb2
+from google.rpc import error_details_pb2, status_pb2
 
 from angzarr_client.errors import (
     ClientError,
@@ -90,16 +92,34 @@ class MockRpcError(grpc.RpcError):
     from grpc.Call. Real gRPC errors inherit from both.
     """
 
-    def __init__(self, code: grpc.StatusCode, details: str = ""):
+    def __init__(self, code: grpc.StatusCode, details: str = "", trailer: tuple = ()):
         super().__init__()
         self._code = code
         self._details = details
+        self._trailer = trailer
 
     def code(self) -> grpc.StatusCode:
         return self._code
 
     def details(self) -> str:
         return self._details
+
+    def trailing_metadata(self) -> tuple:
+        return self._trailer
+
+
+def _status_trailer(status: status_pb2.Status) -> tuple:
+    return (("grpc-status-details-bin", status.SerializeToString()),)
+
+
+def _info(reason: str, metadata: dict) -> any_pb2.Any:
+    packed = any_pb2.Any()
+    packed.Pack(
+        error_details_pb2.ErrorInfo(
+            reason=reason, domain="angzarr.io", metadata=metadata
+        )
+    )
+    return packed
 
 
 class TestGRPCError:
@@ -230,10 +250,75 @@ class TestGRPCErrorExtraBranches:
     def _err(self, code: grpc.StatusCode) -> GRPCError:
         return GRPCError(MockRpcError(code, ""))
 
-    def test_status_returns_underlying(self) -> None:
-        rpc_error = MockRpcError(grpc.StatusCode.INTERNAL, "")
+    def test_status_without_a_trailer_is_the_code_and_message(self) -> None:
+        rpc_error = MockRpcError(grpc.StatusCode.NOT_FOUND, "SOME_KEY")
         err = GRPCError(rpc_error)
-        assert err.status() is rpc_error
+        assert err.status() == status_pb2.Status(code=5, message="SOME_KEY")
+        assert err.cause is rpc_error
+
+    def test_a_status_without_trailing_metadata_is_the_code_and_message(
+        self,
+    ) -> None:
+        class Bare:
+            def code(self) -> grpc.StatusCode:
+                return grpc.StatusCode.INTERNAL
+
+            def details(self) -> None:
+                return None
+
+        assert GRPCError(Bare()).status() == status_pb2.Status(code=13)
+
+    def test_code_and_details_are_the_servers_reason_key_and_args(self) -> None:
+        """Decision 14.37: the ErrorInfo carries the key and the args."""
+        status = status_pb2.Status(
+            code=7,
+            message="ACCESS_DENIED",
+            details=[_info("ACCESS_DENIED", {"a": "b c"})],
+        )
+        rpc_error = MockRpcError(
+            grpc.StatusCode.PERMISSION_DENIED, "ACCESS_DENIED", _status_trailer(status)
+        )
+        err = GRPCError(rpc_error)
+        assert err.code == "ACCESS_DENIED"
+        assert err.details == {"a": "b c"}
+        assert str(err) == 'ACCESS_DENIED a="b c"'
+        assert err.status() == status
+        assert err.grpc_code == grpc.StatusCode.PERMISSION_DENIED
+
+    def test_the_first_error_info_names_the_error(self) -> None:
+        other = any_pb2.Any()
+        other.Pack(error_details_pb2.RetryInfo())
+        status = status_pb2.Status(
+            code=13, details=[other, _info("FIRST", {}), _info("SECOND", {})]
+        )
+        err = GRPCError(
+            MockRpcError(grpc.StatusCode.INTERNAL, "", _status_trailer(status))
+        )
+        assert err.code == "FIRST"
+
+    def test_a_status_with_no_error_info_is_grpc_error(self) -> None:
+        from angzarr_client.error_codes import codes
+
+        status = status_pb2.Status(code=13, message="SOME_KEY")
+        trailer = (("other", b"x"), *_status_trailer(status))
+        err = GRPCError(MockRpcError(grpc.StatusCode.INTERNAL, "x", trailer))
+        assert err.code == codes.GRPC_ERROR
+        assert err.details == {}
+        assert err.status() == status
+
+    def test_an_undecodable_trailer_is_the_code_and_message(self) -> None:
+        trailer = (("grpc-status-details-bin", b"\xff\xff"),)
+        err = GRPCError(MockRpcError(grpc.StatusCode.INTERNAL, "K", trailer))
+        assert err.status() == status_pb2.Status(code=13, message="K")
+
+    def test_a_given_code_and_details_win(self) -> None:
+        status = status_pb2.Status(code=13, details=[_info("SERVER", {"a": "1"})])
+        err = GRPCError(
+            MockRpcError(grpc.StatusCode.INTERNAL, "", _status_trailer(status)),
+            code="MINE",
+            details={"b": "2"},
+        )
+        assert (err.code, err.details) == ("MINE", {"b": "2"})
 
     def test_is_connection_error_true_for_unavailable(self) -> None:
         assert self._err(grpc.StatusCode.UNAVAILABLE).is_connection_error() is True
