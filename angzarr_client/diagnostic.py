@@ -96,10 +96,10 @@ def _matches(key: str, value: object) -> bool:
 def _select(selector: str, body: str, args: Mapping[str, object]) -> str:
     """The variant of ``body`` the arg ``selector`` picks, rendered: the one
     whose key matches its value, else the default (``*``)."""
-    value = args.get(selector.strip().lstrip("$"))
+    value = args.get(selector.strip().removeprefix("$"))
     marks = list(_VARIANT.finditer(body))
     chosen = None
-    default = None
+    default = ""
     for index, mark in enumerate(marks):
         end = marks[index + 1].start() if index + 1 < len(marks) else len(body)
         variant = body[mark.end() : end].strip()
@@ -107,14 +107,20 @@ def _select(selector: str, body: str, args: Mapping[str, object]) -> str:
             default = variant
         if chosen is None and value is not None and _matches(mark.group(2), value):
             chosen = variant
-    return _pattern(chosen if chosen is not None else default or "", args)
+    return _pattern(chosen if chosen is not None else default, args)
 
 
 def _placeable(inner: str, args: Mapping[str, object]) -> str:
+    """A placeable's text: a select expression's variant, an arg's value
+    (shown as ``{$name}`` when the args lack it), or, for anything else the
+    subset does not read, the placeable as written."""
     selector, arrow, body = inner.partition("->")
     if arrow:
         return _select(selector, body, args)
-    name = inner.strip().lstrip("$")
+    reference = inner.strip()
+    if not reference.startswith("$"):
+        return "{" + inner + "}"
+    name = reference.removeprefix("$")
     return str(args[name]) if name in args else "{$" + name + "}"
 
 

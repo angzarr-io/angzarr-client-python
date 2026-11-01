@@ -88,8 +88,38 @@ def test_a_select_matches_an_exact_key_before_the_default():
     assert _render(pattern, {}) == "{$r}"
 
 
+def test_a_select_ends_each_variant_at_the_next():
+    pattern = "{ $k ->\n[a] A\n[b] B\n*[other] O\n}"
+    assert [_render(pattern, {"k": k}) for k in ("a", "b", "z")] == ["A", "B", "O"]
+
+
+def test_the_default_is_the_starred_variant_wherever_it_is():
+    pattern = "{ $k ->\n*[other] O\n[one] one\n}"
+    assert _render(pattern, {}) == "O"
+    assert _render(pattern, {"k": 1}) == "one"
+
+
+def test_a_select_with_no_match_and_no_default_is_empty():
+    assert _render("[{ $k ->\n[a] A\n}]", {"k": "z"}) == "[]"
+
+
+def test_a_variant_may_hold_an_arrow():
+    pattern = "{ $k ->\n[a] a->b\n*[other] c\n}"
+    assert _render(pattern, {"k": "a"}) == "a->b"
+
+
+def test_a_placeable_that_is_no_reference_is_shown_as_written():
+    assert _render('a {"lit"} b', {}) == 'a {"lit"} b'
+    assert _render("{$x}", {"x": 4}) == "4"
+    assert _render("{ $Xx }", {"Xx": 5}) == "5"
+
+
+def test_a_continuation_with_no_message_above_it_is_skipped():
+    assert diagnostic.parse("  stray\nA = one\n") == {"A": "one"}
+
+
 def test_an_unclosed_placeable_is_refused():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unclosed placeable: '{ \\$x'"):
         _render("a { $x", {"x": 1})
 
 

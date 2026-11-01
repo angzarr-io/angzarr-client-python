@@ -229,7 +229,7 @@ class CommandRejectedError(ClientError):
             details: Structured runtime context — keys should be from
                 ``angzarr_client.error_codes.keys``.
         """
-        return CommandRejectedError(code, "FAILED_PRECONDITION", details=details)
+        return CommandRejectedError(code, details=details)
 
     @staticmethod
     def invalid_argument(
