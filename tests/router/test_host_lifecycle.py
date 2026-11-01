@@ -515,13 +515,15 @@ def test_health_defaults_to_the_overall_server(hosts):
 def test_configuration_errors_name_the_problem():
     with pytest.raises(ConfigurationError) as err:
         _counter_host().add_service(lambda s, server: None, object(), "")
-    assert str(err.value) == "an application service needs its full service name"
+    assert str(err.value) == "HOST_SERVICE_UNNAMED"
+    assert err.value.message == "an application service needs its full service name"
     host = _counter_host()
     _within(lambda: host.start("127.0.0.1:0"))
     try:
         with pytest.raises(ConfigurationError) as err:
             host.start("127.0.0.1:0")
-        assert str(err.value) == "the host is already started"
+        assert str(err.value) == "HOST_ALREADY_STARTED"
+        assert err.value.message == "the host is already started"
     finally:
         _within(lambda: host.stop(grace=0))
 

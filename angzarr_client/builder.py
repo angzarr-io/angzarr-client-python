@@ -20,7 +20,7 @@ from ._pb import (
     TemporalQuery,
 )
 from .client import CommandHandlerClient, QueryClient
-from .error_codes import codes, messages
+from .error_codes import codes
 from .errors import InvalidArgumentError
 from .helpers import parse_timestamp, uuid_to_proto
 
@@ -98,15 +98,9 @@ class CommandBuilder:
         was set: the coordinator assigns it.
         """
         if not self._type_url:
-            raise InvalidArgumentError(
-                messages.COMMAND_TYPE_URL_MISSING,
-                code=codes.COMMAND_TYPE_URL_MISSING,
-            )
+            raise InvalidArgumentError(codes.COMMAND_TYPE_URL_MISSING)
         if self._payload is None:
-            raise InvalidArgumentError(
-                messages.COMMAND_PAYLOAD_MISSING,
-                code=codes.COMMAND_PAYLOAD_MISSING,
-            )
+            raise InvalidArgumentError(codes.COMMAND_PAYLOAD_MISSING)
 
         cover = Cover(domain=self._domain)
         cover.root.CopyFrom(uuid_to_proto(self._root))

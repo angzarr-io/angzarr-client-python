@@ -13,47 +13,53 @@ from angzarr_client.errors import (
 
 
 class TestClientError:
-    """Tests for the ClientError base class."""
+    """Tests for the ClientError base class: a code and details, never text
+    (decision 14.37)."""
 
-    def test_message_only(self) -> None:
-        """Error with message only."""
-        err = ClientError("something went wrong")
-        assert err.message == "something went wrong"
+    def test_code_and_details(self) -> None:
+        err = ClientError("DOMAIN_CONTAINS_COLON", details={"domain": "a:b"})
+        assert err.code == "DOMAIN_CONTAINS_COLON"
+        assert err.details == {"domain": "a:b"}
         assert err.cause is None
-        assert str(err) == "something went wrong"
+
+    def test_its_text_is_its_code_then_its_details(self) -> None:
+        err = ClientError("DOMAIN_CONTAINS_COLON", details={"domain": "a b"})
+        assert str(err) == 'DOMAIN_CONTAINS_COLON domain="a b"'
+        assert err.args == ('DOMAIN_CONTAINS_COLON domain="a b"',)
+
+    def test_its_message_is_rendered_from_the_catalog(self) -> None:
+        err = ClientError("DOMAIN_CONTAINS_COLON", details={"domain": "a:b"})
+        assert err.message == "domain \"a:b\" must not contain ':'"
+
+    def test_a_framework_keys_message_is_the_specs(self) -> None:
+        err = ClientError("HOST_REASON_HANDSHAKE_MALFORMED", details={"line": "x"})
+        assert err.message == (
+            'malformed handshake "x": expected angzarr-handshake v1 unix:<absolute path>'
+        )
 
     def test_with_cause(self) -> None:
-        """Error with underlying cause.
-
-        Audit #59: ``__str__`` returns the bare static message; cause is
-        preserved on ``.cause`` for inspection but no longer concatenated
-        into the message string."""
+        """The cause is kept on ``.cause``, never in the text."""
         cause = ValueError("underlying issue")
-        err = ClientError("wrapper", cause)
-        assert err.message == "wrapper"
+        err = ClientError("TRANSPORT_ERROR", cause)
         assert err.cause is cause
-        assert str(err) == "wrapper"
+        assert str(err) == "TRANSPORT_ERROR"
 
     def test_exception_inheritance(self) -> None:
-        """ClientError is an Exception."""
-        err = ClientError("test")
-        assert isinstance(err, Exception)
+        assert isinstance(ClientError("X"), Exception)
 
 
 class TestConnectionError:
     """Tests for ConnectionError."""
 
-    def test_message_formatting(self) -> None:
-        """Audit #59: ConnectionError carries a static ``message``.
-        Caller-supplied detail rides on ``.details`` if needed."""
-        err = ConnectionError("host unreachable")
-        assert str(err) == "host unreachable"
-        assert err.message == "host unreachable"
+    def test_defaults(self) -> None:
+        err = ConnectionError()
+        assert err.code == "CONNECTION_FAILED"
+        assert str(err) == "CONNECTION_FAILED"
+        assert err.message == "connection failed"
         assert err.cause is None
 
     def test_exception_inheritance(self) -> None:
-        """ConnectionError is a ClientError."""
-        err = ConnectionError("test")
+        err = ConnectionError()
         assert isinstance(err, ClientError)
         assert isinstance(err, Exception)
 
@@ -62,27 +68,19 @@ class TestTransportError:
     """Tests for TransportError."""
 
     def test_wraps_cause(self) -> None:
-        """Transport error wraps an underlying exception.
-
-        Audit #59: static message; cause preserved on ``.cause``."""
         cause = OSError("socket error")
         err = TransportError(cause)
-        assert str(err) == "transport error"
+        assert str(err) == "TRANSPORT_ERROR"
+        assert err.message == "transport error"
         assert err.cause is cause
 
     def test_exception_inheritance(self) -> None:
-        """TransportError is a ClientError."""
-        cause = OSError("test")
-        err = TransportError(cause)
-        assert isinstance(err, ClientError)
+        assert isinstance(TransportError(OSError("test")), ClientError)
 
     def test_uses_inventory_constants(self) -> None:
-        """Audit #84: code + message must come from error_codes inventory."""
-        from angzarr_client.error_codes import codes, messages
+        from angzarr_client.error_codes import codes
 
-        err = TransportError(OSError("x"))
-        assert err.code == codes.TRANSPORT_ERROR
-        assert err.message == messages.TRANSPORT_ERROR
+        assert TransportError(OSError("x")).code == codes.TRANSPORT_ERROR
 
 
 class MockRpcError(grpc.RpcError):
@@ -115,20 +113,19 @@ class TestGRPCError:
         """GRPCError wraps an RpcError."""
         rpc_error = self._mock_rpc_error(grpc.StatusCode.INTERNAL, "server error")
         err = GRPCError(rpc_error)
-        assert "grpc error" in str(err)
+        assert str(err) == "GRPC_ERROR"
+        assert err.message == "grpc error"
         assert err.cause is rpc_error
 
     def test_code_property(self) -> None:
         """Audit #59: ``.grpc_code`` is the upstream gRPC StatusCode.
         ``.code`` is now the SCREAMING_SNAKE structural identifier."""
-        from angzarr_client.error_codes import codes, messages
+        from angzarr_client.error_codes import codes
 
         rpc_error = self._mock_rpc_error(grpc.StatusCode.NOT_FOUND, "not found")
         err = GRPCError(rpc_error)
         assert err.grpc_code == grpc.StatusCode.NOT_FOUND
-        # Audit #84: code + message routed through inventory.
         assert err.code == codes.GRPC_ERROR
-        assert err.message == messages.GRPC_ERROR
 
     def test_details_property(self) -> None:
         """Audit #59: ``.grpc_details`` is the upstream gRPC details
@@ -185,16 +182,14 @@ class TestGRPCError:
 class TestInvalidArgumentError:
     """Tests for InvalidArgumentError."""
 
-    def test_message_formatting(self) -> None:
-        """Audit #59: static message; no prefix concatenation."""
-        err = InvalidArgumentError("missing field")
-        assert str(err) == "missing field"
+    def test_code_and_text(self) -> None:
+        err = InvalidArgumentError("COMMAND_PAYLOAD_MISSING")
+        assert str(err) == "COMMAND_PAYLOAD_MISSING"
+        assert err.message == "command payload not set"
         assert err.cause is None
 
     def test_exception_inheritance(self) -> None:
-        """InvalidArgumentError is a ClientError."""
-        err = InvalidArgumentError("test")
-        assert isinstance(err, ClientError)
+        assert isinstance(InvalidArgumentError("X"), ClientError)
 
 
 class TestClientErrorBasePredicates:
@@ -213,7 +208,7 @@ class TestClientErrorBasePredicates:
         assert ClientError("x").is_connection_error() is False
 
     def test_invalid_timestamp_inherits_base_predicates(self) -> None:
-        err = InvalidTimestampError("bad")
+        err = InvalidTimestampError()
         assert err.is_not_found() is False
         assert err.is_precondition_failed() is False
         assert err.is_invalid_argument() is False
@@ -222,7 +217,7 @@ class TestClientErrorBasePredicates:
 
 class TestConnectionPredicates:
     def test_connection_error_is_connection_error(self) -> None:
-        assert ConnectionError("x").is_connection_error() is True
+        assert ConnectionError().is_connection_error() is True
 
     def test_transport_error_is_connection_error(self) -> None:
         assert TransportError(OSError("x")).is_connection_error() is True
@@ -249,12 +244,12 @@ class TestGRPCErrorExtraBranches:
 
 class TestCommandRejectedErrorPredicates:
     def test_precondition_failed_constructor(self) -> None:
-        """Audit #59: factories take ``(code, message, details)``."""
+        """Audit #59: factories take ``(code, details)``, never text."""
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.precondition_failed("BAD_STATE", "bad state")
+        err = CommandRejectedError.precondition_failed("BAD_STATE")
         assert err.code == "BAD_STATE"
-        assert err.message == "bad state"
+        assert str(err) == "BAD_STATE"
         assert err.status_code == "FAILED_PRECONDITION"
         assert err.is_precondition_failed() is True
         assert err.is_invalid_argument() is False
@@ -263,7 +258,7 @@ class TestCommandRejectedErrorPredicates:
     def test_invalid_argument_constructor(self) -> None:
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.invalid_argument("BAD_INPUT", "bad input")
+        err = CommandRejectedError.invalid_argument("BAD_INPUT")
         assert err.code == "BAD_INPUT"
         assert err.status_code == "INVALID_ARGUMENT"
         assert err.is_invalid_argument() is True
@@ -272,7 +267,7 @@ class TestCommandRejectedErrorPredicates:
     def test_not_found_constructor(self) -> None:
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.not_found("NO_SUCH_AGGREGATE", "no such aggregate")
+        err = CommandRejectedError.not_found("NO_SUCH_AGGREGATE")
         assert err.code == "NO_SUCH_AGGREGATE"
         assert err.status_code == "NOT_FOUND"
         assert err.is_not_found() is True
@@ -285,59 +280,57 @@ class TestCommandRejectedErrorPredicates:
         casting. P2.3 cross-language taxonomy contract."""
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError.not_found("MISSING", "missing aggregate")
+        err = CommandRejectedError.not_found("MISSING")
         assert isinstance(err, ClientError)
         as_base: ClientError = err
         assert as_base.is_not_found() is True
         assert as_base.is_precondition_failed() is False
 
     def test_details_carry_structured_context(self) -> None:
-        """Audit #59: ``details`` is the structured-context dict."""
+        """``details`` is the structured context, and the message's args."""
         from angzarr_client.errors import CommandRejectedError
 
         err = CommandRejectedError.invalid_argument(
-            "VALUE_NOT_POSITIVE",
-            "value must be positive",
-            {"field": "amount"},
+            "VALUE_NOT_POSITIVE", {"field": "amount"}
         )
         assert err.details["field"] == "amount"
+        assert err.message == "amount must be positive"
+        assert str(err) == "VALUE_NOT_POSITIVE field=amount"
 
 
 class TestInvalidTimestampError:
     """Tests for InvalidTimestampError."""
 
-    def test_message_formatting(self) -> None:
-        """Audit #59: static message; no prefix concatenation."""
-        err = InvalidTimestampError("bad format")
-        assert str(err) == "bad format"
+    def test_defaults(self) -> None:
+        err = InvalidTimestampError()
+        assert err.code == "TIMESTAMP_PARSE_FAILED"
         assert err.cause is None
 
+    def test_carries_the_parsers_text_as_an_arg(self) -> None:
+        err = InvalidTimestampError(details={"ext_err_txt": "bad"})
+        assert str(err) == "TIMESTAMP_PARSE_FAILED ext_err_txt=bad"
+        assert err.message == "the timestamp is not RFC 3339 (bad)"
+
     def test_exception_inheritance(self) -> None:
-        """InvalidTimestampError is a ClientError."""
-        err = InvalidTimestampError("test")
-        assert isinstance(err, ClientError)
+        assert isinstance(InvalidTimestampError(), ClientError)
 
 
 class TestConstructorDefaultsAndPassThrough:
-    """Default message/code per error type, and that ``code`` / ``details``
-    given to a subclass reach the base ``ClientError`` fields (details are
+    """Default code per error type, and that ``code`` / ``details`` given to
+    a subclass reach the base ``ClientError`` fields (details are
     stringified)."""
 
     def test_client_error_defaults(self) -> None:
-        err = ClientError("boom")
-        assert err.code == ""
+        err = ClientError("BOOM")
+        assert err.code == "BOOM"
         assert err.details == {}
-        assert err.args == ("boom",)
+        assert err.args == ("BOOM",)
 
-    def test_connection_error_defaults(self) -> None:
-        err = ConnectionError()
-        assert err.message == "connection failed"
-        assert str(err) == "connection failed"
-        assert err.code == "CONNECTION_FAILED"
-        assert err.details == {}
+    def test_a_code_no_catalog_holds_renders_as_its_text(self) -> None:
+        assert ClientError("BOOM", details={"n": 1}).message == "BOOM n=1"
 
     def test_connection_error_passes_code_and_details(self) -> None:
-        err = ConnectionError("refused", code="DIAL_REFUSED", details={"port": 1310})
+        err = ConnectionError("DIAL_REFUSED", details={"port": 1310})
         assert err.code == "DIAL_REFUSED"
         assert err.details == {"port": "1310"}
 
@@ -351,41 +344,28 @@ class TestConstructorDefaultsAndPassThrough:
         )
         assert err.details == {"method": "Handle"}
 
-    def test_invalid_argument_error_defaults(self) -> None:
-        err = InvalidArgumentError("missing field")
-        assert err.code == "INVALID_ARGUMENT"
-        assert err.details == {}
-
     def test_invalid_argument_error_passes_details(self) -> None:
-        err = InvalidArgumentError("missing field", details={"field": "name"})
-        assert err.details == {"field": "name"}
-
-    def test_invalid_timestamp_error_defaults(self) -> None:
-        err = InvalidTimestampError()
-        assert err.message == "invalid timestamp"
-        assert str(err) == "invalid timestamp"
-        assert err.code == "INVALID_TIMESTAMP"
-        assert err.details == {}
+        err = InvalidArgumentError("PROTO_UUID_INVALID", details={"field": "root"})
+        assert err.details == {"field": "root"}
+        assert err.message == "root is not a UUID"
 
     def test_invalid_timestamp_error_passes_code_and_details(self) -> None:
-        err = InvalidTimestampError(
-            "bad", code="TIMESTAMP_OUT_OF_RANGE", details={"value": "9999"}
-        )
+        err = InvalidTimestampError("TIMESTAMP_OUT_OF_RANGE", details={"value": "9999"})
         assert err.code == "TIMESTAMP_OUT_OF_RANGE"
         assert err.details == {"value": "9999"}
 
     def test_command_rejected_defaults(self) -> None:
         from angzarr_client.errors import CommandRejectedError
 
-        err = CommandRejectedError("guard failed")
+        err = CommandRejectedError("GUARD_FAILED")
         assert err.status_code == "FAILED_PRECONDITION"
         assert err.is_precondition_failed() is True
-        assert err.code == ""
+        assert err.code == "GUARD_FAILED"
         assert err.cover is None
 
     def test_command_rejected_keeps_cover(self) -> None:
         from angzarr_client.errors import CommandRejectedError
 
         cover = object()
-        err = CommandRejectedError("guard failed", cover=cover)
+        err = CommandRejectedError("GUARD_FAILED", cover=cover)
         assert err.cover is cover

@@ -7,7 +7,7 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING
 
-from ..proto.io.angzarr.v1 import types_pb2
+from ..proto.io.angzarr.v1 import reason_args, types_pb2
 from .errors import (
     DUPLICATE_COMPONENT,
     NO_COMPONENT_OF_KIND,
@@ -55,8 +55,8 @@ class Router:
                 raise CodedError(
                     DUPLICATE_COMPONENT,
                     extras={
-                        "component": held.name,
-                        "component_kind": _kind_name(held.kind),
+                        reason_args.COMPONENT: held.name,
+                        reason_args.COMPONENT_KIND: _kind_name(held.kind),
                     },
                 )
             self._component = dispatch

@@ -55,7 +55,7 @@ from collections.abc import Iterable
 
 from .error_codes import codes
 from .host import ConfigurationError
-from .proto.io.angzarr.v1 import options_pb2, types_pb2
+from .proto.io.angzarr.v1 import options_pb2, reason_args, types_pb2
 from .proto.io.angzarr.v1.reasons_pb2 import CoordinatorReason
 
 _AGGREGATE = types_pb2.COMPONENT_KIND_AGGREGATE
@@ -164,8 +164,7 @@ def describe(
         if types_pb2.CONFLICT_RESOLUTION_UNSPECIFIED in listed:
             raise ConfigurationError(
                 RESOLUTION_UNSPECIFIED,
-                code=RESOLUTION_UNSPECIFIED,
-                details={"component": name},
+                details={reason_args.COMPONENT: name},
             )
         if state is not None:
             descriptor.state.type_url = "/" + _full_name(state)
@@ -175,10 +174,10 @@ def describe(
     refused = _refusal(descriptor)
     if refused is not None:
         code, details = refused
-        raise ConfigurationError(code, code=code, details=details)
+        raise ConfigurationError(code, details=details)
     if kind == _PROJECTOR and not descriptor.inputs:
         code = codes.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN
-        raise ConfigurationError(code, code=code, details={"component": name})
+        raise ConfigurationError(code, details={reason_args.COMPONENT: name})
     return descriptor
 
 
@@ -186,9 +185,12 @@ def _refusal(descriptor: types_pb2.ComponentDescriptor):
     """The coordinator's first refusal of ``descriptor``, ``(reason key,
     details)``, in its order (angzarr-embedded-host ``descriptor::validate``),
     or None when it accepts it."""
-    component = {"component": descriptor.name}
+    component = {reason_args.COMPONENT: descriptor.name}
     kind = descriptor.kind
-    with_kind = {**component, "component_kind": types_pb2.ComponentKind.Name(kind)}
+    with_kind = {
+        **component,
+        reason_args.COMPONENT_KIND: types_pb2.ComponentKind.Name(kind),
+    }
     if not descriptor.rules_version:
         return _reason(CoordinatorReason.COORDINATOR_REASON_MISSING_RULES_VERSION), (
             component
@@ -213,7 +215,7 @@ def _refusal(descriptor: types_pb2.ComponentDescriptor):
         if len(descriptor.inputs) != 1:
             return _reason(CoordinatorReason.COORDINATOR_REASON_POLICY_INPUT_COUNT), {
                 **component,
-                "input_count": len(descriptor.inputs),
+                reason_args.INPUT_COUNT: len(descriptor.inputs),
             }
         if not descriptor.output_domain:
             return (

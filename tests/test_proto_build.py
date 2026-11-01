@@ -69,3 +69,46 @@ def test_main_generates_and_counts(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(proto_build, "generate_fixtures", lambda: [tmp_path] * 3)
     assert proto_build.main(["proto_build.py", "fixtures"]) == 0
     assert capsys.readouterr().out == f"3 files under {proto_build.FIXTURE_OUT}\n"
+
+
+def test_the_reason_args_and_the_catalog_are_generated_beside_the_reasons(tmp_path):
+    files = proto_build.generate_protos(tmp_path / "proto")
+    names = {f.relative_to(tmp_path / "proto").as_posix() for f in files}
+    assert {"io/angzarr/v1/reason_args.py", "io/angzarr/v1/reasons.en-US.ftl"} <= names
+    catalog = (tmp_path / "proto" / "io/angzarr/v1/reasons.en-US.ftl").read_text()
+    assert (
+        catalog
+        == (proto_build.PROJECT_PROTO / "io/angzarr/v1/reasons.en-US.ftl").read_text()
+    )
+    namespace: dict = {}
+    exec((tmp_path / "proto" / "io/angzarr/v1/reason_args.py").read_text(), namespace)
+    assert namespace["ARGS"]["ROUTER_REASON_ANY_DECODE_FAILED"] == (
+        "message_type",
+        "ext_err_txt",
+    )
+    assert namespace["ARGS"]["ROUTER_REASON_HANDLER_PANICKED"] == ()
+    assert "ROUTER_REASON_UNSPECIFIED" not in namespace["ARGS"]
+    assert namespace["MESSAGE_TYPE"] == "message_type"
+    assert namespace["REFUSED"] == "refused"
+
+
+_REASONS_WITHOUT_AN_OPTION = """
+from types import SimpleNamespace as _N
+reason = object()
+def _value(name, number):
+    options = _N(HasExtension=lambda ext: False)
+    return _N(name=name, number=number, GetOptions=lambda: options)
+DESCRIPTOR = _N(enum_types_by_name={
+    n: _N(values=[_value(n.upper() + "_UNSPECIFIED", 0), _value(n.upper() + "_LIVE", 1)])
+    for n in ("RouterReason", "HostReason", "CoordinatorReason")
+})
+"""
+
+
+def test_a_live_key_without_its_option_fails_the_build(tmp_path):
+    module = tmp_path / "reasons_pb2.py"
+    module.write_text(_REASONS_WITHOUT_AN_OPTION)
+    with pytest.raises(
+        proto_build.ProtoBuildError, match="ROUTERREASON_LIVE declares no args"
+    ):
+        proto_build.reason_args(module)

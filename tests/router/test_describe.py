@@ -112,7 +112,8 @@ def test_a_projector_naming_no_input_domain_is_not_described():
     with pytest.raises(ConfigurationError) as info:
         describe(projector, rules_version=VERSION)
     assert info.value.code == "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN"
-    assert str(info.value) == "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN"
+    assert str(info.value) == "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN component=All"
+    assert info.value.message == 'projector "All" names no domain it reads: name one'
     assert info.value.details == {"component": "All"}
 
 
@@ -135,7 +136,9 @@ def test_without_a_rules_version_nothing_is_described():
     with pytest.raises(ConfigurationError) as info:
         describe(counter_aggregate([]))
     assert info.value.code == "COORDINATOR_REASON_MISSING_RULES_VERSION"
-    assert str(info.value) == "COORDINATOR_REASON_MISSING_RULES_VERSION"
+    assert str(info.value) == (
+        "COORDINATOR_REASON_MISSING_RULES_VERSION component=CounterAggregate"
+    )
     assert info.value.details == {"component": "CounterAggregate"}
 
 
@@ -173,7 +176,10 @@ def test_unspecified_is_not_a_resolution():
             resolutions=[types_pb2.CONFLICT_RESOLUTION_UNSPECIFIED],
         )
     assert info.value.code == "DESCRIPTOR_RESOLUTION_UNSPECIFIED"
-    assert str(info.value) == "DESCRIPTOR_RESOLUTION_UNSPECIFIED"
+    assert (
+        str(info.value)
+        == "DESCRIPTOR_RESOLUTION_UNSPECIFIED component=CounterAggregate"
+    )
     assert info.value.details == {"component": "CounterAggregate"}
 
 

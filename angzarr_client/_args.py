@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID as PyUUID
 
-from .error_codes import codes, keys, messages
+from .error_codes import codes, keys
 from .errors import InvalidArgumentError
 
 
@@ -17,7 +17,6 @@ def _as_uuid(value: PyUUID | str, field: str) -> PyUUID:
         return PyUUID(value)
     except (TypeError, ValueError) as exc:
         raise InvalidArgumentError(
-            messages.PROTO_UUID_INVALID,
-            code=codes.PROTO_UUID_INVALID,
+            codes.PROTO_UUID_INVALID,
             details={keys.FIELD: field, keys.INPUT: value},
         ) from exc

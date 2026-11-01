@@ -63,7 +63,7 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from grpc_health.v1.health import aio as health_aio
 
 from . import readiness
-from .error_codes import codes, keys
+from .error_codes import codes
 from .errors import ClientError
 from .proto.io.angzarr.v1 import (
     command_handler_pb2,
@@ -74,6 +74,7 @@ from .proto.io.angzarr.v1 import (
     policy_pb2_grpc,
     projector_pb2,
     projector_pb2_grpc,
+    reason_args,
     upcaster_pb2,
     upcaster_pb2_grpc,
 )
@@ -158,7 +159,7 @@ class _Dispatcher:
             failure = CodedError(
                 codes.ROUTER_REASON_UNHANDLED_HANDLER_ERROR,
                 GrpcCode.INTERNAL,
-                {keys.CAUSE: codes.ROUTER_REASON_HANDLER_PANICKED},
+                {reason_args.CAUSE: codes.ROUTER_REASON_HANDLER_PANICKED},
             )
         details = failure.status().SerializeToString()
         context.set_trailing_metadata(((_STATUS_DETAILS_KEY, details),))
@@ -325,20 +326,17 @@ class ComponentHost:
         reported = getattr(dispatch, "rules_version", "") or self.rules_version
         if descriptor.rules_version != reported:
             raise ConfigurationError(
-                "the descriptor's rules_version is not the version the "
-                "component reports",
-                code=codes.HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH,
+                codes.HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH,
                 details={
-                    "component": getattr(dispatch, "name", ""),
-                    "described": descriptor.rules_version,
-                    "reported": reported,
+                    reason_args.COMPONENT: getattr(dispatch, "name", ""),
+                    reason_args.DESCRIBED: descriptor.rules_version,
+                    reason_args.REPORTED: reported,
                 },
             )
         if kind == "projector" and not (dispatch.domains and descriptor.inputs):
             raise ConfigurationError(
-                "a projector names no domain it reads",
-                code=codes.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN,
-                details={"component": dispatch.name},
+                codes.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN,
+                details={reason_args.COMPONENT: dispatch.name},
             )
         if self._claim(dispatch):
             getattr(self.router, f"register_{kind}")(self._versioned(dispatch))
@@ -381,9 +379,7 @@ class ComponentHost:
         or any callable taking the servicer and the server); ``name`` is its
         fully-qualified service name, reported by the health service."""
         if not name:
-            raise ConfigurationError(
-                "an application service needs its full service name"
-            )
+            raise ConfigurationError(codes.HOST_SERVICE_UNNAMED)
         self._app_services.append(_Service(name, add_to_server, servicer))
         return self
 
@@ -408,25 +404,20 @@ class ComponentHost:
         if self._kind is not None and self._upcaster is not None:
             raise ConfigurationError(
                 codes.HOST_REASON_UPCASTER_WITH_COMPONENT,
-                code=codes.HOST_REASON_UPCASTER_WITH_COMPONENT,
-                details={"component": self._component_name},
+                details={reason_args.COMPONENT: self._component_name},
             )
         if self._kind is None and self._upcaster is None:
-            raise ConfigurationError(
-                codes.HOST_REASON_NO_COMPONENTS_REGISTERED,
-                code=codes.HOST_REASON_NO_COMPONENTS_REGISTERED,
-            )
+            raise ConfigurationError(codes.HOST_REASON_NO_COMPONENTS_REGISTERED)
         if self._refused:
             raise ConfigurationError(
                 codes.ROUTER_REASON_DUPLICATE_COMPONENT,
-                code=codes.ROUTER_REASON_DUPLICATE_COMPONENT,
                 details={
-                    "registered": self._component_name,
-                    "refused": ", ".join(self._refused),
+                    reason_args.REGISTERED: self._component_name,
+                    reason_args.REFUSED: ", ".join(self._refused),
                 },
             )
         if self._thread is not None:
-            raise ConfigurationError("the host is already started")
+            raise ConfigurationError(codes.HOST_ALREADY_STARTED)
         if address is None:
             _transport, address = get_transport_config()
         self._loop = asyncio.new_event_loop()

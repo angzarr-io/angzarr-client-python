@@ -1,22 +1,20 @@
-"""Cross-language inventory of stable error codes, static messages, and
+"""Cross-language inventory of this package's stable error codes and
 detail-map keys.
 
-Audit finding #59 (structural error model). Three sub-modules:
+Audit finding #59 (structural error model). Two sub-modules:
 
-- ``codes`` — SCREAMING_SNAKE event-type identifiers. Carried on the
-  ``code`` attribute of every error.
-- ``messages`` — English text for display only, keyed by the code (same
-  constant name). Nothing on the wire uses it (decision 14.37): a coded
-  error crosses as its code and its args.
-- ``keys`` — detail-map key strings. Used at insertion sites and in
-  ``details["..."]`` lookups.
+- ``codes``: SCREAMING_SNAKE identifiers, carried on the ``code`` attribute
+  of every error;
+- ``keys``: the detail-map keys of the package's own codes, used at
+  insertion sites and in ``details["..."]`` lookups.
 
-Adding a new error: add the constant in all three sub-modules (with
-the same name in ``codes`` and ``messages``) AND add the parallel
-constants in ``client-rust/main/src/error_codes.rs``, then reference
-them at the call site.
+English is never passed to an error (decision 14.37): it is rendered where
+the error is shown, from a catalog keyed by the code
+(:func:`angzarr_client.diagnostic.render`): the spec's for a framework
+reason key, ``locales/en-US/angzarr-client.ftl`` for the package's own.
+Adding a new error: add its code here and its message there.
 """
 
-from . import codes, keys, messages
+from . import codes, keys
 
-__all__ = ["codes", "keys", "messages"]
+__all__ = ["codes", "keys"]

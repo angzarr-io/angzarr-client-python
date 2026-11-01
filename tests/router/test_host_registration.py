@@ -147,8 +147,9 @@ def test_a_descriptor_of_another_rules_version_is_refused(kind):
     with pytest.raises(ConfigurationError) as info:
         getattr(host, f"add_{kind}")(table, described_as)
     assert info.value.code == "HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH"
-    assert str(info.value) == (
-        "the descriptor's rules_version is not the version the component reports"
+    assert info.value.message == (
+        f'component "{table.name}" describes rules version "0.0.1" but answers as '
+        f'"{BUILD_VERSION}": nothing was registered'
     )
     assert info.value.details == {
         "component": table.name,
@@ -181,7 +182,9 @@ def _assert_projector_refused(host: ComponentHost, table, descriptor) -> None:
     with pytest.raises(ConfigurationError) as info:
         host.add_projector(table, descriptor)
     assert info.value.code == "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN"
-    assert str(info.value) == "a projector names no domain it reads"
+    assert info.value.message == (
+        f'projector "{table.name}" names no domain it reads: name one'
+    )
     assert info.value.details == {"component": table.name}
     # Nothing is registered: the host still has no component.
     assert host.descriptor is None

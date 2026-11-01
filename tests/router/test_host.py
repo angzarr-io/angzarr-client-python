@@ -276,7 +276,7 @@ def test_a_component_host_refuses_an_upcaster():
             host.start("127.0.0.1:0")
         assert (refused.value.code, str(refused.value)) == (
             "HOST_REASON_UPCASTER_WITH_COMPONENT",
-            "HOST_REASON_UPCASTER_WITH_COMPONENT",
+            "HOST_REASON_UPCASTER_WITH_COMPONENT component=CounterAggregate",
         )
         assert refused.value.details == {"component": "CounterAggregate"}
         assert host.address == ""
@@ -326,11 +326,12 @@ def test_an_unexpected_exception_is_unhandled_caused_by_a_panic(started):
 
 
 def test_the_host_puts_no_catalog_text_on_the_wire():
-    # error_codes.messages is display-only (decision 14.37, ER-4): the
-    # host renders nothing from it.
+    # English is display-only (decision 14.37, ER-4): the host renders
+    # nothing from a catalog.
     import angzarr_client.host as host_module
 
-    assert not hasattr(host_module, "messages")
+    assert not hasattr(host_module, "render")
+    assert not hasattr(host_module, "diagnostic")
 
 
 # --- services, health and lifecycle ------------------------------------------
@@ -388,7 +389,9 @@ def test_a_host_given_a_second_component_refuses_to_start(first, second):
         with pytest.raises(ConfigurationError) as exc:
             host.start("127.0.0.1:0")
         assert exc.value.code == "ROUTER_REASON_DUPLICATE_COMPONENT"
-        assert str(exc.value) == "ROUTER_REASON_DUPLICATE_COMPONENT"
+        assert str(exc.value).startswith(
+            "ROUTER_REASON_DUPLICATE_COMPONENT registered="
+        )
         assert exc.value.details == {
             "registered": first_table.name,
             "refused": second_table.name,
@@ -470,7 +473,7 @@ def test_start_serves_an_upcaster_only_host_and_refuses_a_second_start():
     host = _counter_host()
     host.start("127.0.0.1:0")
     try:
-        with pytest.raises(ConfigurationError, match="already started"):
+        with pytest.raises(ConfigurationError, match="^HOST_ALREADY_STARTED$"):
             host.start("127.0.0.1:0")
     finally:
         host.stop(grace=0)
@@ -486,7 +489,7 @@ def test_a_failed_bind_leaves_the_host_restartable():
 
 
 def test_add_service_requires_a_service_name():
-    with pytest.raises(ConfigurationError, match="full service name"):
+    with pytest.raises(ConfigurationError, match="^HOST_SERVICE_UNNAMED$"):
         _counter_host().add_service(lambda s, server: None, object(), "")
 
 

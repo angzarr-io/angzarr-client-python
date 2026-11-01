@@ -232,12 +232,12 @@ class TestTimestampHelpers:
             parse_timestamp("not-a-timestamp")
 
     def test_parse_timestamp_error_carries_parser_message(self) -> None:
-        """The InvalidTimestampError message is the underlying parser error."""
+        """The parser's own text travels verbatim as ``ext_err_txt``."""
         with pytest.raises(InvalidTimestampError) as exc:
             parse_timestamp("not-a-timestamp")
         cause = exc.value.__cause__
         assert isinstance(cause, ValueError)
-        assert exc.value.message == str(cause)
+        assert exc.value.details == {"ext_err_txt": str(cause)}
 
 
 class TestDecodeEvent:

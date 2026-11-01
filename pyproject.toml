@@ -75,6 +75,7 @@ pattern = "(?P<version>.+)"
 artifacts = [
     "angzarr_client/proto/**/*.py",
     "angzarr_client/proto/**/*.pyi",
+    "angzarr_client/proto/**/*.ftl",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -88,6 +89,7 @@ path = "hatch_build.py"
 # and the spec protos at their pinned revision.
 include = [
     "angzarr_client/**/*.py",
+    "angzarr_client/locales/",
     "hatch_build.py",
     "scripts/",
     "VERSION",
@@ -137,6 +139,7 @@ source_paths = [
     "angzarr_client/child.py",
     "angzarr_client/client.py",
     "angzarr_client/descriptor.py",
+    "angzarr_client/diagnostic.py",
     "angzarr_client/errors.py",
     "angzarr_client/helpers.py",
     "angzarr_client/host.py",

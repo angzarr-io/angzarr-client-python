@@ -1,20 +1,18 @@
 """Error types for the Angzarr client library.
 
-Audit finding #59 (structural error model). Every error carries:
+Audit finding #59 (structural error model), decision 14.37 ("no
+constructor takes text"). Every error carries:
 
-- A static ``message`` — the same exact string for the same predicate
-  failure across all call sites, suitable for log greppability,
-  cross-language equality checks, and i18n keys.
-- A stable ``code`` identifier (``SCREAMING_SNAKE``) — programmatic
-  dispatch and cucumber assertions key off this.
-- Structured ``details`` — runtime context (field name, type URL,
-  domain, status code) that varies per call site.
+- a stable ``code`` (``SCREAMING_SNAKE``): a framework reason key, or one of
+  this package's own (:mod:`angzarr_client.error_codes.codes`);
+- structured ``details``: runtime context (a field name, a type URL, a
+  domain) by name.
 
-Callers MUST NOT interpolate runtime values into ``message``; that
-defeats the static-string contract. Put runtime values in ``details``.
-
-Mirrors Rust's ``CommandRejectedError`` / ``ClientError`` with the same
-``code`` values for cross-language symmetry.
+No error is given English. ``str()`` of an error is its code then its
+details (:func:`angzarr_client.diagnostic.display`); its ``message`` is the
+English rendered from a catalog keyed by the code
+(:func:`angzarr_client.diagnostic.render`): the spec's for a framework
+key, this package's own for its codes.
 """
 
 from __future__ import annotations
@@ -24,41 +22,36 @@ from typing import Any
 
 import grpc
 
-from .error_codes import codes, messages
+from .diagnostic import display, render
+from .error_codes import codes
 
 
 class ClientError(Exception):
-    """Base class for client errors.
+    """Base class for client errors: a ``code`` and its ``details``.
 
     Predicate methods (``is_not_found``, ``is_precondition_failed``,
     ``is_invalid_argument``, ``is_aborted``, ``is_connection_error``) return
     ``False`` here and
     are overridden by subclasses. This lets callers write
     ``if err.is_not_found(): ...`` without casting.
-
-    Audit finding #59 fields:
-      - ``message`` — static human-readable string
-      - ``code`` — SCREAMING_SNAKE stable identifier
-      - ``details`` — runtime context as ``dict[str, str]``
     """
 
     def __init__(
         self,
-        message: str,
+        code: str,
         cause: Exception | None = None,
         *,
-        code: str = "",
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__(message)
-        self.message = message
         self.code = code
         self.cause = cause
         self.details: dict[str, str] = {k: str(v) for k, v in (details or {}).items()}
+        super().__init__(display(code, self.details))
 
-    def __str__(self) -> str:
-        # Static message only — no concatenation. Audit #59.
-        return self.message
+    @property
+    def message(self) -> str:
+        """The error's English, from the catalog keyed by its code."""
+        return render(self.code, self.details)
 
     def is_not_found(self) -> bool:
         """Return True if this is a NOT_FOUND error."""
@@ -88,12 +81,11 @@ class ConnectionError(ClientError):
 
     def __init__(
         self,
-        message: str = "connection failed",
+        code: str = codes.CONNECTION_FAILED,
         *,
-        code: str = "CONNECTION_FAILED",
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__(message, code=code, details=details)
+        super().__init__(code, details=details)
 
     def is_connection_error(self) -> bool:
         return True
@@ -109,7 +101,7 @@ class TransportError(ClientError):
         code: str = codes.TRANSPORT_ERROR,
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__(messages.TRANSPORT_ERROR, cause, code=code, details=details)
+        super().__init__(code, cause, details=details)
 
     def is_connection_error(self) -> bool:
         return True
@@ -125,7 +117,7 @@ class GRPCError(ClientError):
         code: str = codes.GRPC_ERROR,
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__(messages.GRPC_ERROR, cause, code=code, details=details)
+        super().__init__(code, cause, details=details)
         self._rpc_error = cause
 
     @property
@@ -166,12 +158,11 @@ class InvalidArgumentError(ClientError):
 
     def __init__(
         self,
-        message: str,
+        code: str,
         *,
-        code: str = "INVALID_ARGUMENT",
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__(message, code=code, details=details)
+        super().__init__(code, details=details)
 
     def is_invalid_argument(self) -> bool:
         return True
@@ -182,12 +173,11 @@ class InvalidTimestampError(ClientError):
 
     def __init__(
         self,
-        message: str = "invalid timestamp",
+        code: str = codes.TIMESTAMP_PARSE_FAILED,
         *,
-        code: str = "INVALID_TIMESTAMP",
         details: Mapping[str, Any] | None = None,
     ):
-        super().__init__(message, code=code, details=details)
+        super().__init__(code, details=details)
 
 
 class CommandRejectedError(ClientError):
@@ -198,8 +188,8 @@ class CommandRejectedError(ClientError):
       - INVALID_ARGUMENT: bad input; not retryable.
       - NOT_FOUND: aggregate does not exist; not retryable — refetching won't help.
 
-    Audit finding #59: callers pass a static ``message``, a SCREAMING_SNAKE
-    ``code``, and structured ``details`` kwargs. The factory methods
+    Audit finding #59, decision 14.37: callers pass a SCREAMING_SNAKE
+    ``code`` and structured ``details``, never text. The factory methods
     (``precondition_failed`` / ``invalid_argument`` / ``not_found``) bind
     the appropriate ``status_code``.
 
@@ -213,14 +203,13 @@ class CommandRejectedError(ClientError):
 
     def __init__(
         self,
-        message: str,
+        code: str,
         status_code: str = "FAILED_PRECONDITION",
         *,
-        code: str = "",
         details: Mapping[str, Any] | None = None,
         cover: Any | None = None,
     ):
-        super().__init__(message, code=code, details=details)
+        super().__init__(code, details=details)
         self.status_code = status_code
         # ``cover`` is an ``angzarr_client.proto.angzarr.types_pb2.Cover``
         # when populated. Typed as ``Any`` here to avoid a circular import
@@ -230,7 +219,6 @@ class CommandRejectedError(ClientError):
     @staticmethod
     def precondition_failed(
         code: str,
-        message: str,
         details: Mapping[str, Any] | None = None,
     ) -> CommandRejectedError:
         """Create a FAILED_PRECONDITION error for guard failures.
@@ -238,45 +226,26 @@ class CommandRejectedError(ClientError):
         Args:
             code: SCREAMING_SNAKE stable identifier (use a constant from
                 ``angzarr_client.error_codes.codes``).
-            message: Static human-readable message (no interpolation;
-                use a constant from ``angzarr_client.error_codes.messages``).
             details: Structured runtime context — keys should be from
                 ``angzarr_client.error_codes.keys``.
         """
-        return CommandRejectedError(
-            message=message,
-            status_code="FAILED_PRECONDITION",
-            code=code,
-            details=details,
-        )
+        return CommandRejectedError(code, "FAILED_PRECONDITION", details=details)
 
     @staticmethod
     def invalid_argument(
         code: str,
-        message: str,
         details: Mapping[str, Any] | None = None,
     ) -> CommandRejectedError:
         """Create an INVALID_ARGUMENT error for input validation failures."""
-        return CommandRejectedError(
-            message=message,
-            status_code="INVALID_ARGUMENT",
-            code=code,
-            details=details,
-        )
+        return CommandRejectedError(code, "INVALID_ARGUMENT", details=details)
 
     @staticmethod
     def not_found(
         code: str,
-        message: str,
         details: Mapping[str, Any] | None = None,
     ) -> CommandRejectedError:
         """Create a NOT_FOUND error for missing-aggregate failures."""
-        return CommandRejectedError(
-            message=message,
-            status_code="NOT_FOUND",
-            code=code,
-            details=details,
-        )
+        return CommandRejectedError(code, "NOT_FOUND", details=details)
 
     def is_precondition_failed(self) -> bool:
         return self.status_code == "FAILED_PRECONDITION"

@@ -18,6 +18,8 @@ import logging
 from google.protobuf import any_pb2
 from google.rpc import error_details_pb2, status_pb2
 
+from ..diagnostic import display
+from ..proto.io.angzarr.v1 import reason_args
 from ..proto.io.angzarr.v1.reasons_pb2 import RouterReason
 
 _log = logging.getLogger(__name__)
@@ -95,14 +97,6 @@ def flatten(name: str, key: str, args: dict[str, str]) -> dict[str, str]:
     return {name: key, **{f"{name}.{arg}": value for arg, value in args.items()}}
 
 
-def _quote(value: str) -> str:
-    """A display value, double-quoted when empty or holding whitespace,
-    ``=``, ``"`` or ``\\`` (decision 14.37), so every line parses back."""
-    if value and not any(c.isspace() or c in '="\\' for c in value):
-        return value
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
 def _check(status: int, allowed: frozenset, what: str) -> int:
     if status not in allowed:
         names = ", ".join(sorted(code.name for code in allowed))
@@ -127,8 +121,7 @@ class CodedError(Exception):
         self.grpc = int(grpc)
         self.extras = dict(extras or {})
         self.refusal = refusal
-        args = (f" {name}={_quote(value)}" for name, value in self.extras.items())
-        super().__init__(code + "".join(args))
+        super().__init__(display(code, self.extras))
 
     def status(self) -> status_pb2.Status:
         """The ``google.rpc.Status`` this error travels as: the key is its
@@ -172,7 +165,7 @@ class Refused(CodedError):
         super().__init__(
             COMMAND_REFUSED,
             _check(status, _BUSINESS, "a typed refusal"),
-            {"refusal_type": refusal_type},
+            {reason_args.REFUSAL_TYPE: refusal_type},
             packed,
         )
 
@@ -190,7 +183,7 @@ class Bug(CodedError):
     handler's key as its ``cause`` and each arg as ``cause.<arg>``."""
 
     def __init__(self, key: str, **args: object) -> None:
-        cause = flatten("cause", key, _strings(args))
+        cause = flatten(reason_args.CAUSE, key, _strings(args))
         super().__init__(UNHANDLED_HANDLER_ERROR, GrpcCode.INTERNAL, cause)
 
 
@@ -203,7 +196,9 @@ class RetryableBug(CodedError):
     def __init__(self, key: str, status: int, /, **args: object) -> None:
         status = _check(status, _RETRYABLE, "a retryable bug")
         super().__init__(
-            UNHANDLED_HANDLER_ERROR, status, flatten("cause", key, _strings(args))
+            UNHANDLED_HANDLER_ERROR,
+            status,
+            flatten(reason_args.CAUSE, key, _strings(args)),
         )
 
 
@@ -233,14 +228,17 @@ def any_decode_error(type_url: str, cause: BaseException) -> CodedError:
     return CodedError(
         ANY_DECODE_FAILED,
         GrpcCode.INTERNAL,
-        {"message_type": type_name(type_url), "ext_err_txt": str(cause)},
+        {
+            reason_args.MESSAGE_TYPE: type_name(type_url),
+            reason_args.EXT_ERR_TXT: str(cause),
+        },
     )
 
 
 def unknown_type(code: str, type_url: str) -> CodedError:
     """A type no handler claims, refused naming the type the router was
     given: the coordinator adds the type as sent (decision 14.39)."""
-    return CodedError(code, GrpcCode.INTERNAL, {"type_url": type_url})
+    return CodedError(code, GrpcCode.INTERNAL, {reason_args.TYPE_URL: type_url})
 
 
 def escaped(exc: Exception) -> CodedError:
@@ -253,7 +251,9 @@ def escaped(exc: Exception) -> CodedError:
     _log.error("handler_escaped", exc_info=exc)
     if isinstance(exc, UnclassifiedError):
         return CodedError(UNHANDLED_HANDLER_ERROR)
-    return CodedError(UNHANDLED_HANDLER_ERROR, extras={"cause": HANDLER_PANICKED})
+    return CodedError(
+        UNHANDLED_HANDLER_ERROR, extras={reason_args.CAUSE: HANDLER_PANICKED}
+    )
 
 
 def as_cause(exc: Exception) -> dict[str, str]:
@@ -263,4 +263,4 @@ def as_cause(exc: Exception) -> dict[str, str]:
     coded = escaped(exc)
     if coded.code == UNHANDLED_HANDLER_ERROR:
         return coded.extras
-    return flatten("cause", coded.code, coded.extras)
+    return flatten(reason_args.CAUSE, coded.code, coded.extras)

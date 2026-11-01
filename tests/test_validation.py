@@ -1,7 +1,7 @@
 """Tests for validation helpers.
 
 Audit finding #59: validation rejections use stable codes (from
-``angzarr_client.error_codes.codes``), static messages (from ``messages``),
+``angzarr_client.error_codes.codes``), English rendered from the catalog by the code,
 and structured details (keyed by ``keys``). Tests assert against those
 constants rather than against substring patterns.
 """
@@ -10,7 +10,7 @@ import logging
 
 import pytest
 
-from angzarr_client.error_codes import codes, keys, messages
+from angzarr_client.error_codes import codes, keys
 from angzarr_client.errors import CommandRejectedError
 from angzarr_client.validation import (
     require_exists,
@@ -33,7 +33,7 @@ class TestRequireExists:
         with pytest.raises(CommandRejectedError) as exc:
             require_exists(False, "Player does not exist")
         assert exc.value.code == codes.ENTITY_NOT_FOUND
-        assert exc.value.message == messages.ENTITY_NOT_FOUND
+        assert exc.value.message == "entity not found"
         assert exc.value.details[keys.CONTEXT] == "Player does not exist"
 
 
@@ -45,7 +45,7 @@ class TestRequireNotExists:
         with pytest.raises(CommandRejectedError) as exc:
             require_not_exists(True, "Player already exists")
         assert exc.value.code == codes.ENTITY_ALREADY_EXISTS
-        assert exc.value.message == messages.ENTITY_ALREADY_EXISTS
+        assert exc.value.message == "entity already exists"
         assert exc.value.details[keys.CONTEXT] == "Player already exists"
 
 
@@ -58,7 +58,7 @@ class TestRequirePositive:
         with pytest.raises(CommandRejectedError) as exc:
             require_positive(0, "amount")
         assert exc.value.code == codes.VALUE_NOT_POSITIVE
-        assert exc.value.message == messages.VALUE_NOT_POSITIVE
+        assert exc.value.message == "amount must be positive"
         assert exc.value.details[keys.FIELD] == "amount"
 
     def test_fails_on_negative(self):
@@ -94,7 +94,7 @@ class TestRequireNonNegative:
         with pytest.raises(CommandRejectedError) as exc:
             require_non_negative(-1, "balance")
         assert exc.value.code == codes.VALUE_NOT_NON_NEGATIVE
-        assert exc.value.message == messages.VALUE_NOT_NON_NEGATIVE
+        assert exc.value.message == "balance must be non-negative"
         assert exc.value.details[keys.FIELD] == "balance"
 
     def test_accepts_float_and_decimal(self):
@@ -118,7 +118,7 @@ class TestRequireNotEmpty:
         with pytest.raises(CommandRejectedError) as exc:
             require_not_empty([], "items")
         assert exc.value.code == codes.COLLECTION_EMPTY
-        assert exc.value.message == messages.COLLECTION_EMPTY
+        assert exc.value.message == "items must not be empty"
         assert exc.value.details[keys.FIELD] == "items"
 
 
@@ -130,7 +130,7 @@ class TestRequireNotEmptyStr:
         with pytest.raises(CommandRejectedError) as exc:
             require_not_empty_str("", "name")
         assert exc.value.code == codes.VALUE_EMPTY
-        assert exc.value.message == messages.VALUE_EMPTY
+        assert exc.value.message == "name must not be empty"
         assert exc.value.details[keys.FIELD] == "name"
 
 
@@ -142,7 +142,7 @@ class TestRequireStatus:
         with pytest.raises(CommandRejectedError) as exc:
             require_status("pending", "active", "must be active")
         assert exc.value.code == codes.STATUS_MISMATCH
-        assert exc.value.message == messages.STATUS_MISMATCH
+        assert exc.value.message == "status does not match expected"
 
 
 class TestRequireStatusNot:
@@ -153,7 +153,7 @@ class TestRequireStatusNot:
         with pytest.raises(CommandRejectedError) as exc:
             require_status_not("checked_out", "checked_out", "already checked out")
         assert exc.value.code == codes.STATUS_FORBIDDEN
-        assert exc.value.message == messages.STATUS_FORBIDDEN
+        assert exc.value.message == "status is the forbidden value"
 
 
 class TestStructuredLogging:
@@ -173,7 +173,7 @@ class TestStructuredLogging:
         assert rec.field == "amount"
         assert rec.predicate == "positive"
         assert rec.status_code == "INVALID_ARGUMENT"
-        assert messages.VALUE_NOT_POSITIVE in rec.getMessage()
+        assert codes.VALUE_NOT_POSITIVE in rec.getMessage()
 
     def test_require_non_negative_logs_structured_fields(self, caplog):
         with (
@@ -228,7 +228,7 @@ _REJECTIONS = [
     (
         lambda: require_exists(False, "player lookup"),
         codes.ENTITY_NOT_FOUND,
-        messages.ENTITY_NOT_FOUND,
+        "entity not found",
         "NOT_FOUND",
         {keys.CONTEXT: "player lookup"},
         "<entity>",
@@ -237,7 +237,7 @@ _REJECTIONS = [
     (
         lambda: require_not_exists(True, "player create"),
         codes.ENTITY_ALREADY_EXISTS,
-        messages.ENTITY_ALREADY_EXISTS,
+        "entity already exists",
         "FAILED_PRECONDITION",
         {keys.CONTEXT: "player create"},
         "<entity>",
@@ -246,7 +246,7 @@ _REJECTIONS = [
     (
         lambda: require_positive(0, "amount"),
         codes.VALUE_NOT_POSITIVE,
-        messages.VALUE_NOT_POSITIVE,
+        "amount must be positive",
         "INVALID_ARGUMENT",
         {keys.FIELD: "amount"},
         "amount",
@@ -255,7 +255,7 @@ _REJECTIONS = [
     (
         lambda: require_non_negative(-1, "balance"),
         codes.VALUE_NOT_NON_NEGATIVE,
-        messages.VALUE_NOT_NON_NEGATIVE,
+        "balance must be non-negative",
         "INVALID_ARGUMENT",
         {keys.FIELD: "balance"},
         "balance",
@@ -264,7 +264,7 @@ _REJECTIONS = [
     (
         lambda: require_not_empty([], "items"),
         codes.COLLECTION_EMPTY,
-        messages.COLLECTION_EMPTY,
+        "items must not be empty",
         "INVALID_ARGUMENT",
         {keys.FIELD: "items"},
         "items",
@@ -273,7 +273,7 @@ _REJECTIONS = [
     (
         lambda: require_not_empty_str("", "name"),
         codes.VALUE_EMPTY,
-        messages.VALUE_EMPTY,
+        "name must not be empty",
         "INVALID_ARGUMENT",
         {keys.FIELD: "name"},
         "name",
@@ -282,7 +282,7 @@ _REJECTIONS = [
     (
         lambda: require_status("pending", "active", "must be active"),
         codes.STATUS_MISMATCH,
-        messages.STATUS_MISMATCH,
+        "status does not match expected",
         "FAILED_PRECONDITION",
         {keys.CONTEXT: "must be active"},
         "status",
@@ -291,7 +291,7 @@ _REJECTIONS = [
     (
         lambda: require_status_not("closed", "closed", "already closed"),
         codes.STATUS_FORBIDDEN,
-        messages.STATUS_FORBIDDEN,
+        "status is the forbidden value",
         "FAILED_PRECONDITION",
         {keys.CONTEXT: "already closed"},
         "status",
@@ -312,7 +312,7 @@ _REJECTION_IDS = [
 
 
 class TestRejectionContract:
-    """Every validator rejects with a fixed code, static message, gRPC-style
+    """Every validator rejects with a fixed code, rendered message, gRPC-style
     status code and structured details, and emits exactly one info record
     carrying the same field / predicate / status_code."""
 
@@ -329,7 +329,7 @@ class TestRejectionContract:
         err = exc.value
         assert err.code == code
         assert err.message == message
-        assert str(err) == message
+        assert str(err).startswith(code)
         assert err.status_code == status_code
         assert err.details == details
         assert err.cover is None
@@ -352,7 +352,7 @@ class TestRejectionContract:
         assert len(records) == 1
         rec = records[0]
         assert rec.levelno == logging.INFO
-        assert rec.getMessage() == f"validation rejection: {message}"
+        assert rec.getMessage() == f"validation rejection: {_code}"
         assert rec.field == field
         assert rec.predicate == predicate
         assert rec.status_code == status_code

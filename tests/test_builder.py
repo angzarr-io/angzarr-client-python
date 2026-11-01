@@ -133,7 +133,7 @@ class TestCommandBuilder:
 
         with pytest.raises(InvalidArgumentError) as exc_info:
             builder.build()
-        assert "type_url" in str(exc_info.value)
+        assert exc_info.value.message == "command type_url not set"
         assert exc_info.value.code == "COMMAND_TYPE_URL_MISSING"
 
     def test_build_without_payload_raises(self) -> None:
@@ -144,7 +144,7 @@ class TestCommandBuilder:
 
         with pytest.raises(InvalidArgumentError) as exc_info:
             builder.build()
-        assert "payload" in str(exc_info.value)
+        assert exc_info.value.message == "command payload not set"
         assert exc_info.value.code == "COMMAND_PAYLOAD_MISSING"
 
     def test_build_with_type_url_and_payload(self) -> None:

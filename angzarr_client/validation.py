@@ -3,9 +3,9 @@
 Eliminates repeated validation boilerplate across aggregate handlers.
 
 Audit finding #59 (structural error model). Errors carry a SCREAMING_SNAKE
-``code`` (from ``angzarr_client.error_codes.codes``), a static
-``message`` (from ``angzarr_client.error_codes.messages``), and
-structured ``details`` (keyed by ``angzarr_client.error_codes.keys``).
+``code`` (from ``angzarr_client.error_codes.codes``) and structured
+``details`` (keyed by ``angzarr_client.error_codes.keys``), never text; the
+English is rendered from the catalog keyed by the code (decision 14.37).
 The structured ``info``-level log emitted alongside surfaces the same
 fields for observability.
 """
@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 
-from .error_codes import codes, keys, messages
+from .error_codes import codes, keys
 from .errors import CommandRejectedError
 
 _LOG = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ _LOG = logging.getLogger(__name__)
 _Numeric = int | float | Decimal
 
 
-def _log_rejection(field: str, predicate: str, status_code: str, message: str) -> None:
+def _log_rejection(field: str, predicate: str, status_code: str, code: str) -> None:
     """Emit a structured info-level log for a validation rejection.
 
     The structured fields ride on the LogRecord's ``extra`` so JSON /
@@ -37,7 +37,7 @@ def _log_rejection(field: str, predicate: str, status_code: str, message: str) -
     """
     _LOG.info(
         "validation rejection: %s",
-        message,
+        code,
         extra={
             "field": field,
             "predicate": predicate,
@@ -63,11 +63,10 @@ def require_exists(exists: bool, context: str) -> None:
             field="<entity>",
             predicate="exists",
             status_code="NOT_FOUND",
-            message=messages.ENTITY_NOT_FOUND,
+            code=codes.ENTITY_NOT_FOUND,
         )
         raise CommandRejectedError.not_found(
             codes.ENTITY_NOT_FOUND,
-            messages.ENTITY_NOT_FOUND,
             {keys.CONTEXT: context},
         )
 
@@ -83,11 +82,10 @@ def require_not_exists(exists: bool, context: str) -> None:
             field="<entity>",
             predicate="not_exists",
             status_code="FAILED_PRECONDITION",
-            message=messages.ENTITY_ALREADY_EXISTS,
+            code=codes.ENTITY_ALREADY_EXISTS,
         )
         raise CommandRejectedError.precondition_failed(
             codes.ENTITY_ALREADY_EXISTS,
-            messages.ENTITY_ALREADY_EXISTS,
             {keys.CONTEXT: context},
         )
 
@@ -99,11 +97,10 @@ def require_positive(value: _Numeric, field_name: str) -> None:
             field=field_name,
             predicate="positive",
             status_code="INVALID_ARGUMENT",
-            message=messages.VALUE_NOT_POSITIVE,
+            code=codes.VALUE_NOT_POSITIVE,
         )
         raise CommandRejectedError.invalid_argument(
             codes.VALUE_NOT_POSITIVE,
-            messages.VALUE_NOT_POSITIVE,
             {keys.FIELD: field_name},
         )
 
@@ -115,11 +112,10 @@ def require_non_negative(value: _Numeric, field_name: str) -> None:
             field=field_name,
             predicate="non_negative",
             status_code="INVALID_ARGUMENT",
-            message=messages.VALUE_NOT_NON_NEGATIVE,
+            code=codes.VALUE_NOT_NON_NEGATIVE,
         )
         raise CommandRejectedError.invalid_argument(
             codes.VALUE_NOT_NON_NEGATIVE,
-            messages.VALUE_NOT_NON_NEGATIVE,
             {keys.FIELD: field_name},
         )
 
@@ -131,11 +127,10 @@ def require_not_empty(items: Sequence[Any], field_name: str) -> None:
             field=field_name,
             predicate="not_empty",
             status_code="INVALID_ARGUMENT",
-            message=messages.COLLECTION_EMPTY,
+            code=codes.COLLECTION_EMPTY,
         )
         raise CommandRejectedError.invalid_argument(
             codes.COLLECTION_EMPTY,
-            messages.COLLECTION_EMPTY,
             {keys.FIELD: field_name},
         )
 
@@ -147,11 +142,10 @@ def require_not_empty_str(value: str, field_name: str) -> None:
             field=field_name,
             predicate="not_empty_str",
             status_code="INVALID_ARGUMENT",
-            message=messages.VALUE_EMPTY,
+            code=codes.VALUE_EMPTY,
         )
         raise CommandRejectedError.invalid_argument(
             codes.VALUE_EMPTY,
-            messages.VALUE_EMPTY,
             {keys.FIELD: field_name},
         )
 
@@ -163,11 +157,10 @@ def require_status(actual: str, expected: str, context: str) -> None:
             field="status",
             predicate="status_eq",
             status_code="FAILED_PRECONDITION",
-            message=messages.STATUS_MISMATCH,
+            code=codes.STATUS_MISMATCH,
         )
         raise CommandRejectedError.precondition_failed(
             codes.STATUS_MISMATCH,
-            messages.STATUS_MISMATCH,
             {keys.CONTEXT: context},
         )
 
@@ -179,10 +172,9 @@ def require_status_not(actual: str, forbidden: str, context: str) -> None:
             field="status",
             predicate="status_not",
             status_code="FAILED_PRECONDITION",
-            message=messages.STATUS_FORBIDDEN,
+            code=codes.STATUS_FORBIDDEN,
         )
         raise CommandRejectedError.precondition_failed(
             codes.STATUS_FORBIDDEN,
-            messages.STATUS_FORBIDDEN,
             {keys.CONTEXT: context},
         )

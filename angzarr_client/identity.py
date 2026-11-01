@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 
-from .error_codes import codes, keys, messages
+from .error_codes import codes, keys
 from .errors import InvalidArgumentError
 
 # The fixed namespace for framework-derived roots (types.proto, derived_ids).
@@ -27,8 +27,7 @@ def compute_root(domain: str, business_key: str) -> uuid.UUID:
     (``DOMAIN_CONTAINS_COLON``) when ``domain`` contains ``':'``."""
     if ":" in domain:
         raise InvalidArgumentError(
-            messages.DOMAIN_CONTAINS_COLON,
-            code=codes.DOMAIN_CONTAINS_COLON,
+            codes.DOMAIN_CONTAINS_COLON,
             details={keys.DOMAIN: domain},
         )
     return uuid.uuid5(ANGZARR_ROOT_NAMESPACE, f"{domain}:{business_key}")

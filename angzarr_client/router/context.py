@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from google.protobuf import any_pb2
 from google.protobuf.message import DecodeError, Message
 
-from ..proto.io.angzarr.v1 import types_pb2
+from ..proto.io.angzarr.v1 import reason_args, types_pb2
 from .errors import (
     PERSISTED_EVENT_CORRUPT,
     CodedError,
@@ -197,7 +197,7 @@ def start_state(factory: Callable[[], Message], book: types_pb2.EventBook) -> Me
         except DecodeError:
             raise CodedError(
                 PERSISTED_EVENT_CORRUPT,
-                extras={"type_url": book.snapshot.state.type_url},
+                extras={reason_args.TYPE_URL: book.snapshot.state.type_url},
             ) from None
     return state
 
@@ -217,9 +217,9 @@ def fold(state, pages, cover, appliers: dict[str, Applier], code: str) -> None:
                 applier(state, page.payload, ctx)
         except Exception as exc:  # noqa: BLE001 - the fold's cause, coded
             args = {
-                "sequence": str(page.sequence),
-                "type_url": page.payload.type_url,
-                "state_type_url": state_type_url(state),
+                reason_args.SEQUENCE: str(page.sequence),
+                reason_args.TYPE_URL: page.payload.type_url,
+                reason_args.STATE_TYPE_URL: state_type_url(state),
             }
             raise CodedError(code, extras={**args, **as_cause(exc)}) from None
 

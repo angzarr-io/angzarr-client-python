@@ -8,7 +8,8 @@ import pytest
 
 import angzarr_client
 from angzarr_client import _pb, helpers, wrappers
-from angzarr_client.error_codes import codes, messages
+from angzarr_client import diagnostic
+from angzarr_client.error_codes import codes
 
 
 @pytest.mark.parametrize("cls", [wrappers.EventPage, wrappers.CommandPage])
@@ -49,4 +50,4 @@ def test_pb_does_not_reexport_removed_messages(name):
 )
 def test_no_error_codes_for_removed_features(name):
     assert not hasattr(codes, name)
-    assert not hasattr(messages, name)
+    assert name not in diagnostic.catalog()

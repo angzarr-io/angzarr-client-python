@@ -1,22 +1,15 @@
-"""Detail-map key constants — the keys used in the ``details`` mapping
-on every error this client constructs. Use these at insertion sites
-AND when reading ``details[key]`` in tests.
+"""Detail-map key constants for this package's own codes: the keys used in
+the ``details`` mapping of the errors it constructs under a code of its own
+(:mod:`angzarr_client.error_codes.codes`), and the variables of their
+messages in ``locales/en-US/angzarr-client.ftl``. Use these at insertion
+sites AND when reading ``details[key]`` in tests.
 
-Mirrors ``client-rust/main/src/error_codes.rs::keys`` — same constant
-names, same string values.
+A framework reason key's args are the spec's, generated from reasons.proto
+(``angzarr_client.proto.io.angzarr.v1.reason_args``; decision 14.60), never
+typed here.
 """
 
 FIELD = "field"
 CONTEXT = "context"
-CAUSE = "cause"
-ENDPOINT = "endpoint"
 INPUT = "input"
-EXPECTED = "expected"
-ACTUAL = "actual"
-EXPECTED_KIND = "expected_kind"
 DOMAIN = "domain"
-TYPE_URL = "type_url"
-ROUTER_NAME = "router_name"
-HANDLER_CLASS = "handler_class"
-ACTUAL_RETURN_TYPE = "actual_return_type"
-ENV_VAR = "env_var"

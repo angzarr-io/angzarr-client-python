@@ -223,7 +223,9 @@ def parse_timestamp(rfc3339: str) -> Timestamp:
         ts.FromJsonString(rfc3339)
         return ts
     except ValueError as e:
-        raise InvalidTimestampError(str(e)) from e
+        # protobuf's own text, a third party's, travels verbatim
+        # (decision 14.37).
+        raise InvalidTimestampError(details={"ext_err_txt": str(e)}) from e
 
 
 # Construction helpers (build proto messages from primitives)

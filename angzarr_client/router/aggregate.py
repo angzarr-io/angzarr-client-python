@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from google.protobuf import any_pb2
 
-from ..proto.io.angzarr.v1 import command_handler_pb2, types_pb2
+from ..proto.io.angzarr.v1 import command_handler_pb2, reason_args, types_pb2
 from .context import (
     Applier,
     CommandContext,
@@ -204,7 +204,9 @@ class AggregateDispatch:
         command_type = refused.command.page.command.payload.type_url
         on_refused = self.refusals.get(type_name(command_type))
         if on_refused is None:
-            raise CodedError(NO_REFUSAL_HANDLER, extras={"command_type": command_type})
+            raise CodedError(
+                NO_REFUSAL_HANDLER, extras={reason_args.COMMAND_TYPE: command_type}
+            )
         return lambda state, ctx: on_refused(refused, state, ctx).book()
 
 

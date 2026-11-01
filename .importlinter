@@ -5,6 +5,10 @@
 # Shape of the package:
 #   router/           the router: native dispatch to business code.
 #                     Bottom layer; transport-free.
+#   diagnostic        a code and its args shown as text and rendered in
+#                     English from the catalogs (decisions 14.37, 14.60):
+#                     a leaf, importing nothing of the package, which the
+#                     router and the clients' errors both use.
 #   child             run_child: a host as the child process of an in-app
 #                     runtime (handshake on stdout, Unix socket).
 #   descriptor        describe: a component's ComponentDescriptor, built
@@ -37,7 +41,7 @@ layers =
     angzarr_client.router
 
 [importlinter:contract:router-bottom]
-name = Router binding depends only on the generated protos
+name = Router binding depends only on the generated protos and diagnostic
 type = forbidden
 source_modules =
     angzarr_client.router
@@ -53,6 +57,32 @@ forbidden_modules =
     angzarr_client.identity
     angzarr_client.readiness
     angzarr_client.retry
+    angzarr_client.server
+    angzarr_client.testing
+    angzarr_client.validation
+    angzarr_client.wrappers
+
+[importlinter:contract:diagnostic-leaf]
+name = diagnostic imports nothing of the package
+type = forbidden
+source_modules =
+    angzarr_client.diagnostic
+forbidden_modules =
+    angzarr_client._args
+    angzarr_client._pb
+    angzarr_client.builder
+    angzarr_client.child
+    angzarr_client.client
+    angzarr_client.descriptor
+    angzarr_client.error_codes
+    angzarr_client.errors
+    angzarr_client.helpers
+    angzarr_client.host
+    angzarr_client.identity
+    angzarr_client.proto
+    angzarr_client.readiness
+    angzarr_client.retry
+    angzarr_client.router
     angzarr_client.server
     angzarr_client.testing
     angzarr_client.validation

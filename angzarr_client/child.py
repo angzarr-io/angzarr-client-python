@@ -56,6 +56,7 @@ from grpc_health.v1 import health_pb2
 
 from .error_codes import codes
 from .host import ComponentHost, ConfigurationError
+from .proto.io.angzarr.v1 import reason_args
 
 #: The environment variable naming the socket path the parent chose.
 SOCKET_ENV = "ANGZARR_SOCKET"
@@ -103,8 +104,7 @@ def parse_handshake(line: str) -> str | None:
     ):
         raise ConfigurationError(
             codes.HOST_REASON_HANDSHAKE_MALFORMED,
-            code=codes.HOST_REASON_HANDSHAKE_MALFORMED,
-            details={"line": body},
+            details={reason_args.LINE: body},
         )
     return address
 
