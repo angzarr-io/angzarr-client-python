@@ -13,6 +13,7 @@ import grpc
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
+from angzarr_client.error_codes import codes, keys
 from angzarr_client.errors import (
     ClientError,
     ConnectionError,
@@ -108,7 +109,9 @@ def _given_operation_timeout(state: _State) -> None:
 
 @given("any client error")
 def _given_any_client_error(state: _State) -> None:
-    state.current_error = ConnectionError("test error")
+    state.current_error = InvalidArgumentError(
+        codes.PROTO_UUID_INVALID, details={keys.FIELD: "root"}
+    )
 
 
 @given("a gRPC error with status NOT_FOUND")
@@ -553,3 +556,28 @@ def _then_message_includes_type_and_desc(state: _State) -> None:
 @then("I should get detailed diagnostic information")
 def _then_get_diagnostic_info(state: _State) -> None:
     assert repr(_err(state))
+
+
+# --- decision 14.37: a code and its args, English from the catalog ------------
+
+
+@then("I should get the catalog's text for the error's code, filled with its args")
+def _then_catalog_text(state: _State) -> None:
+    assert state.current_error.message == "root is not a UUID"
+
+
+@then("no text in it came from the server")
+def _then_no_server_text(state: _State) -> None:
+    # The error was never given text: its English is all the catalog's.
+    assert state.current_error.cause is None
+    assert state.current_error.message != str(state.current_error)
+
+
+@then("I should get the error's code followed by its args")
+def _then_code_and_args(state: _State) -> None:
+    assert str(state.current_error) == "PROTO_UUID_INVALID field=root"
+
+
+@then("it carries no rendered text")
+def _then_no_rendered_text(state: _State) -> None:
+    assert state.current_error.message not in str(state.current_error)

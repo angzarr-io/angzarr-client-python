@@ -9,7 +9,6 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client import CommandRejectedError
-from angzarr_client.error_codes import codes, keys
 from angzarr_client.retry import ExponentialBackoffRetry, default_retry_policy
 
 scenarios("parity/client/retry.feature")
@@ -130,18 +129,13 @@ def _then_on_retry_count(state: _State, n: int) -> None:
 
 @when(
     parsers.parse(
-        'I construct a CommandRejectedError via precondition_failed with reason "{reason}"'
+        "I construct a CommandRejectedError via precondition_failed with code {code}"
     )
 )
-def _when_precondition_failed(state: _State, reason: str) -> None:
-    # Audit #59: static message + structured detail. The cucumber-supplied
-    # `reason` rides as a detail value rather than being interpolated into
-    # the message string.
-    state.rejected = CommandRejectedError.precondition_failed(
-        code=codes.STATUS_MISMATCH,
-        message="precondition failed",
-        details={keys.CONTEXT: reason},
-    )
+def _when_precondition_failed(state: _State, code: str) -> None:
+    # Decision 14.37: a code and details, never text.
+    state.rejected = CommandRejectedError.precondition_failed(code)
+    assert state.rejected.code == code
 
 
 @then("the error's is_precondition_failed predicate is true")
