@@ -21,7 +21,7 @@ INCREASED = counter_pb2.Increased.DESCRIPTOR.full_name
 
 
 def totals() -> ProjectorDispatch:
-    def increased(view, _event):
+    def increased(view, _event, _ctx):
         view.count += 1
 
     return (
@@ -41,7 +41,7 @@ def reserve(domain: str) -> types_pb2.CommandBook:
 def reserving() -> PolicyDispatch:
     return (
         PolicyDispatch("Reserving", "alpha", "beta")
-        .on_event(INCREASED, lambda _event, _cover: [reserve("beta")])
+        .on_event(INCREASED, lambda _event, _ctx: [reserve("beta")])
         .on_refused(
             counter_pb2.Reserve.DESCRIPTOR.full_name,
             lambda _refusal, _ctx: order_pb2.StockUnavailable(item="x"),

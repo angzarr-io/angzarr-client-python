@@ -42,16 +42,12 @@ class PolicyDispatch:
 
     kind = types_pb2.COMPONENT_KIND_POLICY
 
-    def on_event(self, full_name: str, thunk: Callable) -> PolicyDispatch:
-        """Register the handler ``(event, source_cover)`` of one event type."""
-        self.events[full_name] = lambda event, ctx: thunk(event, ctx.cover)
-        return self
-
-    def on_event_with_context(
-        self, full_name: str, thunk: PolicyEventThunk
-    ) -> PolicyDispatch:
+    def on_event(self, full_name: str, thunk: PolicyEventThunk) -> PolicyDispatch:
         """Register the handler ``(event, PageContext)`` of one event type:
-        it reads the source cover and its trigger's sequence."""
+        it reads its trigger's whole context, as delivered, none withheld
+        (decision 14.61): the source cover, the trigger's sequence and its
+        whole EventMeta (its cause, correlation, fact origin, rules version
+        and recording instant)."""
         self.events[full_name] = thunk
         return self
 

@@ -549,7 +549,8 @@ def test_a_policy_handler_registered_with_on_event_reads_the_source_cover():
     seen = []
     policy = PolicyDispatch("P", "order", "inventory").on_event(
         _INCREASED,
-        lambda event, cover: seen.append((event, cover, current_page().sequence)) or [],
+        lambda event, ctx: seen.append((event, ctx.cover, current_page().sequence))
+        or [],
     )
     router = Router()
     router.register_policy(policy)
@@ -564,7 +565,7 @@ def test_a_policy_handler_registered_with_on_event_reads_the_source_cover():
 
 def test_a_policy_handler_sees_its_trigger_meta_and_none_for_a_bookless_cover():
     seen = []
-    policy = PolicyDispatch("P", "order", "inventory").on_event_with_context(
+    policy = PolicyDispatch("P", "order", "inventory").on_event(
         _INCREASED, lambda _e, ctx: seen.append(ctx)
     )
     router = Router()
@@ -610,7 +611,7 @@ def test_a_failing_translating_callback_is_a_handler_bug():
 def _projector(*domains: str) -> Router:
     projector = ProjectorDispatch("Sum", wrappers_pb2.Int64Value).on_event(
         "google.protobuf.Int64Value",
-        lambda p, e: setattr(
+        lambda p, e, _ctx: setattr(
             p, "value", p.value + wrappers_pb2.Int64Value.FromString(e.value).value
         ),
     )
@@ -915,7 +916,7 @@ def test_a_projector_fold_failing_is_a_fold_failure_and_sees_no_cover_when_none(
 
     router = Router()
     router.register_projector(
-        ProjectorDispatch("S", wrappers_pb2.Int64Value).on_event_with_context(
+        ProjectorDispatch("S", wrappers_pb2.Int64Value).on_event(
             "google.protobuf.Int64Value", fold
         )
     )

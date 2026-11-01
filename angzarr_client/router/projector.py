@@ -6,8 +6,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from google.protobuf import any_pb2
-
 from ..proto.io.angzarr.v1 import types_pb2
 from .context import Applier, fold
 from .errors import FOLD_FAILED, pack
@@ -37,20 +35,12 @@ class ProjectorDispatch:
         self.domains = list(domains)
         return self
 
-    def on_event(
-        self, full_name: str, thunk: Callable[[object, any_pb2.Any], None]
-    ) -> ProjectorDispatch:
-        """Register the fold ``(projection, event)`` of one event type."""
-        self.events[full_name] = lambda projection, event, _ctx: thunk(
-            projection, event
-        )
-        return self
-
-    def on_event_with_context(
-        self, full_name: str, thunk: Applier
-    ) -> ProjectorDispatch:
+    def on_event(self, full_name: str, thunk: Applier) -> ProjectorDispatch:
         """Register the fold ``(projection, event, PageContext)`` of one
-        event type: it also reads the event's book cover and sequence."""
+        event type: it reads the event's whole context, as delivered, none
+        withheld (decision 14.61): its book cover, its sequence and its
+        whole EventMeta (its cause, correlation, fact origin, rules version
+        and recording instant)."""
         self.events[full_name] = thunk
         return self
 

@@ -91,6 +91,7 @@ class Observed:
     sequence: int | None = None
     cover: types_pb2.Cover | None = None
     refusal: object | None = None
+    meta: types_pb2.EventMeta | None = None
 
 
 # --- counter.proto ----------------------------------------------------------
@@ -166,10 +167,11 @@ def order_policy(destination: str, seen: list[Observed]) -> PolicyDispatch:
     ``destination``."""
 
     def increased(_event, ctx: PageContext):
-        seen.append(Observed(sequence=ctx.sequence))
+        root = ctx.cover.root.value if ctx.cover is not None else b""
+        seen.append(Observed(sequence=ctx.sequence, cover=root, meta=ctx.meta))
         return [reserve_for(destination)]
 
-    return PolicyDispatch("OrderPolicy", "order", destination).on_event_with_context(
+    return PolicyDispatch("OrderPolicy", "order", destination).on_event(
         fq(counter_pb2.Increased), increased
     )
 
@@ -181,12 +183,12 @@ def counter_projector(seen: list[Observed], *domains: str) -> ProjectorDispatch:
     def increased(projection, _event, ctx: PageContext):
         projection.count += 1
         root = ctx.cover.root.value if ctx.cover is not None else b""
-        seen.append(Observed(cover=root, sequence=ctx.sequence))
+        seen.append(Observed(cover=root, sequence=ctx.sequence, meta=ctx.meta))
 
     return (
         ProjectorDispatch("CounterProjector", counter_pb2.CounterProjectorState)
         .for_domains(*(domains or ("counter",)))
-        .on_event_with_context(fq(counter_pb2.Increased), increased)
+        .on_event(fq(counter_pb2.Increased), increased)
     )
 
 
@@ -346,9 +348,9 @@ def order_fulfillment(
         seen.append(Observed(ctx=ctx, refusal=refusal))
         return order_pb2.StockUnavailable(item="apple")
 
-    policy = PolicyDispatch(
-        "OrderFulfillment", "order", "inventory"
-    ).on_event_with_context(fq(order_pb2.OrderPlaced), placed)
+    policy = PolicyDispatch("OrderFulfillment", "order", "inventory").on_event(
+        fq(order_pb2.OrderPlaced), placed
+    )
     if translate:
         policy.on_refused(fq(order_pb2.ReserveStock), unavailable)
     return policy

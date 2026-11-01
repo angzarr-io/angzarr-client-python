@@ -96,7 +96,9 @@ protobuf in `_descriptor.py`, is built from the table by `describe`:
 from angzarr_client import ComponentHost, describe
 from angzarr_client.router import PolicyDispatch, ProcessManagerDispatch, ProjectorDispatch, Rebuilder
 
-# A projector over several source domains: one input per domain.
+# A projector over several source domains: one input per domain. Each fold is
+# (projection, event, ctx), each policy handler (event, ctx): ctx is the
+# event's PageContext, its cover, sequence and whole EventMeta.
 totals = (
     ProjectorDispatch("Totals", TotalsView)
     .for_domains("order", "refund")

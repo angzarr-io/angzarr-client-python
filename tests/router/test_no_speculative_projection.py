@@ -16,7 +16,7 @@ from angzarr_client.router import PageContext, ProjectorDispatch, Router, pack
 def _projector(writes: list[int]) -> ProjectorDispatch:
     dispatch = ProjectorDispatch("CountingProjector", wrappers_pb2.Int64Value)
 
-    def fold(projection, event_any):
+    def fold(projection, event_any, _ctx):
         projection.value += wrappers_pb2.Int64Value.FromString(event_any.value).value
         writes.append(projection.value)
 

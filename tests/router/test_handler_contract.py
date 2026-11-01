@@ -375,6 +375,68 @@ def _projector_saw(world, label, a, b):
     ]
 
 
+# The metadata a step names (C-0757, C-0758).
+_METADATA = (
+    r'recorded by command "(?P<command>[^"]*)" in correlation "(?P<correlation>[^"]*)" '
+    r'from fact "(?P<fact>[^"]*)" under rules version "(?P<rules>[^"]*)" '
+    r"at second (?P<second>\d+)"
+)
+
+
+def _meta(command, correlation, fact, rules, second) -> types_pb2.EventMeta:
+    """An event's metadata, every field set: its cause and correlation the
+    labels' UUID v5s."""
+    meta = types_pb2.EventMeta(rules_version=rules)
+    meta.command_id.value = fx.root_of(command)
+    meta.correlation_id.value = fx.root_of(correlation)
+    meta.fact.external_id = fact
+    meta.recorded_at.seconds = int(second)
+    return meta
+
+
+def _metadata_book(label, seq, meta) -> types_pb2.EventBook:
+    book = types_pb2.EventBook(cover=fx.cover_of("counter", label))
+    page = book.pages.add(sequence=int(seq), payload=pack(counter_pb2.Increased()))
+    page.meta.CopyFrom(meta)
+    return book
+
+
+@when(
+    parsers.re(
+        r'an Increased event of counter root "(?P<label>[^"]*)" at sequence (?P<seq>\d+) '
+        r"is dispatched, " + _METADATA
+    )
+)
+def _policy_metadata(world, label, seq, command, correlation, fact, rules, second):
+    meta = _meta(command, correlation, fact, rules, second)
+    world.answer_of(world.router.dispatch_policy, _metadata_book(label, seq, meta))
+
+
+@when(
+    parsers.re(
+        r'an Increased event of counter root "(?P<label>[^"]*)" at sequence (?P<seq>\d+) '
+        r"is projected, " + _METADATA
+    )
+)
+def _projector_metadata(world, label, seq, command, correlation, fact, rules, second):
+    meta = _meta(command, correlation, fact, rules, second)
+    world.answer_of(world.router.dispatch_projector, _metadata_book(label, seq, meta))
+
+
+@then(
+    parsers.re(
+        r'the (?:policy handler|projector) saw root "(?P<label>[^"]*)" at sequence '
+        r"(?P<seq>\d+), " + _METADATA
+    )
+)
+def _saw_metadata(world, label, seq, command, correlation, fact, rules, second):
+    assert world.err is None, f"refused: {world.err}"
+    meta = _meta(command, correlation, fact, rules, second)
+    assert [(s.cover, s.sequence, s.meta) for s in world.seen] == [
+        (fx.root_of(label), int(seq), meta)
+    ]
+
+
 # ===========================================================================
 # policy_dispatch.feature
 # ===========================================================================
@@ -1041,7 +1103,7 @@ def _answers_reserve(world):
         book.page.command.payload.CopyFrom(pack(order_pb2.ReserveStock(item="apple")))
         return [book]
 
-    world.policy.on_event_with_context(fx.fq(order_pb2.OrderPlaced), placed)
+    world.policy.on_event(fx.fq(order_pb2.OrderPlaced), placed)
 
 
 @given(
