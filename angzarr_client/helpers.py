@@ -169,15 +169,18 @@ def type_matches(any_proto: ProtoAny, msg_class: type[T]) -> bool:
 
 
 def try_unpack(any_proto: ProtoAny, msg_class: type[T]) -> T | None:
-    """Unpack an Any to msg_class if type matches, returning None otherwise."""
+    """Unpack an Any to msg_class if its type matches, returning None when it
+    does not (or there is no Any).
+
+    A payload whose type matches but whose bytes do not decode is an error,
+    not a mismatch: the decoder's ``google.protobuf.message.DecodeError``
+    is raised, as ``unpack`` raises it.
+    """
     if not type_matches(any_proto, msg_class):
         return None
-    try:
-        msg = msg_class()
-        any_proto.Unpack(msg)
-        return msg
-    except Exception:  # noqa: BLE001 — undecodable payload decodes to None
-        return None
+    msg = msg_class()
+    any_proto.Unpack(msg)
+    return msg
 
 
 def unpack(any_proto: ProtoAny, msg_class: type[T]) -> T:

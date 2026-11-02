@@ -436,6 +436,20 @@ class TestAdditionalHelpers:
         any_proto.Pack(EventBook())
         assert try_unpack(any_proto, Cover) is None
 
+    def test_try_unpack_raises_decode_error_for_undecodable_payload(self) -> None:
+        import pytest
+        from google.protobuf.any_pb2 import Any
+        from google.protobuf.message import DecodeError
+
+        from angzarr_client._pb import Cover
+        from angzarr_client.helpers import full_type_url_for, try_unpack
+
+        # The type URL names Cover, so this is no mismatch: the bytes are not
+        # a protobuf encoding of anything, and the decoder's error surfaces.
+        any_proto = Any(type_url=full_type_url_for(Cover), value=b"\xff\xff\xff\xff")
+        with pytest.raises(DecodeError):
+            try_unpack(any_proto, Cover)
+
     def test_unpack_raises_on_mismatch(self) -> None:
         import pytest
         from google.protobuf.any_pb2 import Any

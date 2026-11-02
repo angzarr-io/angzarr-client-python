@@ -352,15 +352,19 @@ def _when_attempt_decode(state: _State) -> None:
     """Attempt-to-decode — surface the real error vs None semantics.
 
     For an EventPage with no payload, decode_event returns None
-    (no exception). For a page with corrupted bytes, try_unpack
-    returns None. unpack raises ValueError on type mismatch.
+    (no exception). For a page with corrupted bytes, try_unpack raises
+    the decoder's DecodeError, recorded as the error. unpack raises
+    ValueError on type mismatch.
     """
     assert state.current_event is not None
     if not state.current_event.HasField("payload"):
         state.decode_is_none = True
         return
-    # try_unpack answers None for a payload the decoder rejects.
-    state.decoded_msg = try_unpack(state.current_event.payload, _MSG_CLASS)
+    try:
+        state.decoded_msg = try_unpack(state.current_event.payload, _MSG_CLASS)
+    except DecodeError as e:
+        state.last_error = e
+        return
     if state.decoded_msg is None:
         state.decode_is_none = True
 
@@ -542,20 +546,14 @@ def _then_no_error_empty_proto(state: _State) -> None:
 @then("decoding should fail")
 def _then_decoding_fails(state: _State) -> None:
     assert state.decoded_msg is None
-    assert state.decode_is_none
-    # The failure is the decoder's: upb rejects the bytes outright.
-    assert state.current_event is not None
-    with pytest.raises(DecodeError, match="Wire format was corrupt"):
-        _MSG_CLASS().ParseFromString(state.current_event.payload.value)
+    assert state.last_error is not None
 
 
 @then("an error should indicate deserialization failure")
 def _then_error_deserialization(state: _State) -> None:
-    # A divergence (C-0376 in tests/client/conftest.py's DIVERGENCES): the
-    # decoder's DecodeError never reaches the caller; try_unpack answers
-    # None and no error is recorded.
-    assert state.last_error is None
-    assert state.decode_is_none
+    # The decoder's own error, as client-rust's step records prost's.
+    assert isinstance(state.last_error, DecodeError)
+    assert "Wire format was corrupt" in str(state.last_error)
 
 
 @then("no crash should occur")

@@ -21,16 +21,7 @@ PENDING = {
     "C-0337": "angzarr_client exposes no keep-alive option on connect()",
 }
 
-DIVERGENCES = {
-    "C-0376": (
-        "divergence_undecodable_payload_is_none",
-        (
-            "the protobuf decoder (upb) raises DecodeError on the corrupted "
-            "bytes, but try_unpack answers None, so no error indicates the "
-            "deserialization failure"
-        ),
-    ),
-}
+DIVERGENCES: dict[str, tuple[str, str]] = {}
 
 
 def _scenario_ids(item) -> frozenset:
