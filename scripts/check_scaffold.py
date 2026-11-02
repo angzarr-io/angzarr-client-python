@@ -4,13 +4,15 @@ python``) works against this repository's package.
 
 - every dispatch module the CLI generated (``_gen/**/*_angzarr.py``)
   imports: its message types, the framework types and the router resolve;
-- the project's ``main.host()`` builds its ComponentHost, registering the
-  domain on the router;
-- its host answers Describe with ``_descriptor.DESCRIPTOR``, the
+- the project's ``_gen.main.host(logic)`` builds its ComponentHost over
+  the scaffolded implementation (``logic_impl``'s ``*LogicImpl``, as the
+  project's ``__main__.py`` hands it), registering the domain on the
+  router;
+- its host answers Describe with ``_gen._descriptor.DESCRIPTOR``, the
   descriptor the CLI generated, unchanged (decision 14.42);
 - that descriptor is hand-replaceable: ``describe`` builds the same from the
-  dispatch ``main.register`` registers, with the descriptor's rules version
-  (a process manager's starting types given as generated).
+  dispatch ``_gen.main.register`` registers, with the descriptor's rules
+  version (a process manager's starting types given as generated).
 
     check_scaffold.py <project dir> <domain>
 
@@ -43,6 +45,18 @@ class _Recorder:
         return add
 
 
+def _logics(module) -> list:
+    """An instance of each ``*LogicImpl`` the scaffold wrote in ``module``,
+    in the order it declares them."""
+    return [
+        cls()
+        for name, cls in vars(module).items()
+        if name.endswith("LogicImpl")
+        and isinstance(cls, type)
+        and cls.__module__ == module.__name__
+    ]
+
+
 def check(project: pathlib.Path, domain: str) -> list[str]:
     src = project / "src"
     package = f"angzarr_{domain.replace('-', '_')}"
@@ -57,18 +71,19 @@ def check(project: pathlib.Path, domain: str) -> list[str]:
         except Exception as exc:  # noqa: BLE001 — reported, not raised
             problems.append(f"{name}: import failed: {exc!r}")
     try:
-        main = importlib.import_module(f"{package}.main")
-        host = main.host()
+        main = importlib.import_module(f"{package}._gen.main")
+        logics = _logics(importlib.import_module(f"{package}.logic_impl"))
+        host = main.host(*logics)
     except Exception as exc:  # noqa: BLE001 — reported, not raised
-        return [*problems, f"{package}.main: host() failed: {exc!r}"]
+        return [*problems, f"{package}._gen.main: host() failed: {exc!r}"]
     try:
-        descriptor = importlib.import_module(f"{package}._descriptor").DESCRIPTOR
+        descriptor = importlib.import_module(f"{package}._gen._descriptor").DESCRIPTOR
         if not descriptor.name:
             problems.append(f"{package}._descriptor: the descriptor names no component")
         if host.descriptor is not descriptor:
             problems.append(f"{package}.main: the host describes {host.descriptor!r}")
         recorder = _Recorder()
-        main.register(recorder)
+        main.register(recorder, *logics)
         for dispatch, generated in recorder.added:
             by_hand = describe(
                 dispatch,
