@@ -349,19 +349,17 @@ def _when_decode_payload(state: _State) -> None:
 
 @when("I attempt to decode")
 def _when_attempt_decode(state: _State) -> None:
-    """Attempt-to-decode — surface the real error vs None semantics.
+    """Attempt-to-decode goes through decode_event, as client-rust's does.
 
-    For an EventPage with no payload, decode_event returns None
-    (no exception). For a page with corrupted bytes, try_unpack raises
-    the decoder's DecodeError, recorded as the error. unpack raises
-    ValueError on type mismatch.
+    A page with no payload decodes to None (no exception). A payload of the
+    type whose bytes do not decode raises the decoder's DecodeError,
+    recorded as the error.
     """
     assert state.current_event is not None
-    if not state.current_event.HasField("payload"):
-        state.decode_is_none = True
-        return
     try:
-        state.decoded_msg = try_unpack(state.current_event.payload, _MSG_CLASS)
+        state.decoded_msg = decode_event(
+            state.current_event, _MSG_FULL_NAME, _MSG_CLASS
+        )
     except DecodeError as e:
         state.last_error = e
         return

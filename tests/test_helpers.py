@@ -280,16 +280,18 @@ class TestDecodeEvent:
         assert result.domain == "test"
         assert result.edition == "abc"
 
-    def test_returns_none_for_decode_failure(self) -> None:
-        """Returns None when decoding fails."""
+    def test_raises_decode_error_for_undecodable_payload(self) -> None:
+        """A payload whose type matches but whose bytes do not decode raises
+        the decoder's DecodeError: it is no mismatch, so no None."""
+        from google.protobuf.message import DecodeError
+
         from angzarr_client._pb import Cover
 
-        # Create page with matching type URL but invalid data
         page = EventPage(sequence=1)
-        page.payload.type_url = "type.googleapis.com/angzarr.Cover"
-        page.payload.value = b"invalid proto data that will fail to decode"
-        # Should return None, not raise
-        assert decode_event(page, "Cover", Cover) is None
+        page.payload.type_url = "type.googleapis.com/io.angzarr.v1.Cover"
+        page.payload.value = b"\xff\xff\xff\xff"
+        with pytest.raises(DecodeError):
+            decode_event(page, "io.angzarr.v1.Cover", Cover)
 
 
 class TestConstructionHelpers:
@@ -504,7 +506,9 @@ class TestAdditionalHelpers:
         assert full_type_url_for(Cover) == "/io.angzarr.v1.Cover"
         assert full_type_url is full_type_url_for
 
-    def test_decode_event_returns_none_on_unpack_failure(self, monkeypatch) -> None:
+    def test_decode_event_propagates_an_unpack_failure(self, monkeypatch) -> None:
+        import pytest
+
         from angzarr_client._pb import Cover, EventPage
         from angzarr_client.helpers import decode_event
 
@@ -514,9 +518,10 @@ class TestAdditionalHelpers:
         def boom(self, _msg):
             raise RuntimeError("decoding failed")
 
-        # Patch Unpack on the Any to force the except branch
+        # Whatever Unpack raises reaches the caller: nothing is swallowed.
         monkeypatch.setattr(type(page.payload), "Unpack", boom)
-        assert decode_event(page, "io.angzarr.v1.Cover", Cover) is None
+        with pytest.raises(RuntimeError, match="decoding failed"):
+            decode_event(page, "io.angzarr.v1.Cover", Cover)
 
 
 # Audit #86 reverted 2026-04-29: edition propagation moved to
