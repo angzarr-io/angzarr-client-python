@@ -5,6 +5,8 @@
   repository's codegen/ templates against it. ``UnclassifiedError``, the
   error business code raises for a failure it does not classify, is also
   here at the top level (decision 14.42).
+- ``Compensation``: a process manager's rollback, each step paired in code
+  with its undo (``angzarr_client.compensation``, decision 14.74).
 - ``ComponentHost`` hosts one component; ``describe`` builds a hand-written
   component's ``ComponentDescriptor`` from its dispatch table
   (``angzarr_client.descriptor``).
@@ -30,6 +32,7 @@ from .client import (
     TransportMode,
     resolve_ch_endpoint,
 )
+from .compensation import Compensation, UndoTargetsCommand
 from .descriptor import describe
 from .errors import (
     ClientError,
@@ -119,6 +122,8 @@ __all__ = [
     "CommandPage",
     "CommandRejectedError",
     "CommandResponse",
+    # Process-manager compensation
+    "Compensation",
     # Component host
     "ComponentHost",
     "ConfigurationError",
@@ -141,6 +146,7 @@ __all__ = [
     "TransportError",
     "TransportMode",
     "UnclassifiedError",
+    "UndoTargetsCommand",
     # Wrappers (user-facing object surface for framework protos)
     "Wrapped",
     # Identity

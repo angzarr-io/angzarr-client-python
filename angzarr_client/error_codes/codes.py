@@ -91,3 +91,8 @@ HOST_SERVICE_UNNAMED = "HOST_SERVICE_UNNAMED"
 HOST_ALREADY_STARTED = "HOST_ALREADY_STARTED"
 # A conflict resolution of UNSPECIFIED given to describe (details: component).
 DESCRIPTOR_RESOLUTION_UNSPECIFIED = "DESCRIPTOR_RESOLUTION_UNSPECIFIED"
+
+# Process-manager compensation (angzarr_client.compensation, decision 14.74)
+# A step's undo becomes a command, which its destination may refuse: a
+# warning when the step is registered (details: step, command).
+UNDO_TARGETS_COMMAND = "UNDO_TARGETS_COMMAND"

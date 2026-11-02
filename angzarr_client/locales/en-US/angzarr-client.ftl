@@ -41,3 +41,7 @@ GRPC_ERROR = grpc error
 HOST_SERVICE_UNNAMED = an application service needs its full service name
 HOST_ALREADY_STARTED = the host is already started
 DESCRIPTOR_RESOLUTION_UNSPECIFIED = component "{ $component }" lists a conflict resolution of UNSPECIFIED
+
+## Process-manager compensation
+
+UNDO_TARGETS_COMMAND = the undo of step "{ $step }" becomes { $command }, a command its destination may refuse

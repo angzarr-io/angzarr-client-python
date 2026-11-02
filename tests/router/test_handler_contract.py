@@ -40,7 +40,7 @@ from angzarr_client.router import (
 )
 
 from . import contract as fx
-from .gen import counter_pb2, order_pb2
+from .gen import compensation_pb2, counter_pb2, order_pb2
 
 scenarios(str(fx.FIXTURE.parent))
 
@@ -1331,3 +1331,149 @@ def _read_accepted(world, at):
 @then("business code read no clock of its own for it")
 def _no_clock(world):
     assert world.last().ctx.recorded_at == world.recorded_at
+
+
+# ===========================================================================
+# compensation.feature (decision 14.74): the client library's PM tooling
+# ===========================================================================
+
+
+class Shipment:
+    """One scenario: the shipment's state, which undo "reserve stock"
+    becomes, its compensation once registered, and what it recorded."""
+
+    def __init__(self) -> None:
+        self.state = compensation_pb2.ShipmentState()
+        self.restocks = False
+        self._compensation = None
+        self.recorded: list = []
+
+    def compensation(self):
+        """Its compensation, registered on first use (the shipment
+        starting)."""
+        if self._compensation is None:
+            self._compensation = fx.shipment_compensation(self.restocks)
+        return self._compensation
+
+    def complete(self, step: str) -> None:
+        if step == "reserve stock":
+            self.state.reservation_id = "r1"
+        elif step == "charge payment":
+            self.state.charge_id = "c1"
+        else:
+            raise AssertionError(f"no step {step!r}")
+
+
+@pytest.fixture
+def shipment():
+    return Shipment()
+
+
+def _event_text(event) -> str:
+    """An event as compensation.feature names it."""
+    name = type(event).__name__
+    if isinstance(event, compensation_pb2.ShipmentFailed):
+        return f'{name} "{event.reason}"'
+    if isinstance(event, compensation_pb2.CompensationFailed):
+        return f'{name} "{event.step}"'
+    return name
+
+
+def _listed(text: str) -> list[str]:
+    """``A, B and C`` (or ``A and B``, or ``A``) as its items."""
+    rest, _, last = text.rpartition(" and ")
+    return [*(item for item in rest.split(", ") if item), last]
+
+
+@given("the shipment process manager's steps, registered at startup")
+def _shipment_registered(shipment):
+    pass
+
+
+@given(
+    parsers.re(
+        r'"reserve stock" is registered with an undo that becomes "(?P<target>[^"]+)"$'
+    )
+)
+def _undo_becomes(shipment, target):
+    shipment.restocks = {
+        "test.compensation.RestockItems": True,
+        "test.compensation.ReleaseStock": False,
+    }[target]
+
+
+@given(
+    parsers.re(
+        r'the shipment has completed "(?P<first>[^"]+)"(?: and "(?P<second>[^"]+)")?$'
+    )
+)
+def _shipment_completed(shipment, first, second):
+    shipment.complete(first)
+    if second:
+        shipment.complete(second)
+
+
+@given("the shipment has completed no step")
+def _shipment_completed_none(shipment):
+    pass
+
+
+@given(parsers.re(r'the shipment has completed "(?P<done>[^"]+)" and rolled back$'))
+def _shipment_rolled_back(shipment, done):
+    shipment.complete(done)
+    shipment.state.failed = True
+
+
+@when(parsers.re(r'it rolls back because "(?P<reason>[^"]+)"$'))
+def _rolls_back(shipment, reason):
+    shipment.recorded = shipment.compensation().rollback(shipment.state, reason)
+
+
+@when('the reply completing "charge payment" arrives')
+def _reply_arrives(shipment):
+    charged = compensation_pb2.PaymentCharged(charge_id="c1")
+    shipment.recorded = shipment.compensation().reply(shipment.state, charged)
+
+
+@when("the shipment process manager starts")
+def _shipment_starts(shipment):
+    shipment.compensation()
+
+
+@when(
+    parsers.re(
+        r'the refusal of its "test\.compensation\.RestockItems" reaches the shipment$'
+    )
+)
+def _undo_refused(shipment):
+    event = shipment.compensation().undo_refused(
+        shipment.state, compensation_pb2.RestockItems
+    )
+    shipment.recorded = [] if event is None else [event]
+
+
+@then(parsers.re(r"it records (?P<events>.+?)(?:, in that order| alone)$"))
+def _records(shipment, events):
+    assert [_event_text(e) for e in shipment.recorded] == _listed(events)
+
+
+@then("registration reports no warning")
+def _no_warning(shipment):
+    assert shipment.compensation().warnings == ()
+
+
+@then(
+    parsers.re(
+        r'registration warns that the undo of "(?P<name>[^"]+)" targets the command "(?P<command>[^"]+)"$'
+    )
+)
+def _warns(shipment, name, command):
+    warned = [(w.step, w.command) for w in shipment.compensation().warnings]
+    assert warned == [(name, command)]
+
+
+@then(parsers.re(r'it records CompensationFailed for "(?P<name>[^"]+)"$'))
+def _compensation_failed(shipment, name):
+    assert [_event_text(e) for e in shipment.recorded] == [
+        f'CompensationFailed "{name}"'
+    ]

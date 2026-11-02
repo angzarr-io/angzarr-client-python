@@ -52,7 +52,11 @@ def test_fixture_messages_import_the_framework_from_the_package(tmp_path):
     (tmp_path / "gen").mkdir()
     (tmp_path / "gen" / "stale_pb2.py").write_text("")
     files = proto_build.generate_fixtures(tmp_path / "gen")
-    assert {f.name for f in files} == {"counter_pb2.py", "order_pb2.py"}
+    assert {f.name for f in files} == {
+        "compensation_pb2.py",
+        "counter_pb2.py",
+        "order_pb2.py",
+    }
     text = (tmp_path / "gen" / "counter_pb2.py").read_text()
     assert "from angzarr_client.proto.io.angzarr.v1 import options_pb2" in text
 

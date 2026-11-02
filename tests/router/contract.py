@@ -386,3 +386,51 @@ def described(dispatch, rules_version: str = TEST_RULES_VERSION) -> tuple:
 def log_for_itself(text: str) -> None:
     """Business code's own log line, never the answer's."""
     _log.info(text)
+
+
+# ---------------------------------------------------------------------------
+# compensation.feature: the shipment process manager (fixture/compensation.proto)
+# ---------------------------------------------------------------------------
+
+
+def shipment_compensation(restocks: bool = False):
+    """The shipment's steps, in order, as compensation.feature registers
+    them: "reserve stock" (undone by StockReleaseDue, which becomes
+    RestockItems, a command, where ``restocks``, else ReleaseStock, a fact)
+    and "charge payment" (undone by RefundDue, which becomes RefundPayment).
+    The state is the fixture's ShipmentState; ShipmentFailed is its failed
+    event."""
+    from angzarr_client import Compensation
+
+    from .gen import compensation_pb2 as c
+
+    reserve_undoes = c.RestockItems if restocks else c.ReleaseStock
+    return (
+        Compensation(
+            failed=lambda state, reason: c.ShipmentFailed(reason=reason),
+            rolled_back=lambda state: state.failed,
+            compensation_failed=lambda state, step: c.CompensationFailed(step=step),
+        )
+        .step(
+            "reserve stock",
+            completed_by=c.StockReserved,
+            undoes=reserve_undoes,
+            recorded=lambda state: (
+                c.StockReserved(reservation_id=state.reservation_id)
+                if state.reservation_id
+                else None
+            ),
+            undo=lambda reserved: c.StockReleaseDue(
+                reservation_id=reserved.reservation_id
+            ),
+        )
+        .step(
+            "charge payment",
+            completed_by=c.PaymentCharged,
+            undoes=c.RefundPayment,
+            recorded=lambda state: (
+                c.PaymentCharged(charge_id=state.charge_id) if state.charge_id else None
+            ),
+            undo=lambda charged: c.RefundDue(charge_id=charged.charge_id),
+        )
+    )
