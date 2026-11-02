@@ -64,7 +64,9 @@ ROUTER_REASON_DUPLICATE_COMPONENT = RouterReason.Name(
 
 # Child process (angzarr_client.child)
 # A line whose first word is angzarr-handshake but which is not a v1
-# handshake (details: line, its line ending removed; C-0756, decision 14.59).
+# handshake naming an absolute UTF-8 path (details: line, its line ending
+# removed, escaped when it is not UTF-8; C-0756, C-0760, decisions 14.59
+# and 14.62). run_child refuses a socket path that is not UTF-8 under it.
 HOST_REASON_HANDSHAKE_MALFORMED = HostReason.Name(
     HostReason.HOST_REASON_HANDSHAKE_MALFORMED
 )

@@ -163,11 +163,12 @@ point>`) and calls it over gRPC on a Unix socket. The child calls
 `run_child(host)` (`angzarr_client.child`) instead of `host.run()`:
 
 The launch protocol is angzarr-project's `docs/design/child-protocol.md`
-(decision 14.59), the same for every language; this package runs its
+(decisions 14.59 and 14.62), the same for every language; this package runs its
 scenarios, `parity/client/child.feature`, against `run_child`.
 
 - the socket is `$ANGZARR_SOCKET` (made absolute), else a fresh path in the
-  system temporary directory;
+  system temporary directory. It is UTF-8: given one that is not, the child
+  binds nothing and fails without a handshake;
 - once the host is SERVING, the child writes exactly one line to stdout,
   `angzarr-handshake v1 unix:<absolute-socket-path>`, then closes stdout.
   Nothing else ever goes to stdout: logs and stray prints go to stderr. A
@@ -179,7 +180,10 @@ A parent reads the line with `parse_handshake`: `None` for a line whose first
 word is not `angzarr-handshake` (a banner, which a parent skips), the address
 for a handshake, and a `ConfigurationError` under
 `HOST_REASON_HANDSHAKE_MALFORMED` (details `line`) for a line that starts
-`angzarr-handshake` but is not a v1 handshake. `v1` is the format version.
+`angzarr-handshake` but is not a v1 handshake, a path that is not UTF-8
+included. It takes the line as text or as the bytes read; a refused line of
+bytes that is not UTF-8 comes back with each byte outside printable ASCII,
+and each backslash, written `\xhh` (`escaped`). `v1` is the format version.
 
 ## Coordinator clients
 

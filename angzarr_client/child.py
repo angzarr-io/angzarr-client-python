@@ -11,7 +11,7 @@ The launch protocol (version 1)
 ------------------------------
 
 The protocol is angzarr-project's ``docs/design/child-protocol.md``
-(decision 14.59), the same for every language; ``parity/client/child.feature``
+(decisions 14.59 and 14.62), the same for every language; ``parity/client/child.feature``
 is its scenarios, which this package runs against :func:`run_child`. In
 short: once the host is SERVING (gRPC health, the overall server), the child
 writes one line to its stdout::
@@ -27,7 +27,9 @@ exits without writing the line failed to start; its stderr says why.
 
 - The socket path is ``socket_path`` when given, else the ``ANGZARR_SOCKET``
   environment variable (made absolute), else a fresh path in the system
-  temporary directory.
+  temporary directory. It is UTF-8: given one that is not, the child binds
+  nothing, writes no handshake and fails (``HOST_REASON_HANDSHAKE_MALFORMED``,
+  the line it would have written given back escaped).
 - The parent then calls ``ComponentService.Describe`` and the component's
   kind service (``CommandHandlerService.Handle`` for an aggregate) on that
   address.
@@ -38,8 +40,9 @@ exits without writing the line failed to start; its stderr says why.
 A parent reads the line with :func:`parse_handshake`, which classifies a
 line by its first word as the protocol does: not a handshake (``None``), a
 handshake (its address), or malformed (refused under
-``HOST_REASON_HANDSHAKE_MALFORMED``). ``v1`` is the format version, and a
-later format changes it.
+``HOST_REASON_HANDSHAKE_MALFORMED``), a path that is not UTF-8 included; it
+takes the line as text or as the bytes read. ``v1`` is the format version,
+and a later format changes it.
 """
 
 from __future__ import annotations
@@ -77,18 +80,47 @@ def handshake_line(address: str) -> str:
     return f"{HANDSHAKE_PREFIX} {PROTOCOL_VERSION} {address}\n"
 
 
-def parse_handshake(line: str) -> str | None:
+def escaped(raw: bytes) -> str:
+    """``raw`` as a refused line's text (the protocol's section 2): as it is
+    when it is UTF-8, else each byte outside printable ASCII, and each
+    backslash, written ``\\xhh``, so no byte is lost or decoded into
+    another character."""
+    try:
+        return raw.decode()
+    except UnicodeDecodeError:
+        return "".join(
+            chr(b) if 0x20 <= b <= 0x7E and b != 0x5C else f"\\x{b:02x}" for b in raw
+        )
+
+
+def _malformed(line: str) -> ConfigurationError:
+    return ConfigurationError(
+        codes.HOST_REASON_HANDSHAKE_MALFORMED, details={reason_args.LINE: line}
+    )
+
+
+def parse_handshake(line: str | bytes) -> str | None:
     """The address (``unix:<path>``) a handshake line announces, or ``None``
     for a line that is not a handshake: one whose first word (everything
     before its first space) is not ``angzarr-handshake``, the empty line
     included. Its line ending (LF or CR LF) is not part of it, and the path
-    is the rest of the line, spaces included.
+    is the rest of the line, spaces included. ``line`` is text, or the
+    bytes read, whose path must be UTF-8.
 
     A line whose first word is ``angzarr-handshake`` but which is not a v1
-    handshake naming an absolute Unix socket path raises
+    handshake naming an absolute UTF-8 Unix socket path raises
     :class:`~angzarr_client.host.ConfigurationError` with code
     ``HOST_REASON_HANDSHAKE_MALFORMED`` and details ``line``, the line with
-    its line ending removed: it is refused, never skipped."""
+    its line ending removed (:func:`escaped`, when it is bytes that are not
+    UTF-8): it is refused, never skipped."""
+    if isinstance(line, bytes):
+        raw = line.removesuffix(b"\n").removesuffix(b"\r")
+        if raw.partition(b" ")[0] != HANDSHAKE_PREFIX.encode():
+            return None
+        try:
+            line = raw.decode()
+        except UnicodeDecodeError:
+            raise _malformed(escaped(raw)) from None
     body = line.removesuffix("\n").removesuffix("\r")
     first, _, rest = body.partition(" ")
     if first != HANDSHAKE_PREFIX:
@@ -102,10 +134,7 @@ def parse_handshake(line: str) -> str | None:
         or not os.path.isabs(address.removeprefix(_UNIX))
         or "\n" in address
     ):
-        raise ConfigurationError(
-            codes.HOST_REASON_HANDSHAKE_MALFORMED,
-            details={reason_args.LINE: body},
-        )
+        raise _malformed(body)
     return address
 
 
@@ -140,6 +169,14 @@ def run_child(
     until stdin closes or SIGTERM / SIGINT, then stop within ``grace``
     seconds."""
     log = structlog.get_logger(__name__)
+    address = _UNIX + resolve_socket_path(socket_path)
+    try:
+        address.encode()
+    except UnicodeEncodeError:
+        # A path the os module gave as text with its undecodable bytes
+        # escaped: no handshake could name it, so nothing is bound.
+        line = handshake_line(address).encode(errors="surrogateescape")
+        raise _malformed(escaped(line.removesuffix(b"\n"))) from None
     # Keep the real stdout for the handshake alone; everything else written
     # to file descriptor 1 from here on (logs, stray prints) goes to stderr.
     sys.stdout.flush()
@@ -158,7 +195,7 @@ def run_child(
         target=_watch_stdin, args=(stopping,), name="angzarr-child-stdin", daemon=True
     ).start()
     try:
-        address = host.start(_UNIX + resolve_socket_path(socket_path))
+        address = host.start(address)
         # Python runs signal handlers on the main thread between bytecodes;
         # timed waits return to the interpreter so a signal is seen promptly.
         while host.health_status() != _SERVING:
