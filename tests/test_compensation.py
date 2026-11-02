@@ -19,9 +19,14 @@ def order() -> Compensation:
     undone by a fact (RefundPayment)."""
     return (
         Compensation(
-            failed=lambda state, reason: ("failed", reason),
+            # Each built from the state too: the PM's events carry its data.
+            failed=lambda state, reason: ("failed", reason, state.charge_id),
             rolled_back=lambda state: state.failed,
-            compensation_failed=lambda state, step: ("compensation-failed", step),
+            compensation_failed=lambda state, step: (
+                "compensation-failed",
+                step,
+                state.reservation_id,
+            ),
         )
         .step(
             "reserve",
@@ -43,12 +48,12 @@ def order() -> Compensation:
 def test_a_rollback_undoes_the_recorded_steps_newest_first_after_the_failure():
     both = c.ShipmentState(reservation_id="r", charge_id="c")
     assert order().rollback(both, "no") == [
-        ("failed", "no"),
+        ("failed", "no", "c"),
         "refund-due",
         "release-due",
     ]
     charged = c.ShipmentState(charge_id="c")
-    assert order().rollback(charged, "no") == [("failed", "no"), "refund-due"]
+    assert order().rollback(charged, "no") == [("failed", "no", "c"), "refund-due"]
 
 
 def test_a_reply_is_undone_only_once_rolled_back_and_only_for_its_step():
@@ -64,14 +69,16 @@ def test_a_reply_is_undone_only_once_rolled_back_and_only_for_its_step():
 
 
 def test_a_refused_undo_is_its_steps_compensation_failure():
-    state = c.ShipmentState()
+    state = c.ShipmentState(reservation_id="r")
     assert order().undo_refused(state, c.RefundPayment) == (
         "compensation-failed",
         "charge",
+        "r",
     )
     assert order().undo_refused(state, "test.compensation.ReleaseStock") == (
         "compensation-failed",
         "reserve",
+        "r",
     )
     assert order().undo_refused(state, c.RestockItems) is None
 
@@ -103,6 +110,9 @@ def test_registering_warns_of_each_undo_that_becomes_a_command_and_logs_it(caplo
     assert [r.getMessage() for r in caplog.records] == [
         str(w) for w in shipping.warnings
     ]
+    # Logged lazily: the warning itself is the record's argument, its text
+    # made only where a handler shows it.
+    assert [r.args for r in caplog.records] == [(w,) for w in shipping.warnings]
 
 
 def test_an_undo_to_a_message_no_command_entry_declares_is_not_warned_of():
