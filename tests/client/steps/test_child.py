@@ -1,5 +1,6 @@
 """Step defs for parity/client/child.feature: the child-process launch
-protocol (docs/design/child-protocol.md in angzarr-project, decision 14.59),
+protocol (docs/design/child-protocol.md in angzarr-project, decisions 14.59
+and 14.62),
 against this package's child shim, :func:`angzarr_client.child.run_child`,
 and its handshake parser, :func:`angzarr_client.child.parse_handshake`.
 
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import selectors
 import shutil
 import signal
@@ -211,6 +213,13 @@ def _names_socket(world: _World) -> None:
     world.socket_path = str(world.tmp / "child.sock")
 
 
+@given("a parent that names a socket path that is not UTF-8 in ANGZARR_SOCKET")
+def _names_socket_not_utf8(world: _World) -> None:
+    # The Latin-1 byte E9, held as the str the os module gives for it (its
+    # surrogate escape), which Popen hands the child as the byte again.
+    world.socket_path = os.fsdecode(os.fsencode(world.tmp) + b"/caf\xe9.sock")
+
+
 @given(
     parsers.parse(
         'a started child serving an aggregate component for domain "{domain}"'
@@ -264,6 +273,24 @@ def _sigterm(world: _World) -> None:
     world.finish()
 
 
+def _bytes(text: str) -> bytes:
+    """``text`` as the feature writes a line of bytes: ``\\xhh`` the byte
+    hh, every other character itself, in UTF-8."""
+    parts = re.split(r"(\\x[0-9a-fA-F]{2})", text)
+    return b"".join(
+        bytes([int(p[2:], 16)]) if re.fullmatch(r"\\x[0-9a-fA-F]{2}", p) else p.encode()
+        for p in parts
+    )
+
+
+@when(parsers.re(r'the stdout line of bytes "(?P<text>[^"]*)" is read'))
+def _read_bytes(world: _World, text: str) -> None:
+    try:
+        world.parsed = parse_handshake(_bytes(text))
+    except ConfigurationError as e:
+        world.error = e
+
+
 @when(parsers.re(r'the stdout line "(?P<line>[^"]*)" is read'))
 def _read_line(world: _World, line: str) -> None:
     try:
@@ -300,7 +327,8 @@ def _health_is(world: _World, status: str) -> None:
 
 @then("the child has written no handshake line on stdout")
 def _no_handshake_yet(world: _World) -> None:
-    world.read_now()
+    if world.exit_code is None:
+        world.read_now()
     pending = [world.buffer.decode()] if world.buffer else []
     assert not [line for line in world.lines + pending if _is_handshake_line(line)]
 
@@ -310,6 +338,12 @@ def _only_one(world: _World) -> None:
     assert world.exit_code == 0, world.stderr
     after = world.lines[world.handshake_at + 1 :]
     assert not [line for line in after if _is_handshake_line(line)], after
+
+
+@then("the child exits with a status other than 0")
+def _exits_nonzero(world: _World) -> None:
+    world.finish()
+    assert world.exit_code not in (None, 0), world.stderr
 
 
 @then(parsers.parse("the child exits with status {code:d}"))

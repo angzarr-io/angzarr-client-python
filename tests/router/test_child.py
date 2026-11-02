@@ -267,6 +267,57 @@ def test_a_child_that_cannot_bind_exits_without_a_handshake(tmp_path):
     assert proc.stdout == b""
 
 
+def test_a_child_given_a_socket_path_not_utf8_binds_nothing_and_exits(tmp_path):
+    # No handshake could name the path (decision 14.62): the child refuses
+    # it before it binds, under the malformed handshake's key.
+    raw = os.fsencode(tmp_path) + b"/caf\xe9.sock"
+    env = dict(os.environ, **{SOCKET_ENV: os.fsdecode(raw)})
+    proc = subprocess.run(
+        [sys.executable, "-m", "tests.router.child_counter"],
+        cwd=REPO,
+        env=env,
+        stdin=subprocess.PIPE,
+        capture_output=True,
+        timeout=STARTUP_TIMEOUT,
+    )
+    assert proc.returncode != 0
+    assert proc.stdout == b""
+    assert not os.path.lexists(raw)
+    assert b"HOST_REASON_HANDSHAKE_MALFORMED" in proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("raw", "line"),
+    [
+        (
+            b"angzarr-handshake v1 unix:/run/caf\xe9.sock\n",
+            "angzarr-handshake v1 unix:/run/caf\\xe9.sock",
+        ),
+        (
+            b"angzarr-handshake v1 unix:/run/a\\b\t\x7f~\xff.sock\r\n",
+            "angzarr-handshake v1 unix:/run/a\\x5cb\\x09\\x7f~\\xff.sock",
+        ),
+        (
+            b"angzarr-handshake v2 unix:/run/a\\b\n",
+            "angzarr-handshake v2 unix:/run/a\\b",
+        ),
+    ],
+)
+def test_a_line_of_bytes_not_utf8_is_malformed_and_given_back_escaped(raw, line):
+    with pytest.raises(ConfigurationError) as info:
+        parse_handshake(raw)
+    assert info.value.code == "HOST_REASON_HANDSHAKE_MALFORMED"
+    assert info.value.details == {"line": line}
+
+
+def test_a_line_of_bytes_is_read_as_its_utf8_text():
+    assert parse_handshake(b"angzarr-handshake v1 unix:/run/caf\xc3\xa9.sock\r\n") == (
+        "unix:/run/caf\u00e9.sock"
+    )
+    assert parse_handshake(b"caf\xe9 starting\n") is None
+    assert parse_handshake(b"\n") is None
+
+
 @pytest.mark.timeout(30)
 def test_the_child_closes_stdout_after_the_handshake(child):
     # End of file on stdout while the child still serves: read() returns
