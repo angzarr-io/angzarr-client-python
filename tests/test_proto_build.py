@@ -141,15 +141,15 @@ def test_each_keys_status_is_generated_beside_its_args(tmp_path):
     # which never travels as a status.
     proto_build.generate_protos(tmp_path / "proto")
     core = runpy.run_path(str(tmp_path / "proto" / "io/angzarr/v1/reason_args.py"))
-    assert core["STATUS"]["ROUTER_REASON_PERSISTED_EVENT_CORRUPT"] == 15
-    assert core["STATUS"]["ROUTER_REASON_NO_COMPONENT_OF_KIND"] == 12
-    assert core["STATUS"]["COORDINATOR_REASON_EDITION_NOT_FORKED"] == 9
-    assert core["STATUS"]["COORDINATOR_REASON_MISSING_RULES_VERSION"] is None
-    assert set(core["STATUS"]) == set(core["ARGS"])
+    assert core["STATUSES"]["ROUTER_REASON_PERSISTED_EVENT_CORRUPT"] == 15
+    assert core["STATUSES"]["ROUTER_REASON_NO_COMPONENT_OF_KIND"] == 12
+    assert core["STATUSES"]["COORDINATOR_REASON_EDITION_NOT_FORKED"] == 9
+    assert core["STATUSES"]["COORDINATOR_REASON_MISSING_RULES_VERSION"] is None
+    assert set(core["STATUSES"]) == set(core["ARGS"])
     embedded = runpy.run_path(
         str(tmp_path / "proto" / "io/angzarr/transport/embedded/v1/reason_args.py")
     )
-    assert embedded["STATUS"]["HOST_REASON_PROBE_INPUT"] == 3
+    assert embedded["STATUSES"]["HOST_REASON_PROBE_INPUT"] == 3
 
 
 def test_a_live_key_without_its_status_fails_the_build():

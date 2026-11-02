@@ -224,6 +224,10 @@ def test_the_generated_args_are_the_descriptors():
 
 def test_every_key_declares_a_status_or_is_a_readiness_refusal():
     # Decision 14.65: one table per package, generated from the options.
-    status = {**reason_args.STATUS, **embedded_args.STATUS, **distributed_args.STATUS}
+    status = {
+        **reason_args.STATUSES,
+        **embedded_args.STATUSES,
+        **distributed_args.STATUSES,
+    }
     assert set(status) == set(_ARGS)
     assert {s for s in status.values() if s is not None} <= {3, 9, 10, 12, 13, 14, 15}

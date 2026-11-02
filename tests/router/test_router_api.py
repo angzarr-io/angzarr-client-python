@@ -355,9 +355,10 @@ def test_an_undecodable_starting_state_is_a_corrupt_persisted_event():
     request.events.snapshot.state.type_url = "/test.counter.CounterState"
     request.events.snapshot.state.value = b"\xff\xff\xff"
     err = _raises(_aggregate(lambda *_: None).dispatch, request)
+    # DATA_LOSS, the key's declared status (decision 14.65).
     assert (err.code, err.grpc, err.extras) == (
         "ROUTER_REASON_PERSISTED_EVENT_CORRUPT",
-        GrpcCode.INTERNAL,
+        GrpcCode.DATA_LOSS,
         {"type_url": "/test.counter.CounterState"},
     )
 
@@ -1023,7 +1024,7 @@ def test_every_router_key_is_raised_under_its_declared_status():
 
     for key in reason_args.ARGS:
         if key.startswith("ROUTER_REASON_"):
-            assert CodedError(key).grpc == reason_args.STATUS[key], key
+            assert CodedError(key).grpc == reason_args.STATUSES[key], key
     assert CodedError("A_HANDLERS_OWN_KEY").grpc == GrpcCode.INTERNAL
     assert CodedError("ROUTER_REASON_NO_COMPONENT_OF_KIND", GrpcCode.INTERNAL).grpc == (
         GrpcCode.INTERNAL

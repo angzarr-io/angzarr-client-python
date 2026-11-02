@@ -149,7 +149,7 @@ class _Dispatcher:
         self._log = logger
 
     async def call(self, context, fn: Callable, request):
-        from .router import CodedError, GrpcCode
+        from .router import CodedError
 
         loop = asyncio.get_running_loop()
         try:
@@ -162,7 +162,7 @@ class _Dispatcher:
             self._log.error("dispatch_failed", error=str(exc))
             failure = CodedError(
                 codes.ROUTER_REASON_UNHANDLED_HANDLER_ERROR,
-                GrpcCode.INTERNAL,
+                None,
                 {reason_args.CAUSE: codes.ROUTER_REASON_HANDLER_PANICKED},
             )
         details = failure.status().SerializeToString()

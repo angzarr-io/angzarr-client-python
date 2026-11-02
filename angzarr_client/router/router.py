@@ -13,7 +13,6 @@ from .errors import (
     NO_COMPONENT_OF_KIND,
     NO_HANDLERS_REGISTERED,
     CodedError,
-    GrpcCode,
 )
 
 if TYPE_CHECKING:
@@ -71,7 +70,7 @@ class Router:
         if component is None:
             raise CodedError(NO_HANDLERS_REGISTERED)
         if component.kind not in kinds:
-            raise CodedError(NO_COMPONENT_OF_KIND, GrpcCode.UNIMPLEMENTED)
+            raise CodedError(NO_COMPONENT_OF_KIND)
         return component
 
     def dispatch(self, request: types_pb2.ContextualCommand):

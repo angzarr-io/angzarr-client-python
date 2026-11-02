@@ -104,21 +104,32 @@ def _check(status: int, allowed: frozenset, what: str) -> int:
     return status
 
 
+def declared_status(code: str) -> int:
+    """The status a key travels with: a spec key's as its
+    ``(io.angzarr.v1.reason)`` option declares it (generated into
+    ``reason_args.STATUSES``; decision 14.65), INTERNAL for any other code (a
+    handler's own, under a bug) and for a readiness key, which never travels
+    as a status."""
+    return reason_args.STATUSES.get(code) or GrpcCode.INTERNAL
+
+
 class CodedError(Exception):
     """A key (``code``), a gRPC status (``grpc``) and an argument map
     (``extras``), and for a typed refusal the refusal object (``refusal``,
     an Any). Its text is the code then `` name=value`` per arg; English is
-    rendered only where it is shown, from a catalog keyed by the code."""
+    rendered only where it is shown, from a catalog keyed by the code. The
+    status, unless given, is the code's declared one
+    (:func:`declared_status`)."""
 
     def __init__(
         self,
         code: str = "",
-        grpc: int = GrpcCode.INTERNAL,
+        grpc: int | None = None,
         extras: dict[str, str] | None = None,
         refusal: any_pb2.Any | None = None,
     ):
         self.code = code
-        self.grpc = int(grpc)
+        self.grpc = int(declared_status(code) if grpc is None else grpc)
         self.extras = dict(extras or {})
         self.refusal = refusal
         super().__init__(display(code, self.extras))
@@ -184,7 +195,7 @@ class Bug(CodedError):
 
     def __init__(self, key: str, **args: object) -> None:
         cause = flatten(reason_args.CAUSE, key, _strings(args))
-        super().__init__(UNHANDLED_HANDLER_ERROR, GrpcCode.INTERNAL, cause)
+        super().__init__(UNHANDLED_HANDLER_ERROR, None, cause)
 
 
 class RetryableBug(CodedError):
@@ -227,7 +238,7 @@ def any_decode_error(type_url: str, cause: BaseException) -> CodedError:
     own text carried verbatim as ``ext_err_txt``."""
     return CodedError(
         ANY_DECODE_FAILED,
-        GrpcCode.INTERNAL,
+        None,
         {
             reason_args.MESSAGE_TYPE: type_name(type_url),
             reason_args.EXT_ERR_TXT: str(cause),
@@ -238,7 +249,7 @@ def any_decode_error(type_url: str, cause: BaseException) -> CodedError:
 def unknown_type(code: str, type_url: str) -> CodedError:
     """A type no handler claims, refused naming the type the router was
     given: the coordinator adds the type as sent (decision 14.39)."""
-    return CodedError(code, GrpcCode.INTERNAL, {reason_args.TYPE_URL: type_url})
+    return CodedError(code, None, {reason_args.TYPE_URL: type_url})
 
 
 def escaped(exc: Exception) -> CodedError:
