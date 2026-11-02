@@ -1347,6 +1347,10 @@ class Shipment:
         self.restocks = False
         self._compensation = None
         self.recorded: list = []
+        # A refusal's handling that records nothing is dead-lettered: a
+        # handling either records events or is dead-lettered, never both
+        # (decision 38 (a)).
+        self.dead_lettered = False
 
     def compensation(self):
         """Its compensation, registered on first use (the shipment
@@ -1450,6 +1454,17 @@ def _undo_refused(shipment):
         shipment.state, compensation_pb2.RestockItems
     )
     shipment.recorded = [] if event is None else [event]
+    shipment.dead_lettered = event is None
+
+
+@then("the handling succeeds")
+def _handling_succeeds(shipment):
+    assert shipment.recorded, "the handling recorded nothing"
+
+
+@then("nothing is dead-lettered for the refusal")
+def _nothing_dead_lettered(shipment):
+    assert not shipment.dead_lettered
 
 
 @then(parsers.re(r"it records (?P<events>.+?)(?:, in that order| alone)$"))
