@@ -105,17 +105,20 @@ def decode_event(page: EventPage, full_type_name: str, msg_class: type[T]) -> T 
     ``EventPage(page).decode_typed(msg_class)`` (derives the name from
     ``msg_class.DESCRIPTOR.full_name``); use this free function when the
     type name is a runtime variable.
+
+    Returns None when there is no page or payload, or the type does not
+    match. A payload whose type matches but whose bytes do not decode is an
+    error, not a mismatch: the decoder's
+    ``google.protobuf.message.DecodeError`` is raised, as ``try_unpack``
+    and ``unpack`` raise it.
     """
     if page is None or not page.HasField("payload"):
         return None
     if not type_url_matches(page.payload.type_url, full_type_name):
         return None
-    try:
-        msg = msg_class()
-        page.payload.Unpack(msg)
-        return msg
-    except Exception:  # noqa: BLE001 — undecodable payload decodes to None
-        return None
+    msg = msg_class()
+    page.payload.Unpack(msg)
+    return msg
 
 
 # Type URL helpers
