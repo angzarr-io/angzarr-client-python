@@ -37,6 +37,16 @@ from angzarr_client.router import (
 )
 from angzarr_client.router import errors as router_errors
 from angzarr_client.router.context import book_context
+from angzarr_client.validation import (
+    require_exists,
+    require_non_negative,
+    require_not_empty,
+    require_not_empty_str,
+    require_not_exists,
+    require_positive,
+    require_status,
+    require_status_not,
+)
 
 from .contract import cover_of
 from .gen import counter_pb2, order_pb2
@@ -322,6 +332,69 @@ def test_a_coded_error_escapes_as_itself():
     assert _raises(_aggregate(_raising(rejection)).dispatch, _command()) is rejection
 
 
+# Each validation helper failing inside a handler, and the rejection the
+# router answers for it: the helper's key, status and args, never a panic.
+_FAILING_HELPERS = [
+    (
+        lambda: require_exists(False, "player lookup"),
+        ("ENTITY_NOT_FOUND", GrpcCode.NOT_FOUND, {"context": "player lookup"}),
+    ),
+    (
+        lambda: require_not_exists(True, "player create"),
+        (
+            "ENTITY_ALREADY_EXISTS",
+            GrpcCode.FAILED_PRECONDITION,
+            {"context": "player create"},
+        ),
+    ),
+    (
+        lambda: require_positive(0, "amount"),
+        ("VALUE_NOT_POSITIVE", GrpcCode.INVALID_ARGUMENT, {"field": "amount"}),
+    ),
+    (
+        lambda: require_non_negative(-1, "balance"),
+        ("VALUE_NOT_NON_NEGATIVE", GrpcCode.INVALID_ARGUMENT, {"field": "balance"}),
+    ),
+    (
+        lambda: require_not_empty([], "items"),
+        ("COLLECTION_EMPTY", GrpcCode.INVALID_ARGUMENT, {"field": "items"}),
+    ),
+    (
+        lambda: require_not_empty_str("", "name"),
+        ("VALUE_EMPTY", GrpcCode.INVALID_ARGUMENT, {"field": "name"}),
+    ),
+    (
+        lambda: require_status("pending", "active", "must be active"),
+        (
+            "STATUS_MISMATCH",
+            GrpcCode.FAILED_PRECONDITION,
+            {"context": "must be active"},
+        ),
+    ),
+    (
+        lambda: require_status_not("closed", "closed", "already closed"),
+        (
+            "STATUS_FORBIDDEN",
+            GrpcCode.FAILED_PRECONDITION,
+            {"context": "already closed"},
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("helper", "answered"),
+    _FAILING_HELPERS,
+    ids=[answered[0] for _, answered in _FAILING_HELPERS],
+)
+def test_a_failing_validation_helper_is_answered_as_its_rejection(helper, answered):
+    def handler(*_args):
+        helper()
+
+    err = _raises(_aggregate(handler).dispatch, _command())
+    assert (err.code, err.grpc, err.extras) == answered
+
+
 def test_an_interrupt_is_not_answered():
     with pytest.raises(KeyboardInterrupt):
         _aggregate(_raising(KeyboardInterrupt())).dispatch(_command())
@@ -551,8 +624,9 @@ def test_a_policy_handler_registered_with_on_event_reads_the_source_cover():
     seen = []
     policy = PolicyDispatch("P", "order", "inventory").on_event(
         _INCREASED,
-        lambda event, ctx: seen.append((event, ctx.cover, current_page().sequence))
-        or [],
+        lambda event, ctx: (
+            seen.append((event, ctx.cover, current_page().sequence)) or []
+        ),
     )
     router = Router()
     router.register_policy(policy)
