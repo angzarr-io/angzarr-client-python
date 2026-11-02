@@ -121,6 +121,7 @@ markers = [
     "conflict_nonce: handling.feature, the AGGREGATE_HANDLES conflict nonce",
     "context: context.feature, facts and handler context",
     "counter: counter_dispatch.feature, the CounterAggregate",
+    "divergence(name, reason): a scenario where Python does other than the spec (tests/client/conftest.py, DIVERGENCES)",
     "describe: handling.feature, one component per business process",
     "error_keys: handling.feature, errors as a key and its args",
     "folding: handling.feature, folding every page given",

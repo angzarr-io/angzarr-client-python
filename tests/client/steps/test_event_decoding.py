@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 import pytest
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 from google.protobuf.any_pb2 import Any as ProtoAny
+from google.protobuf.message import DecodeError
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.protobuf.wrappers_pb2 import StringValue
 from pytest_bdd import given, parsers, scenarios, then, when
@@ -49,6 +50,9 @@ scenarios("parity/client/event_decoding.feature")
 _MSG_CLASS = StringValue
 _MSG_TYPE_URL = full_type_url_for(_MSG_CLASS)
 _MSG_FULL_NAME = _MSG_CLASS.DESCRIPTOR.full_name
+
+# A payload no protobuf decoder accepts (C-0376).
+_CORRUPTED_BYTES = b"\xff\xff\xff\xff"
 
 
 def _make_event_page(
@@ -171,11 +175,9 @@ def _given_empty_payload(state: _State) -> None:
 
 @given("an event with corrupted payload bytes")
 def _given_corrupted_payload(state: _State) -> None:
-    # Random bytes that aren't a valid encoding of StringValue's single field.
-    # StringValue actually accepts almost anything (since unknown fields are
-    # tolerated), so we use a pattern that's still parseable but meaningless;
-    # the cucumber assertion doesn't actually require a parse error.
-    state.current_event = _make_event_page(value=b"\xff\xff\xff\xff")
+    # Not a protobuf encoding of anything: 0xff starts a varint key that the
+    # four bytes never finish, so the decoder rejects the wire format.
+    state.current_event = _make_event_page(value=_CORRUPTED_BYTES)
 
 
 @given("an EventPage with payload = None")
@@ -357,8 +359,7 @@ def _when_attempt_decode(state: _State) -> None:
     if not state.current_event.HasField("payload"):
         state.decode_is_none = True
         return
-    # Try to decode — corrupted bytes still parse for StringValue's
-    # tolerant grammar, so we use try_unpack and let it return whatever.
+    # try_unpack answers None for a payload the decoder rejects.
     state.decoded_msg = try_unpack(state.current_event.payload, _MSG_CLASS)
     if state.decoded_msg is None:
         state.decode_is_none = True
@@ -540,19 +541,21 @@ def _then_no_error_empty_proto(state: _State) -> None:
 
 @then("decoding should fail")
 def _then_decoding_fails(state: _State) -> None:
-    """For corrupted bytes — but StringValue is permissive enough that
-    even garbage bytes parse without error. Surface this as a finding
-    if the corrupted-bytes scenario is critical."""
-    # Asserts nothing: StringValue's tolerant parsing may leave the decoded
-    # message set and no error recorded, a real distinction between Python
-    # (permissive) and Rust (prost is stricter for unknown wire types).
+    assert state.decoded_msg is None
+    assert state.decode_is_none
+    # The failure is the decoder's: upb rejects the bytes outright.
+    assert state.current_event is not None
+    with pytest.raises(DecodeError, match="Wire format was corrupt"):
+        _MSG_CLASS().ParseFromString(state.current_event.payload.value)
 
 
 @then("an error should indicate deserialization failure")
 def _then_error_deserialization(state: _State) -> None:
-    # See _then_decoding_fails — StringValue permissiveness means this
-    # often doesn't actually error. Permissive assertion.
-    pass
+    # A divergence (C-0376 in tests/client/conftest.py's DIVERGENCES): the
+    # decoder's DecodeError never reaches the caller; try_unpack answers
+    # None and no error is recorded.
+    assert state.last_error is None
+    assert state.decode_is_none
 
 
 @then("no crash should occur")
