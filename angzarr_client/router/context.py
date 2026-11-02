@@ -94,6 +94,24 @@ class CommandContext:
     fact_origin: types_pb2.FactOrigin | None = None
     recorded_at: object | None = None
 
+    def event_meta(self, rules_version: str) -> types_pb2.EventMeta:
+        """The metadata every event of this decision is stamped with
+        (types.proto, EventMeta), under ``rules_version``: its causation
+        (the input's command id), its fact origin and correlation, and the
+        instant it is recorded at. The coordinator stamps the events it
+        keeps with it; the router folds the decision's own events with it,
+        so an applier reads at decide time what replay hands it."""
+        meta = types_pb2.EventMeta(rules_version=rules_version)
+        for name, value in (
+            ("command_id", self.command_id),
+            ("fact", self.fact_origin),
+            ("correlation_id", self.correlation_id),
+            ("recorded_at", self.recorded_at),
+        ):
+            if value is not None:
+                getattr(meta, name).CopyFrom(value)
+        return meta
+
 
 def book_context(book: types_pb2.CommandBook, next_sequence: int = 0) -> CommandContext:
     """The CommandContext of an input's CommandBook: its cover, resolved
@@ -143,7 +161,9 @@ class PageContext:
     it carries none), the page's sequence and meta. A command handler sees
     its command's cover; an applier or projector fold its event's book cover
     and sequence; a policy handler the source cover and its trigger's
-    sequence."""
+    sequence. An applier sees an event's meta as its coordinator stamps it,
+    at decide time (the decision's own events, folded with
+    :meth:`CommandContext.event_meta`) and on replay alike."""
 
     cover: types_pb2.Cover | None = None
     sequence: int = 0

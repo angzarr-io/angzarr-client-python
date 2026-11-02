@@ -168,10 +168,14 @@ class AggregateDispatch:
 
         out = call(PageContext(ctx.cover), decide, state, ctx)
         head = _copy(state) if before is not None else None
+        # The decision's own events fold as they will be persisted: at the
+        # sequences they will get, with the meta the coordinator will stamp.
+        meta = ctx.event_meta(self.rules_version)
         emitted = [types_pb2.EventPage() for _ in out.pages]
         for offset, (copy, page) in enumerate(zip(emitted, out.pages)):
             copy.CopyFrom(page)
             copy.sequence = events.next_sequence + offset
+            copy.meta.CopyFrom(meta)
         fold(state, emitted, cover, appliers, FOLD_FAILED_EMITTED)
 
         resp = command_handler_pb2.CommandHandlerResponse(
