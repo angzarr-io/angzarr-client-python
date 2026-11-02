@@ -16,6 +16,7 @@ from angzarr_client import (
     GRPCError,
     QueryClient,
 )
+from angzarr_client.proto.io.angzarr.transport.distributed.v1 import query_pb2
 from angzarr_client.proto.io.angzarr.v1 import types_pb2
 
 _FLOW = uuid.UUID("0190a0b0-0000-7000-8000-000000000001")
@@ -41,7 +42,7 @@ def test_get_correlated_events_sends_the_correlation_and_drains_the_stream():
 
     assert client.get_correlated_events(_FLOW) == books
     ((request, metadata),) = stub.requests
-    assert request == types_pb2.CorrelationQuery(
+    assert request == query_pb2.CorrelationQuery(
         correlation_id=types_pb2.UUID(value=_FLOW.bytes)
     )
     assert metadata["x-correlation-id"] == str(_FLOW)

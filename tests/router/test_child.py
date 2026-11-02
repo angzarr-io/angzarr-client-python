@@ -23,12 +23,12 @@ from angzarr_client.child import (
     parse_handshake,
 )
 from angzarr_client.host import ConfigurationError
-from angzarr_client.proto.io.angzarr.v1 import (
+from angzarr_client.proto.io.angzarr.component.v1 import (
     command_handler_pb2_grpc,
     component_pb2,
     component_pb2_grpc,
-    types_pb2,
 )
+from angzarr_client.proto.io.angzarr.v1 import types_pb2
 
 from . import builders
 from .builders import TEST_RULES_VERSION

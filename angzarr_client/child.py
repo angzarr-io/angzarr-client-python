@@ -59,18 +59,28 @@ from grpc_health.v1 import health_pb2
 
 from .error_codes import codes
 from .host import ComponentHost, ConfigurationError
-from .proto.io.angzarr.v1 import reason_args
+from .proto.io.angzarr.transport.embedded.v1 import child_protocol_pb2, reason_args
+
+#: The child launch protocol's constants: the spec's, read from the
+#: ``(child_protocol)`` option of the local-process transport's
+#: child_protocol.proto (decision 14.64), never typed here.
+_PROTOCOL = child_protocol_pb2.DESCRIPTOR.GetOptions().Extensions[
+    child_protocol_pb2.child_protocol
+]
 
 #: The environment variable naming the socket path the parent chose.
-SOCKET_ENV = "ANGZARR_SOCKET"
+SOCKET_ENV = _PROTOCOL.socket_env
 
 #: The handshake line's first word.
-HANDSHAKE_PREFIX = "angzarr-handshake"
+HANDSHAKE_PREFIX = _PROTOCOL.handshake_prefix
 
 #: The handshake format version this package writes and reads.
-PROTOCOL_VERSION = "v1"
+PROTOCOL_VERSION = _PROTOCOL.protocol_version
 
-_UNIX = "unix:"
+#: The scheme before the socket path a handshake names.
+ADDRESS_SCHEME = _PROTOCOL.address_scheme
+
+_UNIX = ADDRESS_SCHEME
 _SERVING = health_pb2.HealthCheckResponse.SERVING
 
 

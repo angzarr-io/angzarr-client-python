@@ -7,6 +7,9 @@ codes are framework reason keys, each named by the generated reason enum
 value it is, its English the spec's catalog (decision 14.60).
 """
 
+from ..proto.io.angzarr.transport.embedded.v1.reasons_pb2 import (
+    HostReason as ChildReason,
+)
 from ..proto.io.angzarr.v1.reasons_pb2 import HostReason, RouterReason
 
 # Validation
@@ -67,8 +70,9 @@ ROUTER_REASON_DUPLICATE_COMPONENT = RouterReason.Name(
 # handshake naming an absolute UTF-8 path (details: line, its line ending
 # removed, escaped when it is not UTF-8; C-0756, C-0760, decisions 14.59
 # and 14.62). run_child refuses a socket path that is not UTF-8 under it.
-HOST_REASON_HANDSHAKE_MALFORMED = HostReason.Name(
-    HostReason.HOST_REASON_HANDSHAKE_MALFORMED
+# A child's keys are the local-process transport's (decision 14.64).
+HOST_REASON_HANDSHAKE_MALFORMED = ChildReason.Name(
+    ChildReason.HOST_REASON_HANDSHAKE_MALFORMED
 )
 
 # Component descriptors (angzarr_client.descriptor, ComponentHost)

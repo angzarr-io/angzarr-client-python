@@ -9,18 +9,46 @@ import pytest
 
 from angzarr_client import diagnostic
 from angzarr_client.error_codes import codes
+from angzarr_client.proto.io.angzarr.transport.distributed.v1 import (
+    reason_args as distributed_args,
+)
+from angzarr_client.proto.io.angzarr.transport.distributed.v1 import (
+    reasons_pb2 as distributed_reasons,
+)
+from angzarr_client.proto.io.angzarr.transport.embedded.v1 import (
+    reason_args as embedded_args,
+)
+from angzarr_client.proto.io.angzarr.transport.embedded.v1 import (
+    reasons_pb2 as embedded_reasons,
+)
 from angzarr_client.proto.io.angzarr.v1 import reason_args, reasons_pb2
 
 _VARIABLE = re.compile(r"\$([A-Za-z][A-Za-z0-9_-]*)")
 
+# Every package's key enums (decision 14.64): core's three, then each
+# transport's.
+_ENUMS = (
+    reasons_pb2.RouterReason,
+    reasons_pb2.HostReason,
+    reasons_pb2.CoordinatorReason,
+    embedded_reasons.HostReason,
+    distributed_reasons.CoordinatorReason,
+)
+
+# Every key's args, every package's.
+_ARGS = {**reason_args.ARGS, **embedded_args.ARGS, **distributed_args.ARGS}
+
 
 def _live_keys() -> list[str]:
-    enums = (
-        reasons_pb2.RouterReason,
-        reasons_pb2.HostReason,
-        reasons_pb2.CoordinatorReason,
-    )
-    return [v.name for e in enums for v in e.DESCRIPTOR.values if v.number != 0]
+    return [v.name for e in _ENUMS for v in e.DESCRIPTOR.values if v.number != 0]
+
+
+def _spec() -> dict[str, str]:
+    return {
+        key: text
+        for path in diagnostic.SPEC_CATALOGS
+        for key, text in diagnostic._catalog(path).items()
+    }
 
 
 def _variables(pattern: str) -> set[str]:
@@ -137,26 +165,36 @@ def test_render_uses_the_catalogs_and_falls_back_to_the_text():
 # --- the catalogs ------------------------------------------------------------------
 
 
-def test_the_spec_catalog_has_a_message_for_every_live_key_and_no_other():
-    spec = diagnostic._catalog(diagnostic.SPEC_CATALOG)
-    assert set(spec) == set(_live_keys())
+def test_the_spec_catalogs_have_a_message_for_every_live_key_and_no_other():
+    assert set(_spec()) == set(_live_keys())
+    assert len(_spec()) == len(_live_keys()), "a key in two catalogs"
+
+
+def test_each_packages_catalog_holds_its_own_keys():
+    core, embedded, distributed = (
+        set(diagnostic._catalog(path)) for path in diagnostic.SPEC_CATALOGS
+    )
+    assert core == set(reason_args.ARGS)
+    assert embedded == set(embedded_args.ARGS)
+    assert distributed == set(distributed_args.ARGS)
+    assert "HOST_REASON_HANDSHAKE_MALFORMED" in embedded
+    assert "COORDINATOR_REASON_PAYLOAD_UNAVAILABLE" in distributed
 
 
 def test_every_spec_message_names_only_args_its_key_declares():
-    spec = diagnostic._catalog(diagnostic.SPEC_CATALOG)
-    for key, pattern in spec.items():
-        assert _variables(pattern) <= set(reason_args.ARGS[key]), key
+    for key, pattern in _spec().items():
+        assert _variables(pattern) <= set(_ARGS[key]), key
 
 
 def test_every_spec_message_renders_with_its_declared_args():
-    for key, args in reason_args.ARGS.items():
+    for key, args in _ARGS.items():
         text = diagnostic.render(key, {a: "2" for a in args})
         assert "{$" not in text and text, key
 
 
 def _own_codes() -> set[str]:
     values = {v for k, v in vars(codes).items() if k.isupper() and isinstance(v, str)}
-    return {v for v in values if v not in reason_args.ARGS}
+    return {v for v in values if v not in _ARGS}
 
 
 def test_the_client_catalog_holds_every_own_code_and_no_other():
@@ -170,25 +208,15 @@ def test_no_own_code_is_a_framework_key():
 
 
 def test_every_framework_key_code_is_its_enum_values_name():
-    framework = {
-        v for k, v in vars(codes).items() if k.isupper() and v in reason_args.ARGS
-    }
+    framework = {v for k, v in vars(codes).items() if k.isupper() and v in _ARGS}
     assert framework <= set(_live_keys())
     assert codes.HOST_REASON_HANDSHAKE_MALFORMED in framework
 
 
 def test_the_generated_args_are_the_descriptors():
-    for key, args in reason_args.ARGS.items():
-        enum = next(
-            e
-            for e in (
-                reasons_pb2.RouterReason,
-                reasons_pb2.HostReason,
-                reasons_pb2.CoordinatorReason,
-            )
-            if key in e.DESCRIPTOR.values_by_name
-        )
+    for key, args in _ARGS.items():
+        enum = next(e for e in _ENUMS if key in e.DESCRIPTOR.values_by_name)
         options = enum.DESCRIPTOR.values_by_name[key].GetOptions()
         assert tuple(options.Extensions[reasons_pb2.reason].args) == args
-    assert set(reason_args.ARGS) == set(_live_keys())
+    assert set(_ARGS) == set(_live_keys())
     assert reason_args.EXT_ERR_TXT == "ext_err_txt"

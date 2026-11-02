@@ -21,17 +21,15 @@ from angzarr_client.host import (
     UPCASTER_SERVICE,
     grpc_status_code,
 )
-from angzarr_client.proto.io.angzarr.v1 import (
+from angzarr_client.proto.io.angzarr.component.v1 import (
     command_handler_pb2_grpc,
     component_pb2,
     component_pb2_grpc,
-    policy_pb2,
     policy_pb2_grpc,
     projector_pb2_grpc,
-    types_pb2,
-    upcaster_pb2,
     upcaster_pb2_grpc,
 )
+from angzarr_client.proto.io.angzarr.v1 import policy_pb2, types_pb2, upcaster_pb2
 from angzarr_client.router import CodedError, GrpcCode, Router, pack
 
 from . import builders
@@ -345,7 +343,7 @@ def test_services_are_the_component_then_its_kind_then_application_services():
         COMMAND_HANDLER_SERVICE,
         "app.ReportService",
     ]
-    assert COMMAND_HANDLER_SERVICE == "io.angzarr.v1.CommandHandlerService"
+    assert COMMAND_HANDLER_SERVICE == "io.angzarr.component.v1.CommandHandlerService"
     host.stop()
 
 

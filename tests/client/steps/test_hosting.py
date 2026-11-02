@@ -20,7 +20,8 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client import ComponentHost, ConfigurationError
-from angzarr_client.proto.io.angzarr.v1 import command_handler_pb2_grpc, types_pb2
+from angzarr_client.proto.io.angzarr.component.v1 import command_handler_pb2_grpc
+from angzarr_client.proto.io.angzarr.v1 import types_pb2
 from angzarr_client.router import (
     AggregateDispatch,
     ProjectorDispatch,
@@ -34,7 +35,7 @@ TEST_RULES_VERSION = "0.0.0+test"
 
 scenarios("parity/client/hosting.feature")
 
-COMMAND_HANDLER_SERVICE = "io.angzarr.v1.CommandHandlerService"
+COMMAND_HANDLER_SERVICE = "io.angzarr.component.v1.CommandHandlerService"
 REPORT_SERVICE = "test.hosting.OrderReportService"
 
 

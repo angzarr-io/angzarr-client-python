@@ -8,10 +8,13 @@ Used by the wheel build hook (hatch_build.py) and the just recipes, so a
 - ``generate_protos``: the framework protos (angzarr-project) as Python
   modules under angzarr_client/proto/, generated with grpcio-tools (protoc
   and the gRPC plugin; no network), imports rerooted under
-  ``angzarr_client.proto``; with them, each reason key's args, read from
-  its ``(io.angzarr.v1.reason)`` option, as ``reason_args.py`` beside
-  ``reasons_pb2.py``, and the spec's en-US catalog of the keys,
-  ``reasons.en-US.ftl``, copied there (decision 14.60);
+  ``angzarr_client.proto``: core (``io.angzarr.v1``), the component
+  contract (``io.angzarr.component.v1``) and both transports
+  (``io.angzarr.transport.{embedded,distributed}.v1``; decision 14.64);
+  with them, for each package with reason keys, each key's args, read from
+  its ``(io.angzarr.v1.reason)`` option, as ``reason_args.py`` beside its
+  ``reasons_pb2.py``, and the spec's en-US catalog of its keys,
+  ``reasons.en-US.ftl``, copied there (decisions 14.60 and 14.64);
 - ``generate_fixtures``: the handler-contract tier's fixture messages
   (angzarr-project features/handler-contract/fixture/*.proto) under
   tests/router/gen/, the messages the tier's steps build their components
@@ -30,12 +33,25 @@ PROJECT_PROTO = ROOT / "angzarr-project" / "proto"
 FIXTURE_PROTO = ROOT / "angzarr-project" / "features" / "handler-contract" / "fixture"
 FIXTURE_OUT = ROOT / "tests" / "router" / "gen"
 
-# Proto trees generated into the package, relative to their proto root.
-PROJECT_TREES = ("io/angzarr/v1", "io/angzarr/status", "sererr")
-# The reason keys' proto, its catalog, and the args module generated from it,
-# relative to the proto root (and to the package's proto/).
-REASONS = pathlib.PurePosixPath("io/angzarr/v1")
-REASON_ENUMS = ("RouterReason", "HostReason", "CoordinatorReason")
+# Proto trees generated into the package, relative to their proto root: the
+# four packages (decision 14.64) and sererr, which the distributed
+# transport's dead-letter envelope imports.
+PROJECT_TREES = (
+    "io/angzarr/v1",
+    "io/angzarr/component",
+    "io/angzarr/transport",
+    "sererr",
+)
+# Each package with reason keys, by its directory relative to the proto root
+# (and to the package's proto/), with its key enums: its reasons.proto, its
+# catalog, and the args module generated from it sit there.
+REASON_PACKAGES = {
+    "io/angzarr/v1": ("RouterReason", "HostReason", "CoordinatorReason"),
+    "io/angzarr/transport/embedded/v1": ("HostReason",),
+    "io/angzarr/transport/distributed/v1": ("CoordinatorReason",),
+}
+# Core's reasons module, which declares the (reason) option.
+CORE_REASONS = "io/angzarr/v1"
 
 # Where the generated framework modules live, by proto package root.
 FRAMEWORK = {"io": "angzarr_client.proto.io", "sererr": "angzarr_client.proto.sererr"}
@@ -109,49 +125,84 @@ def generate_protos(out: pathlib.Path = PROTO_OUT) -> list[pathlib.Path]:
         ]
     )
     _fixup(out)
-    shutil.copyfile(
-        PROJECT_PROTO / REASONS / "reasons.en-US.ftl",
-        out / REASONS / "reasons.en-US.ftl",
-    )
-    (out / REASONS / "reason_args.py").write_text(
-        reason_args(out / REASONS / "reasons_pb2.py")
-    )
+    declared = _declared(out / CORE_REASONS / "reasons_pb2.py")
+    for package in REASON_PACKAGES:
+        shutil.copyfile(
+            PROJECT_PROTO / package / "reasons.en-US.ftl",
+            out / package / "reasons.en-US.ftl",
+        )
+        (out / package / "reason_args.py").write_text(reason_args(declared[package]))
     return _generated(out)
 
 
-def _declared(reasons_pb2_path: pathlib.Path) -> dict[str, tuple[str, ...]]:
-    """Each live reason key's args, by key, from the generated module at
-    ``reasons_pb2_path`` (which imports nothing of the package)."""
+def _declared(
+    core_reasons_pb2: pathlib.Path,
+) -> dict[str, dict[str, tuple[str, ...]]]:
+    """Each package's live reason keys' args, by package and key, read from
+    the descriptors protoc compiles of every REASON_PACKAGES reasons.proto.
+    The ``(reason)`` option is read through core's generated module at
+    ``core_reasons_pb2``, which imports nothing of the package; the
+    transports' generated modules import core's, so they are not loaded."""
     import importlib.util
+    import tempfile
+
+    from google.protobuf import descriptor_pb2
 
     spec = importlib.util.spec_from_file_location(
-        "_angzarr_reasons_pb2", reasons_pb2_path
+        "_angzarr_reasons_pb2", core_reasons_pb2
     )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    core = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(core)
+    with tempfile.TemporaryDirectory() as scratch:
+        set_path = pathlib.Path(scratch) / "reasons.binpb"
+        _protoc(
+            [
+                f"-I{PROJECT_PROTO}",
+                f"-I{_grpc_tools_include()}",
+                f"--descriptor_set_out={set_path}",
+                *(f"{package}/reasons.proto" for package in REASON_PACKAGES),
+            ]
+        )
+        files = descriptor_pb2.FileDescriptorSet.FromString(set_path.read_bytes()).file
+    by_name = {f.name: f for f in files}
+    return {
+        package: _package_args(by_name[f"{package}/reasons.proto"], enums, core.reason)
+        for package, enums in REASON_PACKAGES.items()
+    }
+
+
+def _package_args(file, enums: tuple[str, ...], reason) -> dict[str, tuple[str, ...]]:
+    """One reasons.proto's live keys' args, by key, from its descriptor
+    ``file``, for its key ``enums``."""
+    from google.protobuf import descriptor_pb2
+
+    found = {e.name: e for e in file.enum_type}
     declared: dict[str, tuple[str, ...]] = {}
-    for enum in REASON_ENUMS:
-        for value in module.DESCRIPTOR.enum_types_by_name[enum].values:
+    for enum in enums:
+        for value in found[enum].value:
             if value.number == 0:
                 continue
-            options = value.GetOptions()
-            if not options.HasExtension(module.reason):
+            # Parsed again now core's module registered the option.
+            options = descriptor_pb2.EnumValueOptions.FromString(
+                value.options.SerializeToString()
+            )
+            if not options.HasExtension(reason):
                 raise ProtoBuildError(
                     f"{value.name} declares no args (its (reason) option)"
                 )
-            declared[value.name] = tuple(options.Extensions[module.reason].args)
+            declared[value.name] = tuple(options.Extensions[reason].args)
     return declared
 
 
-def reason_args(reasons_pb2_path: pathlib.Path) -> str:
-    """``reason_args.py``: ``ARGS``, each live reason key's args by key, and
-    one constant per arg name, its name in SCREAMING_SNAKE."""
-    declared = _declared(reasons_pb2_path)
+def reason_args(declared: dict[str, tuple[str, ...]]) -> str:
+    """``reason_args.py`` for one package's keys, ``declared`` (each key's
+    args, by key): ``ARGS``, and one constant per arg name, its name in
+    SCREAMING_SNAKE."""
     names = sorted({arg for args in declared.values() for arg in args})
     lines = [
-        '"""Each framework reason key\'s args, generated by scripts/proto_build.py',
-        "from reasons.proto's (io.angzarr.v1.reason) options (decision 14.60).",
-        'Do not edit."""',
+        '"""Each of this package\'s reason keys\' args, generated by',
+        "scripts/proto_build.py from its reasons.proto's (io.angzarr.v1.reason)",
+        'options (decisions 14.60 and 14.64). Do not edit."""',
         "",
         "ARGS: dict[str, tuple[str, ...]] = {",
         *(f"    {key!r}: {args!r}," for key, args in declared.items()),

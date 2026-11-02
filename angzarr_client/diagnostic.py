@@ -8,9 +8,10 @@ something a person reads:
   arg, a value quoted where it would not parse back (:func:`quote`). Never
   English: it is what ``str()`` of an error is, for logs.
 - :func:`render`, its English, looked up by the code in a Fluent catalog
-  and filled in with the args: the spec's catalog of the framework's reason
-  keys (``reasons.en-US.ftl``, shipped beside the generated protos;
-  decision 14.60) for a framework key, this package's own
+  and filled in with the args: the spec's catalogs of the framework's
+  reason keys (each package's ``reasons.en-US.ftl``, shipped beside its
+  generated protos: core's, the local-process transport's and the
+  distributed transport's; decisions 14.60 and 14.64) for a framework key, this package's own
   (``locales/en-US/angzarr-client.ftl``) for one of its own codes. A code
   in neither renders as :func:`display` does.
 
@@ -28,7 +29,17 @@ import re
 from collections.abc import Mapping
 
 _HERE = pathlib.Path(__file__).resolve().parent
-SPEC_CATALOG = _HERE / "proto" / "io" / "angzarr" / "v1" / "reasons.en-US.ftl"
+# The spec's catalog of each package with reason keys (decision 14.64):
+# core's, the local-process transport's (a child's keys) and the
+# distributed transport's (a coordinator's).
+SPEC_CATALOGS = tuple(
+    _HERE / "proto" / package / "reasons.en-US.ftl"
+    for package in (
+        "io/angzarr/v1",
+        "io/angzarr/transport/embedded/v1",
+        "io/angzarr/transport/distributed/v1",
+    )
+)
 CLIENT_CATALOG = _HERE / "locales" / "en-US" / "angzarr-client.ftl"
 
 _MESSAGE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*) =(?: (.*))?$")
@@ -74,9 +85,10 @@ def _catalog(path: pathlib.Path) -> dict[str, str]:
 
 
 def catalog() -> dict[str, str]:
-    """Every message this package renders from: the spec's keys, then its
-    own codes."""
-    return {**_catalog(SPEC_CATALOG), **_catalog(CLIENT_CATALOG)}
+    """Every message this package renders from: the spec's keys, every
+    package's, then its own codes."""
+    spec = {key: text for path in SPEC_CATALOGS for key, text in _catalog(path).items()}
+    return {**spec, **_catalog(CLIENT_CATALOG)}
 
 
 def _close(text: str, start: int) -> int:

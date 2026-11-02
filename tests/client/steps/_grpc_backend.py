@@ -30,7 +30,7 @@ from angzarr_client._pb import (
     EventBook,
     EventPage,
 )
-from angzarr_client.proto.io.angzarr.v1 import (
+from angzarr_client.proto.io.angzarr.transport.distributed.v1 import (
     command_handler_pb2_grpc,
     query_pb2_grpc,
 )

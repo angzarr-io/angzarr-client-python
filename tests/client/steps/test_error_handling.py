@@ -33,7 +33,8 @@ from angzarr_client.errors import (
     InvalidTimestampError,
     TransportError,
 )
-from angzarr_client.proto.io.angzarr.v1 import query_pb2_grpc, reason_args
+from angzarr_client.proto.io.angzarr.transport.distributed.v1 import query_pb2_grpc
+from angzarr_client.proto.io.angzarr.v1 import reason_args
 from angzarr_client.router import CodedError, GrpcCode
 
 scenarios("parity/client/error_handling.feature")

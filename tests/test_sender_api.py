@@ -14,7 +14,10 @@ from __future__ import annotations
 import uuid
 
 from angzarr_client import CommandHandlerClient, ConflictResolution
-from angzarr_client.proto.io.angzarr.v1 import command_handler_pb2, types_pb2
+from angzarr_client.proto.io.angzarr.transport.distributed.v1 import (
+    command_handler_pb2,
+)
+from angzarr_client.proto.io.angzarr.v1 import types_pb2
 
 _ROOT = uuid.UUID("3cfe0a31-d58d-5190-af30-5459ccc221f7")
 

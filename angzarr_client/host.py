@@ -65,7 +65,10 @@ from grpc_health.v1.health import aio as health_aio
 from . import readiness
 from .error_codes import codes
 from .errors import ClientError
-from .proto.io.angzarr.v1 import (
+
+# The services are the component contract's (io.angzarr.component.v1;
+# decision 14.64); their messages, and the keys, core's.
+from .proto.io.angzarr.component.v1 import (
     command_handler_pb2,
     command_handler_pb2_grpc,
     component_pb2,
@@ -74,10 +77,11 @@ from .proto.io.angzarr.v1 import (
     policy_pb2_grpc,
     projector_pb2,
     projector_pb2_grpc,
-    reason_args,
     upcaster_pb2,
     upcaster_pb2_grpc,
 )
+from .proto.io.angzarr.v1 import reason_args
+from .proto.io.angzarr.v1 import upcaster_pb2 as upcast_messages
 from .readiness import Probe, TransportProbe, TransportSignal
 from .server import get_transport_config
 
@@ -120,8 +124,8 @@ class Upcaster(Protocol):
     """An application upcaster: legacy event shapes in, current shapes out."""
 
     def upcast(
-        self, request: upcaster_pb2.UpcastRequest
-    ) -> upcaster_pb2.UpcastResponse: ...
+        self, request: upcast_messages.UpcastRequest
+    ) -> upcast_messages.UpcastResponse: ...
 
 
 def grpc_status_code(code: int) -> grpc.StatusCode:

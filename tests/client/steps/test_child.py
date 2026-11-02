@@ -32,12 +32,12 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from angzarr_client.child import SOCKET_ENV, parse_handshake
 from angzarr_client.host import ConfigurationError
-from angzarr_client.proto.io.angzarr.v1 import (
+from angzarr_client.proto.io.angzarr.component.v1 import (
     command_handler_pb2_grpc,
     component_pb2,
     component_pb2_grpc,
-    types_pb2,
 )
+from angzarr_client.proto.io.angzarr.v1 import types_pb2
 from angzarr_client.router import pack
 
 from ..child_order import GATE_ENV

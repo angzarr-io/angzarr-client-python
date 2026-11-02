@@ -449,24 +449,27 @@ class TestBackend:
         self.pending: list[Callable[[], None]] = []
         self.channels: list[FakeChannel] = []
         self._routes: dict[str, tuple[type, Callable[[Any], Any]]] = {
-            "/io.angzarr.v1.CommandHandlerCoordinatorService/Handle": (
+            "/io.angzarr.transport.distributed.v1.CommandHandlerCoordinatorService/Handle": (
                 CommandBook,
                 self._handle,
             ),
-            "/io.angzarr.v1.CommandHandlerCoordinatorService/HandleAsync": (
+            "/io.angzarr.transport.distributed.v1.CommandHandlerCoordinatorService/HandleAsync": (
                 CommandBook,
                 self._handle_async,
             ),
-            "/io.angzarr.v1.CommandHandlerCoordinatorService/HandleSync": (
+            "/io.angzarr.transport.distributed.v1.CommandHandlerCoordinatorService/HandleSync": (
                 CommandBook,
                 self._handle_sync,
             ),
-            "/io.angzarr.v1.EventQueryService/GetEventBook": (
+            "/io.angzarr.transport.distributed.v1.EventQueryService/GetEventBook": (
                 Query,
                 self._get_event_book,
             ),
-            "/io.angzarr.v1.EventQueryService/GetEvents": (Query, self._select),
-            "/io.angzarr.v1.EventQueryService/GetCorrelatedEvents": (
+            "/io.angzarr.transport.distributed.v1.EventQueryService/GetEvents": (
+                Query,
+                self._select,
+            ),
+            "/io.angzarr.transport.distributed.v1.EventQueryService/GetCorrelatedEvents": (
                 CorrelationQuery,
                 self._correlated,
             ),

@@ -35,10 +35,13 @@ def test_generated_protos_import_under_the_package(tmp_path):
     assert {
         "io/angzarr/v1/types_pb2.py",
         "io/angzarr/v1/types_pb2.pyi",
-        "io/angzarr/v1/command_handler_pb2_grpc.py",
-        "io/angzarr/v1/policy_pb2_grpc.py",
+        "io/angzarr/component/v1/command_handler_pb2_grpc.py",
+        "io/angzarr/component/v1/policy_pb2_grpc.py",
+        "io/angzarr/transport/embedded/v1/child_protocol_pb2.py",
+        "io/angzarr/transport/distributed/v1/command_handler_pb2_grpc.py",
         "sererr/v1/sererr_pb2.py",
     } <= names
+    assert not any(name.startswith("io/angzarr/status") for name in names)
     assert not any(name.startswith("io/angzarr/router") for name in names)
     text = (tmp_path / "proto" / "io/angzarr/v1/command_handler_pb2.py").read_text()
     assert "from angzarr_client.proto.io.angzarr.v1 import types_pb2" in text
@@ -92,23 +95,41 @@ def test_the_reason_args_and_the_catalog_are_generated_beside_the_reasons(tmp_pa
     assert namespace["REFUSED"] == "refused"
 
 
-_REASONS_WITHOUT_AN_OPTION = """
-from types import SimpleNamespace as _N
-reason = object()
-def _value(name, number):
-    options = _N(HasExtension=lambda ext: False)
-    return _N(name=name, number=number, GetOptions=lambda: options)
-DESCRIPTOR = _N(enum_types_by_name={
-    n: _N(values=[_value(n.upper() + "_UNSPECIFIED", 0), _value(n.upper() + "_LIVE", 1)])
-    for n in ("RouterReason", "HostReason", "CoordinatorReason")
-})
-"""
+def test_a_live_key_without_its_option_fails_the_build():
+    from google.protobuf import descriptor_pb2
 
+    from angzarr_client.proto.io.angzarr.v1 import reasons_pb2
 
-def test_a_live_key_without_its_option_fails_the_build(tmp_path):
-    module = tmp_path / "reasons_pb2.py"
-    module.write_text(_REASONS_WITHOUT_AN_OPTION)
+    file = descriptor_pb2.FileDescriptorProto(name="io/angzarr/v1/reasons.proto")
+    enum = file.enum_type.add(name="RouterReason")
+    enum.value.add(name="ROUTER_REASON_UNSPECIFIED", number=0)
+    enum.value.add(name="ROUTER_REASON_LIVE", number=1)
     with pytest.raises(
-        proto_build.ProtoBuildError, match="ROUTERREASON_LIVE declares no args"
+        proto_build.ProtoBuildError, match="ROUTER_REASON_LIVE declares no args"
     ):
-        proto_build.reason_args(module)
+        proto_build._package_args(file, ("RouterReason",), reasons_pb2.reason)
+
+
+def test_each_transport_has_its_own_reason_args_and_catalog(tmp_path):
+    # Decision 14.64: each package with keys, its args and English beside
+    # its reasons.proto; the child's keys are the local-process transport's.
+    files = proto_build.generate_protos(tmp_path / "proto")
+    names = {f.relative_to(tmp_path / "proto").as_posix() for f in files}
+    for package, key, args in (
+        (
+            "io/angzarr/transport/embedded/v1",
+            "HOST_REASON_HANDSHAKE_MALFORMED",
+            ("line",),
+        ),
+        (
+            "io/angzarr/transport/distributed/v1",
+            "COORDINATOR_REASON_PAYLOAD_UNAVAILABLE",
+            ("uri", "cause"),
+        ),
+    ):
+        assert {f"{package}/reason_args.py", f"{package}/reasons.en-US.ftl"} <= names
+        namespace = runpy.run_path(str(tmp_path / "proto" / package / "reason_args.py"))
+        assert namespace["ARGS"][key] == args
+    core = runpy.run_path(str(tmp_path / "proto" / "io/angzarr/v1/reason_args.py"))
+    assert "HOST_REASON_HANDSHAKE_MALFORMED" not in core["ARGS"]
+    assert "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN" in core["ARGS"]

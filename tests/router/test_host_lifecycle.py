@@ -26,12 +26,14 @@ from angzarr_client.host import (
     COMPONENT_SERVICE,
     POLICY_SERVICE,
 )
-from angzarr_client.proto.io.angzarr.v1 import (
-    command_handler_pb2,
+from angzarr_client.proto.io.angzarr.component.v1 import (
     command_handler_pb2_grpc,
-    policy_pb2,
     policy_pb2_grpc,
     projector_pb2_grpc,
+)
+from angzarr_client.proto.io.angzarr.v1 import (
+    command_handler_pb2,
+    policy_pb2,
     types_pb2,
 )
 from angzarr_client.router import CodedError, GrpcCode, Router
