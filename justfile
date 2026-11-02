@@ -219,7 +219,8 @@ docs:
 
 # Mutation testing, the full pass (the weekly workflow's): every mutant of
 # the [tool.mutmut] sources, judged by MUTATION_THRESHOLD over the evaluable
-# mutants.
+# mutants. Red tests (mutmut's clean run fails) fail it, as does a run that
+# left a mutant it found unchecked.
 mutation-test: prepare
     #!/usr/bin/env bash
     set -euo pipefail
@@ -228,6 +229,11 @@ mutation-test: prepare
     uv run --extra dev mutmut run
     uv run --extra dev mutmut export-cicd-stats
     read -r total killed no_tests < <(python3 -c "import json; d=json.load(open('mutants/mutmut-cicd-stats.json')); print(d['total'], d['killed'], d['no_tests'])")
+    # Every mutant found must have been checked: mutmut records one it never
+    # ran as None (the CI/CD stats count it in the total only), and a run
+    # that found mutants and checked fewer has not shown the tests catch them.
+    unchecked=$(python3 -c "import json, pathlib; print(sum(c is None for m in pathlib.Path('mutants').rglob('*.py.meta') for c in json.loads(m.read_text())['exit_code_by_key'].values()))")
+    if [ "$unchecked" -ne 0 ]; then echo "FAIL: $total mutants found but $((total - unchecked)) tested; nothing is judged until every one is"; exit 1; fi
     evaluated=$((total - no_tests))
     if [ "$evaluated" -eq 0 ]; then echo "ERROR: no evaluable mutants"; exit 1; fi
     rate=$((killed * 100 / evaluated))
@@ -260,10 +266,11 @@ MUTATION_THRESHOLD := "90"
 # no function of a source file, pass at once. The log is
 # build/logs/mutation-push.log.
 #
-# Red tests (mutmut's clean run or stats collection fails) cannot be judged:
-# pushed to a branch other than the default one they pass, with a warning that
-# the branch cannot merge until they pass; pushed to the default branch they
-# are refused. `lefthook` is ignored.
+# Red tests (mutmut's clean run or stats collection fails) cannot be judged,
+# so they fail it on every branch, as does a run that left a mutant it found
+# unchecked (`mutation-functions`): a mutation run that judged nothing has
+# shown nothing. No hook runs it, so failing it keeps no red commit off a
+# branch (`push-check` allows those). `lefthook` is ignored.
 [positional-arguments]
 mutation-push remote *lefthook:
     #!/usr/bin/env bash
@@ -343,12 +350,8 @@ mutation-push remote *lefthook:
         case "$rc" in
             0) echo "ok   mutation-push ($range): $(tail -1 "$log")" ;;
             4)
-                if [ "$remote_ref" != "refs/heads/$default" ]; then
-                    echo "RED  mutation-push: $range not judged, the tests are red; allowed off $default, which $target cannot merge into until they pass"
-                else
-                    echo "FAIL mutation-push: $range: red tests cannot be pushed to $remote/$target (full log: build/logs/mutation-push.log)" >&2
-                    exit 1
-                fi ;;
+                echo "FAIL mutation-push: $range: the tests fail unmutated (mutmut's clean run or stats collection), so no mutant can be judged; judge the commit that turns them green (full log: build/logs/mutation-push.log)" >&2
+                exit 1 ;;
             *)
                 echo "FAIL mutation-push: $range (full log: build/logs/mutation-push.log)" >&2
                 sed -n '/^Kill rate\|^FAIL\|^survived:\|^  /p' "$log" >&2
@@ -407,8 +410,8 @@ _mutation-globs base commit:
 # MUTATION_THRESHOLD over every mutant they match, those no test reaches
 # counted as survivors (the full pass leaves them out): `mutation-push`'s run, in the
 # pushed commit's tree. Exits 4 when the tests fail unmutated (mutmut's clean
-# run or stats collection), so no mutant can be judged; its last line is the
-# verdict.
+# run or stats collection), so no mutant can be judged, and 1 when a mutant
+# it found was not checked; its last line is the verdict.
 [positional-arguments]
 mutation-functions +globs: prepare
     #!/usr/bin/env bash
@@ -440,15 +443,23 @@ mutation-functions +globs: prepare
         for key, code in json.loads(meta.read_text())["exit_code_by_key"].items():
             if any(fnmatch.fnmatch(key, g) for g in globs):
                 status[key] = code
+    # Every mutant found must have been checked: mutmut records one it never
+    # ran as None, and a run that found mutants and checked fewer has not
+    # shown the tests catch them. mutmut itself fails a filter matching
+    # none, so after a clean run no match at all is no record of the run.
+    found = len(status)
+    unchecked = sorted(k for k, c in status.items() if c is None)
+    if found == 0 or unchecked:
+        for k in unchecked:
+            print(f"  {k} (not checked)")
+        print(f"FAIL: {found} mutants found but {found - len(unchecked)} tested; nothing is judged until every one is")
+        sys.exit(1)
     # Unlike the full pass, a mutant no test reaches counts against the
     # rate: a changed function no test runs is what this gate is for.
     killed = sorted(k for k, c in status.items() if c in (1, 3))
     no_tests = [k for k, c in status.items() if c in (5, 33)]
     judged = len(status)
     others = sorted(k for k, c in status.items() if c not in (1, 3))
-    if judged == 0:
-        print("no mutants in the changed functions")
-        sys.exit(0)
     rate = len(killed) * 100 // judged
     line = f"Kill rate: {rate}% ({len(killed)}/{judged}; {len(no_tests)} no test reaches, counted survived), threshold {threshold}%"
     if len(killed) * 100 >= threshold * judged:
