@@ -10,7 +10,7 @@ import? 'angzarr-project/submodule.just'
 # The angzarr CLI whose Python scaffold `codegen-check` runs, built from
 # angzarr-cli at this revision into .tools/ (`just cli`). ANGZARR_CLI points
 # at another binary instead (e.g. a local angzarr-cli build).
-CLI_REV := "9e27ee18b3bb9762e0265b71e6d8a36293461810"
+CLI_REV := "ad7b4f2ea4c091ca7c48f51fb71015a35214b04f"
 CLI := env_var_or_default("ANGZARR_CLI", TOP / ".tools" / "bin" / "angzarr")
 
 
