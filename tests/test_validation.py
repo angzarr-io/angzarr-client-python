@@ -1,9 +1,9 @@
 """Tests for validation helpers.
 
-Audit finding #59: validation rejections use stable codes (from
-``angzarr_client.error_codes.codes``), English rendered from the catalog by the code,
-and structured details (keyed by ``keys``). Tests assert against those
-constants rather than against substring patterns.
+Audit finding #59: validation rejections are the router's Rejection under
+stable codes (from ``angzarr_client.error_codes.codes``), English rendered
+from the catalog by the code, and structured args (keyed by ``keys``). Tests
+assert against those constants rather than against substring patterns.
 """
 
 import logging
@@ -12,8 +12,9 @@ from typing import NamedTuple
 
 import pytest
 
+from angzarr_client.diagnostic import render
 from angzarr_client.error_codes import codes, keys
-from angzarr_client.errors import CommandRejectedError
+from angzarr_client.router import GrpcCode, Rejection
 from angzarr_client.validation import (
     require_exists,
     require_non_negative,
@@ -32,11 +33,11 @@ class TestRequireExists:
         require_exists(True, "context")
 
     def test_fails_when_false(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_exists(False, "Player does not exist")
         assert exc.value.code == codes.ENTITY_NOT_FOUND
-        assert exc.value.message == "entity not found"
-        assert exc.value.details[keys.CONTEXT] == "Player does not exist"
+        assert render(exc.value.code, exc.value.extras) == "entity not found"
+        assert exc.value.extras[keys.CONTEXT] == "Player does not exist"
 
 
 class TestRequireNotExists:
@@ -44,11 +45,11 @@ class TestRequireNotExists:
         require_not_exists(False, "context")
 
     def test_fails_when_true(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_not_exists(True, "Player already exists")
         assert exc.value.code == codes.ENTITY_ALREADY_EXISTS
-        assert exc.value.message == "entity already exists"
-        assert exc.value.details[keys.CONTEXT] == "Player already exists"
+        assert render(exc.value.code, exc.value.extras) == "entity already exists"
+        assert exc.value.extras[keys.CONTEXT] == "Player already exists"
 
 
 class TestRequirePositive:
@@ -57,33 +58,33 @@ class TestRequirePositive:
         require_positive(100, "amount")
 
     def test_fails_on_zero(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_positive(0, "amount")
         assert exc.value.code == codes.VALUE_NOT_POSITIVE
-        assert exc.value.message == "amount must be positive"
-        assert exc.value.details[keys.FIELD] == "amount"
+        assert render(exc.value.code, exc.value.extras) == "amount must be positive"
+        assert exc.value.extras[keys.FIELD] == "amount"
 
     def test_fails_on_negative(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_positive(-1, "amount")
         assert exc.value.code == codes.VALUE_NOT_POSITIVE
 
     def test_accepts_float(self):
         """P3.1 / audit finding #14: matches Rust's `<T: PartialOrd>`."""
         require_positive(0.5, "amount")
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_positive(0.0, "amount")
         assert exc.value.code == codes.VALUE_NOT_POSITIVE
-        with pytest.raises(CommandRejectedError):
+        with pytest.raises(Rejection):
             require_positive(-0.001, "amount")
 
     def test_accepts_decimal(self):
         from decimal import Decimal
 
         require_positive(Decimal("0.01"), "amount")
-        with pytest.raises(CommandRejectedError):
+        with pytest.raises(Rejection):
             require_positive(Decimal(0), "amount")
-        with pytest.raises(CommandRejectedError):
+        with pytest.raises(Rejection):
             require_positive(Decimal(-1), "amount")
 
 
@@ -93,11 +94,13 @@ class TestRequireNonNegative:
         require_non_negative(1, "balance")
 
     def test_fails(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_non_negative(-1, "balance")
         assert exc.value.code == codes.VALUE_NOT_NON_NEGATIVE
-        assert exc.value.message == "balance must be non-negative"
-        assert exc.value.details[keys.FIELD] == "balance"
+        assert (
+            render(exc.value.code, exc.value.extras) == "balance must be non-negative"
+        )
+        assert exc.value.extras[keys.FIELD] == "balance"
 
     def test_accepts_float_and_decimal(self):
         from decimal import Decimal
@@ -105,10 +108,10 @@ class TestRequireNonNegative:
         require_non_negative(0.0, "balance")
         require_non_negative(0.5, "balance")
         require_non_negative(Decimal(0), "balance")
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_non_negative(-0.001, "balance")
         assert exc.value.code == codes.VALUE_NOT_NON_NEGATIVE
-        with pytest.raises(CommandRejectedError):
+        with pytest.raises(Rejection):
             require_non_negative(Decimal("-0.5"), "balance")
 
 
@@ -117,11 +120,11 @@ class TestRequireNotEmpty:
         require_not_empty([1, 2, 3], "items")
 
     def test_fails(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_not_empty([], "items")
         assert exc.value.code == codes.COLLECTION_EMPTY
-        assert exc.value.message == "items must not be empty"
-        assert exc.value.details[keys.FIELD] == "items"
+        assert render(exc.value.code, exc.value.extras) == "items must not be empty"
+        assert exc.value.extras[keys.FIELD] == "items"
 
 
 class TestRequireNotEmptyStr:
@@ -129,11 +132,11 @@ class TestRequireNotEmptyStr:
         require_not_empty_str("hello", "name")
 
     def test_fails(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_not_empty_str("", "name")
         assert exc.value.code == codes.VALUE_EMPTY
-        assert exc.value.message == "name must not be empty"
-        assert exc.value.details[keys.FIELD] == "name"
+        assert render(exc.value.code, exc.value.extras) == "name must not be empty"
+        assert exc.value.extras[keys.FIELD] == "name"
 
 
 class TestRequireStatus:
@@ -141,10 +144,12 @@ class TestRequireStatus:
         require_status("active", "active", "context")
 
     def test_fails(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_status("pending", "active", "must be active")
         assert exc.value.code == codes.STATUS_MISMATCH
-        assert exc.value.message == "status does not match expected"
+        assert (
+            render(exc.value.code, exc.value.extras) == "status does not match expected"
+        )
 
 
 class TestRequireStatusNot:
@@ -152,10 +157,12 @@ class TestRequireStatusNot:
         require_status_not("active", "checked_out", "context")
 
     def test_fails(self):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             require_status_not("checked_out", "checked_out", "already checked out")
         assert exc.value.code == codes.STATUS_FORBIDDEN
-        assert exc.value.message == "status is the forbidden value"
+        assert (
+            render(exc.value.code, exc.value.extras) == "status is the forbidden value"
+        )
 
 
 class TestStructuredLogging:
@@ -165,7 +172,7 @@ class TestStructuredLogging:
     def test_require_positive_logs_structured_fields(self, caplog):
         with (
             caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
-            pytest.raises(CommandRejectedError),
+            pytest.raises(Rejection),
         ):
             require_positive(0, "amount")
 
@@ -180,7 +187,7 @@ class TestStructuredLogging:
     def test_require_non_negative_logs_structured_fields(self, caplog):
         with (
             caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
-            pytest.raises(CommandRejectedError),
+            pytest.raises(Rejection),
         ):
             require_non_negative(-1, "balance")
 
@@ -193,7 +200,7 @@ class TestStructuredLogging:
     def test_require_not_empty_logs_structured_fields(self, caplog):
         with (
             caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
-            pytest.raises(CommandRejectedError),
+            pytest.raises(Rejection),
         ):
             require_not_empty([], "items")
 
@@ -206,7 +213,7 @@ class TestStructuredLogging:
     def test_require_exists_logs_not_found(self, caplog):
         with (
             caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
-            pytest.raises(CommandRejectedError),
+            pytest.raises(Rejection),
         ):
             require_exists(False, "entity")
 
@@ -326,27 +333,26 @@ _REJECTION_IDS = [
 
 
 class TestRejectionContract:
-    """Every validator rejects with a fixed code, rendered message, gRPC-style
-    status code and structured details, and emits exactly one info record
-    carrying the same field / predicate / status_code."""
+    """Every validator rejects with the router's Rejection: a fixed code, its
+    rendered message, a gRPC status and structured args, and emits exactly
+    one info record carrying the same field / predicate / status_code."""
 
     @pytest.mark.parametrize("rejection", _REJECTIONS, ids=_REJECTION_IDS)
     def test_raised_error(self, rejection):
-        with pytest.raises(CommandRejectedError) as exc:
+        with pytest.raises(Rejection) as exc:
             rejection.call()
         err = exc.value
         assert err.code == rejection.code
-        assert err.message == rejection.message
+        assert render(err.code, err.extras) == rejection.message
         assert str(err).startswith(rejection.code)
-        assert err.status_code == rejection.status_code
-        assert err.details == rejection.details
-        assert err.cover is None
+        assert err.grpc == GrpcCode[rejection.status_code]
+        assert err.extras == rejection.details
 
     @pytest.mark.parametrize("rejection", _REJECTIONS, ids=_REJECTION_IDS)
     def test_structured_log_record(self, caplog, rejection):
         with (
             caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
-            pytest.raises(CommandRejectedError),
+            pytest.raises(Rejection),
         ):
             rejection.call()
 

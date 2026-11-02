@@ -17,6 +17,9 @@
 #                     on top of the router, readiness and server config.
 #   client, builder,  coordinator clients (gRPC stubs + fluent builders) and
 #   retry, ...        the shared helpers/errors they use.
+#   validation        require_* precondition helpers for handlers: they
+#                     raise the router's Rejection, so they sit over the
+#                     router, not with the coordinator clients.
 #   testing/          scenario kit for consumers' tests; no runtime module
 #                     depends on it.
 #   proto/            generated framework types (any layer may use them).
@@ -101,7 +104,6 @@ source_modules =
     angzarr_client.helpers
     angzarr_client.identity
     angzarr_client.retry
-    angzarr_client.validation
     angzarr_client.wrappers
 forbidden_modules =
     angzarr_client.host

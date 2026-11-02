@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .._pb import UUID, Cover, EventBook
-from ..errors import CommandRejectedError
+from ..router import Rejection
 from .builders import make_event_page, pack_event
 
 
@@ -24,7 +24,7 @@ class ScenarioContext:
         root: Current aggregate root as bytes
         events: List of packed events (ProtoAny) in history
         result: Last command handler result (event or tuple of events)
-        error: Last CommandRejectedError if command was rejected
+        error: Last Rejection if the command was rejected
         state: Rebuilt aggregate state after applying events
 
     Example:
@@ -38,7 +38,7 @@ class ScenarioContext:
         # When a command runs
         try:
             ctx.result = handler.handle(command, ctx.event_book())
-        except CommandRejectedError as e:
+        except Rejection as e:
             ctx.error = e
 
         # Then its result reflects the prior event
@@ -54,7 +54,7 @@ class ScenarioContext:
 
     # Last command result
     result: Any = None
-    error: CommandRejectedError | None = None
+    error: Rejection | None = None
 
     # State after rebuild
     state: Any = None
