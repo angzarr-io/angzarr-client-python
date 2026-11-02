@@ -14,9 +14,16 @@
   explicitly (they are not part of this top-level surface).
 """
 
+from importlib.metadata import packages_distributions as _distributions
 from importlib.metadata import version as _version
 
-__version__ = _version("angzarr-client")
+# The version of the distribution that installed this package, found from
+# the package's own name, so a rename is picked up: the installed metadata
+# maps the package to it; an editable install records only a .pth file, and
+# there the package's name names its distribution (names compare
+# normalized).
+__version__ = _version(_distributions().get(__package__, [__package__])[0])
+del _distributions
 
 from ._pb import ConflictResolution
 from .builder import CommandBuilder, QueryBuilder

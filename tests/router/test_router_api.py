@@ -35,6 +35,7 @@ from angzarr_client.router import (
     current_page,
     pack,
 )
+from angzarr_client.router import errors as router_errors
 from angzarr_client.router.context import book_context
 
 from .contract import cover_of
@@ -300,7 +301,7 @@ def _raising(exc):
     ],
 )
 def test_what_escapes_is_logged_never_answered(caplog, escaped, extras):
-    with caplog.at_level(logging.ERROR, "angzarr_client.router.errors"):
+    with caplog.at_level(logging.ERROR, router_errors.__name__):
         err = _raises(_aggregate(_raising(escaped)).dispatch, _command())
     assert (err.code, err.grpc, err.extras) == (
         "ROUTER_REASON_UNHANDLED_HANDLER_ERROR",

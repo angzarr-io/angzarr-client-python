@@ -48,7 +48,7 @@ FIXTURE = (
 # handler bug (ROUTER_REASON_FOLD_FAILED, ROUTER_REASON_FOLD_FAILED_EMITTED).
 ROTTEN = "rotten"
 
-_log = logging.getLogger("tests.router.contract")
+_log = logging.getLogger(__name__)
 
 
 def fq(message) -> str:
