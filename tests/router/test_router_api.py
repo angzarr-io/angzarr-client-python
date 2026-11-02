@@ -924,3 +924,92 @@ def test_a_projector_fold_failing_is_a_fold_failure_and_sees_no_cover_when_none(
     book.ClearField("cover")
     err = _raises(router.dispatch_projector, book)
     assert (err.code, seen) == ("ROUTER_REASON_FOLD_FAILED", [None])
+
+
+# --- the full-context rule: a decision's own events fold with the meta its
+# coordinator stamps, the meta replay hands the applier ----------------------
+
+
+def _identified(request: types_pb2.ContextualCommand) -> types_pb2.ContextualCommand:
+    page = request.command.page
+    page.command_id.value = b"\x01" * 16
+    page.correlation_id.value = b"\x02" * 16
+    request.recorded_at.seconds = 1_700_000_000
+    request.recorded_at.nanos = 5
+    return request
+
+
+def _stamped(request: types_pb2.ContextualCommand) -> types_pb2.EventMeta:
+    """The meta the coordinator stamps every event of ``request``'s decision
+    with, under rules version "v3" (types.proto, EventMeta)."""
+    page = request.command.page
+    meta = types_pb2.EventMeta(rules_version="v3")
+    meta.command_id.CopyFrom(page.command_id)
+    meta.correlation_id.CopyFrom(page.correlation_id)
+    meta.recorded_at.CopyFrom(request.recorded_at)
+    if page.HasField("fact_origin"):
+        meta.fact.CopyFrom(page.fact_origin)
+    return meta
+
+
+def _meta_recorder(dispatch_of):
+    seen = []
+    rebuilder = Rebuilder(counter_pb2.CounterState).apply_with_context(
+        _INCREASED, lambda _s, _e, ctx: seen.append(ctx.meta)
+    )
+    router = Router()
+    router.register_aggregate(dispatch_of(rebuilder).with_rules_version("v3"))
+    return router, seen
+
+
+def _replayed(answered: types_pb2.EventBook, meta: types_pb2.EventMeta) -> list:
+    """The applier's view of ``answered``'s pages replayed, each stamped
+    with ``meta`` as the coordinator persists it."""
+    router, seen = _meta_recorder(
+        lambda r: AggregateDispatch("C", "counter", r).on_command(
+            _INCREASE_BY, lambda *_: None
+        )
+    )
+    request = _command()
+    for sequence, page in enumerate(answered.pages):
+        persisted = request.events.pages.add()
+        persisted.CopyFrom(page)
+        persisted.sequence = sequence
+        persisted.meta.CopyFrom(meta)
+    request.events.next_sequence = len(answered.pages)
+    router.dispatch(request)
+    return seen
+
+
+def test_a_command_s_own_events_fold_with_the_meta_replay_sees():
+    def emit(*_):
+        book = types_pb2.EventBook()
+        book.pages.add().payload.CopyFrom(pack(counter_pb2.Increased()))
+        book.pages.add().payload.CopyFrom(pack(counter_pb2.Increased()))
+        return book
+
+    router, seen = _meta_recorder(
+        lambda r: AggregateDispatch("C", "counter", r).on_command(_INCREASE_BY, emit)
+    )
+    request = _identified(_command())
+    resp = router.dispatch(request)
+    meta = _stamped(request)
+    assert seen == [meta, meta]
+    assert seen == _replayed(resp.events, meta)
+
+
+def test_a_fact_s_recorded_pages_fold_with_the_meta_replay_sees():
+    router, seen = _meta_recorder(
+        lambda r: AggregateDispatch("C", "counter", r).on_fact(
+            _INCREASED,
+            lambda fact, *_: FactRecord(fact, (pack(counter_pb2.Increased()),)),
+        )
+    )
+    request = _identified(_command())
+    request.command.page.fact.payload.CopyFrom(pack(counter_pb2.Increased()))
+    request.command.page.fact_origin.external_id = "pi_1"
+    resp = router.dispatch(request)
+    meta = _stamped(request)
+    assert meta.HasField("fact")
+    assert seen == [meta, meta]
+    assert seen == _replayed(resp.events, meta)
