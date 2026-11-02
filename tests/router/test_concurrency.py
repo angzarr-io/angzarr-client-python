@@ -3,7 +3,7 @@ one router stay isolated. The router keeps no state between deliveries, so
 the state a handler sees reflects only its own delivery's history, never
 another thread's."""
 
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from angzarr_client.proto.io.angzarr.v1 import types_pb2
 from angzarr_client.router import AggregateDispatch, Rebuilder, Router, pack
@@ -37,29 +37,30 @@ def test_concurrent_dispatches_isolate_state():
             ),
         ).on_command(builders.FQ_INCREASE_BY, _echo_count)
     )
-    errors: list[Exception] = []
 
-    def worker(prior_n: int) -> None:
-        try:
-            prior = builders.prior_increases(prior_n)
-            for _ in range(_ITERATIONS):
-                cmd = builders.increase_command(1)
-                if prior is not None:
-                    cmd.events.CopyFrom(prior)
-                resp = router.dispatch(cmd)
-                seen = counter_pb2.CounterState.FromString(
+    def counts_seen(prior_n: int) -> list[int]:
+        """The count the handler saw on each of this thread's dispatches,
+        every one over a history of ``prior_n`` increases."""
+        prior = builders.prior_increases(prior_n)
+        seen = []
+        for _ in range(_ITERATIONS):
+            cmd = builders.increase_command(1)
+            if prior is not None:
+                cmd.events.CopyFrom(prior)
+            resp = router.dispatch(cmd)
+            seen.append(
+                counter_pb2.CounterState.FromString(
                     resp.events.pages[0].payload.value
                 ).count
-                if seen != prior_n:
-                    raise AssertionError(f"thread prior={prior_n} saw count {seen}")
-        except Exception as exc:
-            errors.append(exc)
+            )
+        return seen
 
-    threads = [threading.Thread(target=worker, args=(n,)) for n in range(_THREADS)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    router.close()
+    try:
+        # A worker's exception is re-raised here, by its future's result().
+        with ThreadPoolExecutor(max_workers=_THREADS) as pool:
+            futures = {n: pool.submit(counts_seen, n) for n in range(_THREADS)}
+            seen = {n: future.result() for n, future in futures.items()}
+    finally:
+        router.close()
 
-    assert not errors, errors
+    assert seen == {n: [n] * _ITERATIONS for n in range(_THREADS)}

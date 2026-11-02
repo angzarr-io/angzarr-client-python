@@ -3,7 +3,6 @@ documentation is not scanned."""
 
 from __future__ import annotations
 
-
 from tests.business_terms import (
     AMBIGUOUS_TERMS,
     BUSINESS_TERMS,

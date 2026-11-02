@@ -10,7 +10,9 @@ answer, or the coded error it refuses with, as the wire would carry it.
 
 from __future__ import annotations
 
+import inspect
 import re
+from collections.abc import Callable
 
 import pytest
 from google.protobuf import any_pb2, timestamp_pb2
@@ -47,6 +49,28 @@ _QUOTED = re.compile(r'"([^"]*)"')
 
 def _quoted(text: str) -> list[str]:
     return _QUOTED.findall(text)
+
+
+class _folded(parsers.re):
+    """A regex step parser that folds a clause of the step into the one value
+    the step uses. Each keyword names a builder whose parameter names are
+    named groups of the pattern: it is called with those groups, and its
+    result is the step's argument under the keyword, in their place."""
+
+    def __init__(self, name: str, **folds: Callable[..., object]) -> None:
+        super().__init__(name)
+        self._folds = {
+            key: (build, tuple(inspect.signature(build).parameters))
+            for key, build in folds.items()
+        }
+
+    def parse_arguments(self, name: str) -> dict[str, object] | None:
+        args = super().parse_arguments(name)
+        if args is None:
+            return None
+        for key, (build, groups) in self._folds.items():
+            args[key] = build(*(args.pop(group) for group in groups))
+        return args
 
 
 class World:
@@ -402,36 +426,36 @@ def _metadata_book(label, seq, meta) -> types_pb2.EventBook:
 
 
 @when(
-    parsers.re(
+    _folded(
         r'an Increased event of counter root "(?P<label>[^"]*)" at sequence (?P<seq>\d+) '
-        r"is dispatched, " + _METADATA
+        r"is dispatched, " + _METADATA,
+        meta=_meta,
     )
 )
-def _policy_metadata(world, label, seq, command, correlation, fact, rules, second):
-    meta = _meta(command, correlation, fact, rules, second)
+def _policy_metadata(world, label, seq, meta):
     world.answer_of(world.router.dispatch_policy, _metadata_book(label, seq, meta))
 
 
 @when(
-    parsers.re(
+    _folded(
         r'an Increased event of counter root "(?P<label>[^"]*)" at sequence (?P<seq>\d+) '
-        r"is projected, " + _METADATA
+        r"is projected, " + _METADATA,
+        meta=_meta,
     )
 )
-def _projector_metadata(world, label, seq, command, correlation, fact, rules, second):
-    meta = _meta(command, correlation, fact, rules, second)
+def _projector_metadata(world, label, seq, meta):
     world.answer_of(world.router.dispatch_projector, _metadata_book(label, seq, meta))
 
 
 @then(
-    parsers.re(
+    _folded(
         r'the (?:policy handler|projector) saw root "(?P<label>[^"]*)" at sequence '
-        r"(?P<seq>\d+), " + _METADATA
+        r"(?P<seq>\d+), " + _METADATA,
+        meta=_meta,
     )
 )
-def _saw_metadata(world, label, seq, command, correlation, fact, rules, second):
+def _saw_metadata(world, label, seq, meta):
     assert world.err is None, f"refused: {world.err}"
-    meta = _meta(command, correlation, fact, rules, second)
     assert [(s.cover, s.sequence, s.meta) for s in world.seen] == [
         (fx.root_of(label), int(seq), meta)
     ]
@@ -717,15 +741,29 @@ def _ledger_fact(fact: str, prior: int) -> types_pb2.ContextualCommand:
     return request
 
 
+def _handling(mode: str | None, expected: str | None) -> types_pb2.Handling | None:
+    """The handling a step's "MODE at expected sequence N" clause names, or
+    None when the step has no such clause."""
+    if mode is None:
+        return None
+    return types_pb2.Handling(
+        conflict_resolution=types_pb2.ConflictResolution.Value(
+            "CONFLICT_RESOLUTION_" + mode
+        ),
+        expected_sequence=int(expected),
+    )
+
+
 @when(
-    parsers.re(
+    _folded(
         r"(?P<input>.+?) is handled"
         r"(?: (?P<mode>STRICT|AGGREGATE_HANDLES|COMMUTATIVE) at expected sequence (?P<expected>\d+))?"
         r" over (?P<over>.+?)"
-        r'(?: with nonce "(?P<nonce>[^"]*)")?$'
+        r'(?: with nonce "(?P<nonce>[^"]*)")?$',
+        handling=_handling,
     )
 )
-def _handled(world, input, mode, expected, over, nonce):
+def _handled(world, input, handling, over, nonce):
     ledger = re.fullmatch(r"an? (\w+) fact", input)
     if ledger:
         prior = re.match(r"(\d+|no) prior", over)[1]
@@ -739,12 +777,8 @@ def _handled(world, input, mode, expected, over, nonce):
         events = fx.history([_order_event(k, v, s) for s, (k, v) in enumerate(found)])
     request = _order_input(input)
     request.events.CopyFrom(events)
-    if mode is not None:
-        handling = request.command.handling
-        handling.conflict_resolution = types_pb2.ConflictResolution.Value(
-            "CONFLICT_RESOLUTION_" + mode
-        )
-        handling.expected_sequence = int(expected)
+    if handling is not None:
+        request.command.handling.CopyFrom(handling)
     if nonce is not None:
         request.conflict_nonce = nonce.encode()
     if world.recorded_at is not None:
@@ -875,6 +909,11 @@ def _failing(error: Exception, logs: str | None = None):
 _LOGS = r', and logs "(?P<logs>[^"]*)" for itself'
 
 
+def _detail(arg: str, value: str) -> dict[str, str]:
+    """The details an error gets from a step's `arg ARG "VALUE"` clause."""
+    return {arg: value}
+
+
 @given(
     parsers.re(
         r"business code rejects AddItem with code (?P<code>\w+) and arg (?P<arg>\w+) "
@@ -912,33 +951,36 @@ def _panics(world, text):
 
 
 @given(
-    parsers.re(
+    _folded(
         r"business code for AddItem fails with code (?P<code>\w+) and arg (?P<arg>\w+) "
-        r'"(?P<value>[^"]*)"' + _LOGS
+        r'"(?P<value>[^"]*)"' + _LOGS,
+        details=_detail,
     )
 )
-def _fails_bug(world, code, arg, value, logs):
-    world.behave = _failing(Bug(code, **{arg: value}), logs)
+def _fails_bug(world, code, details, logs):
+    world.behave = _failing(Bug(code, **details), logs)
 
 
 @given(
-    parsers.re(
+    _folded(
         r"business code for AddItem fails with a retryable bug under (?P<status>\w+), "
-        r'code (?P<code>\w+) and arg (?P<arg>\w+) "(?P<value>[^"]*)"' + _LOGS
+        r'code (?P<code>\w+) and arg (?P<arg>\w+) "(?P<value>[^"]*)"' + _LOGS,
+        details=_detail,
     )
 )
-def _fails_retryable(world, status, code, arg, value, logs):
-    world.behave = _failing(RetryableBug(code, GrpcCode[status], **{arg: value}), logs)
+def _fails_retryable(world, status, code, details, logs):
+    world.behave = _failing(RetryableBug(code, GrpcCode[status], **details), logs)
 
 
 @given(
-    parsers.re(
+    _folded(
         r"business code rejects AddItem for immediate return with code (?P<code>\w+) and arg "
-        r'(?P<arg>\w+) "(?P<value>[^"]*)"' + _LOGS
+        r'(?P<arg>\w+) "(?P<value>[^"]*)"' + _LOGS,
+        details=_detail,
     )
 )
-def _rejects_immediate(world, code, arg, value, logs):
-    world.behave = _failing(Immediate(code, **{arg: value}), logs)
+def _rejects_immediate(world, code, details, logs):
+    world.behave = _failing(Immediate(code, **details), logs)
 
 
 @then(

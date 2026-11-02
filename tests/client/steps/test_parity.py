@@ -33,19 +33,21 @@ _ERROR_CLASSES = (
 )
 
 
-def _resolve(name: str) -> tuple[str | None, Any]:
+def _resolve(name: str) -> Any:
+    """The object ``name`` names in the first of the search paths that
+    exports it, or None when none does."""
     for mod_name in _SEARCH_PATHS:
         try:
             mod = importlib.import_module(mod_name)
         except ImportError:
             continue
         if hasattr(mod, name):
-            return mod_name, getattr(mod, name)
-    return None, None
+            return getattr(mod, name)
+    return None
 
 
 def _assert_exported(name: str) -> None:
-    mod_name, obj = _resolve(name)
+    obj = _resolve(name)
     assert obj is not None, (
         f'"{name}" was not found in angzarr_client or any canonical subpackage '
         f"(searched: {', '.join(_SEARCH_PATHS)})"
@@ -80,7 +82,7 @@ def _then_constant_exported(name: str) -> None:
 @then(parsers.parse('the "{name}" constant is exported with value "{value}"'))
 def _then_constant_value(name: str, value: str) -> None:
     _assert_exported(name)
-    assert _resolve(name)[1] == value
+    assert _resolve(name) == value
 
 
 @then(parsers.parse('the "{name}" symbol is exported from the testing module'))

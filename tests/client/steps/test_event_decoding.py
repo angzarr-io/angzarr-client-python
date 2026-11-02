@@ -543,11 +543,9 @@ def _then_decoding_fails(state: _State) -> None:
     """For corrupted bytes — but StringValue is permissive enough that
     even garbage bytes parse without error. Surface this as a finding
     if the corrupted-bytes scenario is critical."""
-    # Permissive: either the decoded message is wrong/None or last_error
-    # is set. With StringValue's tolerant parsing, neither may be true —
-    # which surfaces a real distinction between Python (permissive) and
-    # Rust (prost is stricter for unknown wire types).
-    assert state.decoded_msg is None or state.last_error is not None or True
+    # Asserts nothing: StringValue's tolerant parsing may leave the decoded
+    # message set and no error recorded, a real distinction between Python
+    # (permissive) and Rust (prost is stricter for unknown wire types).
 
 
 @then("an error should indicate deserialization failure")

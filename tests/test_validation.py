@@ -7,6 +7,8 @@ constants rather than against substring patterns.
 """
 
 import logging
+from collections.abc import Callable
+from typing import NamedTuple
 
 import pytest
 
@@ -223,9 +225,21 @@ class TestStructuredLogging:
         assert records == []
 
 
+class _Rejection(NamedTuple):
+    """One validator's rejection: the call that raises it, the error it
+    raises, and the info record it logs."""
+
+    call: Callable[[], None]
+    code: str
+    message: str
+    status_code: str
+    details: dict[str, str]
+    log_field: str
+    log_predicate: str
+
+
 _REJECTIONS = [
-    # (call, code, message, status_code, details, log_field, log_predicate)
-    (
+    _Rejection(
         lambda: require_exists(False, "player lookup"),
         codes.ENTITY_NOT_FOUND,
         "entity not found",
@@ -234,7 +248,7 @@ _REJECTIONS = [
         "<entity>",
         "exists",
     ),
-    (
+    _Rejection(
         lambda: require_not_exists(True, "player create"),
         codes.ENTITY_ALREADY_EXISTS,
         "entity already exists",
@@ -243,7 +257,7 @@ _REJECTIONS = [
         "<entity>",
         "not_exists",
     ),
-    (
+    _Rejection(
         lambda: require_positive(0, "amount"),
         codes.VALUE_NOT_POSITIVE,
         "amount must be positive",
@@ -252,7 +266,7 @@ _REJECTIONS = [
         "amount",
         "positive",
     ),
-    (
+    _Rejection(
         lambda: require_non_negative(-1, "balance"),
         codes.VALUE_NOT_NON_NEGATIVE,
         "balance must be non-negative",
@@ -261,7 +275,7 @@ _REJECTIONS = [
         "balance",
         "non_negative",
     ),
-    (
+    _Rejection(
         lambda: require_not_empty([], "items"),
         codes.COLLECTION_EMPTY,
         "items must not be empty",
@@ -270,7 +284,7 @@ _REJECTIONS = [
         "items",
         "not_empty",
     ),
-    (
+    _Rejection(
         lambda: require_not_empty_str("", "name"),
         codes.VALUE_EMPTY,
         "name must not be empty",
@@ -279,7 +293,7 @@ _REJECTIONS = [
         "name",
         "not_empty_str",
     ),
-    (
+    _Rejection(
         lambda: require_status("pending", "active", "must be active"),
         codes.STATUS_MISMATCH,
         "status does not match expected",
@@ -288,7 +302,7 @@ _REJECTIONS = [
         "status",
         "status_eq",
     ),
-    (
+    _Rejection(
         lambda: require_status_not("closed", "closed", "already closed"),
         codes.STATUS_FORBIDDEN,
         "status is the forbidden value",
@@ -316,43 +330,31 @@ class TestRejectionContract:
     status code and structured details, and emits exactly one info record
     carrying the same field / predicate / status_code."""
 
-    @pytest.mark.parametrize(
-        "call,code,message,status_code,details,_field,_predicate",
-        _REJECTIONS,
-        ids=_REJECTION_IDS,
-    )
-    def test_raised_error(
-        self, call, code, message, status_code, details, _field, _predicate
-    ):
+    @pytest.mark.parametrize("rejection", _REJECTIONS, ids=_REJECTION_IDS)
+    def test_raised_error(self, rejection):
         with pytest.raises(CommandRejectedError) as exc:
-            call()
+            rejection.call()
         err = exc.value
-        assert err.code == code
-        assert err.message == message
-        assert str(err).startswith(code)
-        assert err.status_code == status_code
-        assert err.details == details
+        assert err.code == rejection.code
+        assert err.message == rejection.message
+        assert str(err).startswith(rejection.code)
+        assert err.status_code == rejection.status_code
+        assert err.details == rejection.details
         assert err.cover is None
 
-    @pytest.mark.parametrize(
-        "call,_code,message,status_code,_details,field,predicate",
-        _REJECTIONS,
-        ids=_REJECTION_IDS,
-    )
-    def test_structured_log_record(
-        self, caplog, call, _code, message, status_code, _details, field, predicate
-    ):
+    @pytest.mark.parametrize("rejection", _REJECTIONS, ids=_REJECTION_IDS)
+    def test_structured_log_record(self, caplog, rejection):
         with (
             caplog.at_level(logging.INFO, logger="angzarr_client.validation"),
             pytest.raises(CommandRejectedError),
         ):
-            call()
+            rejection.call()
 
         records = [r for r in caplog.records if r.name == "angzarr_client.validation"]
         assert len(records) == 1
         rec = records[0]
         assert rec.levelno == logging.INFO
-        assert rec.getMessage() == f"validation rejection: {_code}"
-        assert rec.field == field
-        assert rec.predicate == predicate
-        assert rec.status_code == status_code
+        assert rec.getMessage() == f"validation rejection: {rejection.code}"
+        assert rec.field == rejection.log_field
+        assert rec.predicate == rejection.log_predicate
+        assert rec.status_code == rejection.status_code

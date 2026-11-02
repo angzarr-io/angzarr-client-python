@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import re
+import runpy
 
 import pytest
 
@@ -41,7 +42,7 @@ def test_generated_protos_import_under_the_package(tmp_path):
     assert not any(name.startswith("io/angzarr/router") for name in names)
     text = (tmp_path / "proto" / "io/angzarr/v1/command_handler_pb2.py").read_text()
     assert "from angzarr_client.proto.io.angzarr.v1 import types_pb2" in text
-    assert re.search(r"^from io\.", text, re.M) is None
+    assert re.search(r"^from io\.", text, re.MULTILINE) is None
 
 
 def test_fixture_messages_import_the_framework_from_the_package(tmp_path):
@@ -80,8 +81,7 @@ def test_the_reason_args_and_the_catalog_are_generated_beside_the_reasons(tmp_pa
         catalog
         == (proto_build.PROJECT_PROTO / "io/angzarr/v1/reasons.en-US.ftl").read_text()
     )
-    namespace: dict = {}
-    exec((tmp_path / "proto" / "io/angzarr/v1/reason_args.py").read_text(), namespace)
+    namespace = runpy.run_path(str(tmp_path / "proto" / "io/angzarr/v1/reason_args.py"))
     assert namespace["ARGS"]["ROUTER_REASON_ANY_DECODE_FAILED"] == (
         "message_type",
         "ext_err_txt",

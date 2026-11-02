@@ -262,6 +262,7 @@ def test_a_child_that_cannot_bind_exits_without_a_handshake(tmp_path):
         stdin=subprocess.PIPE,
         capture_output=True,
         timeout=STARTUP_TIMEOUT,
+        check=False,
     )
     assert proc.returncode != 0
     assert proc.stdout == b""
@@ -279,6 +280,7 @@ def test_a_child_given_a_socket_path_not_utf8_binds_nothing_and_exits(tmp_path):
         stdin=subprocess.PIPE,
         capture_output=True,
         timeout=STARTUP_TIMEOUT,
+        check=False,
     )
     assert proc.returncode != 0
     assert proc.stdout == b""

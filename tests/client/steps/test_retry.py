@@ -103,7 +103,8 @@ def _given_on_retry(state: _State) -> None:
 def _when_execute(state: _State) -> None:
     try:
         state.result = state.policy.execute(state.op)
-    except Exception as e:
+    except RuntimeError as e:
+        # What the operations raise, and so what the policy re-raises.
         state.error = e
 
 

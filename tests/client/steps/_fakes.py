@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -42,12 +42,12 @@ from angzarr_client._pb import (
     CommandBook,
     CommandPage,
     CommandResponse,
+    CorrelationQuery,
     Cover,
     EventBook,
     EventMeta,
     EventPage,
     Projection,
-    CorrelationQuery,
     Query,
     Snapshot,
 )
@@ -295,6 +295,43 @@ def _status(code: grpc.StatusCode, details: str) -> StubRpcError:
     return StubRpcError(code, details)
 
 
+def _temporal_admits(temporal: Any, page: EventPage) -> bool:
+    """Whether the page is at or before a temporal query's point in time,
+    given as a sequence or as a recorded time; no point admits every page."""
+    which = temporal.WhichOneof("point_in_time")
+    if which == "as_of_sequence":
+        return page.sequence <= temporal.as_of_sequence
+    if which == "as_of_time":
+        return _ts_key(page.meta.recorded_at) <= _ts_key(temporal.as_of_time)
+    return True
+
+
+def _selection_admits(query: Query, page: EventPage) -> bool:
+    """Whether the query's selection (a sequence range, a set of sequences
+    or a temporal point) admits the page; no selection admits every page."""
+    seq = page.sequence
+    selection = query.WhichOneof("selection")
+    if selection == "range":
+        r = query.range
+        return seq >= r.lower and (not r.HasField("upper") or seq <= r.upper)
+    if selection == "sequences":
+        return seq in query.sequences.values
+    if selection == "temporal":
+        return _temporal_admits(query.temporal, page)
+    return True
+
+
+def _query_admits(query: Query, page: EventPage) -> bool:
+    """Whether a Query returns the page: its correlation, when it names
+    one, and its selection both admit it."""
+    if (
+        query.HasField("correlation_id")
+        and page.meta.correlation_id.value != query.correlation_id.value
+    ):
+        return False
+    return _selection_admits(query, page)
+
+
 @dataclass
 class _Aggregate:
     cover: Cover
@@ -315,6 +352,19 @@ class _Aggregate:
         if self.snapshot is not None:
             b.snapshot.CopyFrom(self.snapshot)
         return b
+
+
+def _matching_books(
+    aggregates: Iterable[_Aggregate], keep: Callable[[EventPage], bool]
+) -> list[EventBook]:
+    """One EventBook per stream holding a page ``keep`` admits, carrying
+    only those pages; a stream with none is left out."""
+    books = []
+    for agg in aggregates:
+        pages = [p for p in agg.pages if keep(p)]
+        if pages:
+            books.append(agg.book(pages))
+    return books
 
 
 def _decide(page: CommandPage, history: list[EventPage]) -> list[tuple[str, str]]:
@@ -576,41 +626,18 @@ class TestBackend:
         c = query.cover
         if not c.domain:
             raise _status(grpc.StatusCode.INVALID_ARGUMENT, "domain is required")
-        correlation = (
-            query.correlation_id.value if query.HasField("correlation_id") else None
-        )
-        selection = query.WhichOneof("selection")
 
         def keep(p: EventPage) -> bool:
-            if correlation is not None and p.meta.correlation_id.value != correlation:
-                return False
-            seq = p.sequence
-            if selection == "range":
-                r = query.range
-                return seq >= r.lower and (not r.HasField("upper") or seq <= r.upper)
-            if selection == "sequences":
-                return seq in query.sequences.values
-            if selection == "temporal":
-                t = query.temporal
-                which = t.WhichOneof("point_in_time")
-                if which == "as_of_sequence":
-                    return seq <= t.as_of_sequence
-                if which == "as_of_time":
-                    return _ts_key(p.meta.recorded_at) <= _ts_key(t.as_of_time)
-            return True
+            return _query_admits(query, p)
 
         with self._lock:
             if not c.HasField("root"):
                 # By correlation: every stream of the domain is searched,
                 # one EventBook per matching stream.
-                books = []
-                for agg in self._store.values():
-                    if agg.cover.domain != c.domain:
-                        continue
-                    pages = [p for p in agg.pages if keep(p)]
-                    if pages:
-                        books.append(agg.book(pages))
-                return books
+                return _matching_books(
+                    (a for a in self._store.values() if a.cover.domain == c.domain),
+                    keep,
+                )
             agg = self._store.get(_key_of(c)) or _Aggregate(cover=c)
             book = agg.book([p for p in agg.pages if keep(p)])
             book.cover.CopyFrom(c)
@@ -624,12 +651,10 @@ class TestBackend:
             raise _status(grpc.StatusCode.INVALID_ARGUMENT, "correlation_id")
         flow = query.correlation_id.value
         with self._lock:
-            books = []
-            for agg in self._store.values():
-                pages = [p for p in agg.pages if p.meta.correlation_id.value == flow]
-                if pages:
-                    books.append(agg.book(pages))
-            return books
+            return _matching_books(
+                self._store.values(),
+                lambda p: p.meta.correlation_id.value == flow,
+            )
 
     def _get_event_book(self, query: Query) -> EventBook:
         books = self._select(query)

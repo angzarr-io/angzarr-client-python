@@ -7,8 +7,7 @@ from __future__ import annotations
 import pytest
 
 import angzarr_client
-from angzarr_client import _pb, helpers, wrappers
-from angzarr_client import diagnostic
+from angzarr_client import _pb, diagnostic, helpers, wrappers
 from angzarr_client.error_codes import codes
 
 

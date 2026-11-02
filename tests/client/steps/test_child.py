@@ -278,7 +278,7 @@ def _bytes(text: str) -> bytes:
     hh, every other character itself, in UTF-8."""
     parts = re.split(r"(\\x[0-9a-fA-F]{2})", text)
     return b"".join(
-        bytes([int(p[2:], 16)]) if re.fullmatch(r"\\x[0-9a-fA-F]{2}", p) else p.encode()
+        bytes.fromhex(p[2:]) if re.fullmatch(r"\\x[0-9a-fA-F]{2}", p) else p.encode()
         for p in parts
     )
 

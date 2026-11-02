@@ -167,7 +167,6 @@ process_isolation = "forkserver"
 [tool.ruff]
 exclude = [
     "angzarr_client/proto",
-    "tests/",
     ".codegen-check/",
     # Submodule — owned by angzarr-project, contains symlinks
     # (features/example/acceptance/environment.py → tests/example/acceptance/...)

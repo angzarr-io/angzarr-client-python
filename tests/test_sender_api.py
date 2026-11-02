@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
-
 from angzarr_client import CommandHandlerClient, ConflictResolution
 from angzarr_client.proto.io.angzarr.v1 import command_handler_pb2, types_pb2
 
