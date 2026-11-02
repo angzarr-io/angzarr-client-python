@@ -55,7 +55,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "pytest-timeout>=2.3",
     "mutmut>=2.5.0",
-    "ruff>=0.4.0",
+    "ruff==0.17.3",
     "black>=24.0.0",
     "import-linter==2.15",
 ]
@@ -121,6 +121,7 @@ markers = [
     "conflict_nonce: handling.feature, the AGGREGATE_HANDLES conflict nonce",
     "context: context.feature, facts and handler context",
     "counter: counter_dispatch.feature, the CounterAggregate",
+    "divergence(name, reason): a scenario where Python does other than the spec (tests/client/conftest.py, DIVERGENCES)",
     "describe: handling.feature, one component per business process",
     "error_keys: handling.feature, errors as a key and its args",
     "folding: handling.feature, folding every page given",
