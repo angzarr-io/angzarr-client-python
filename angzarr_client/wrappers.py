@@ -259,7 +259,12 @@ class EventPage(Wrapped):
         """Decode the event payload into ``msg_class`` when the type URL names
         it (the full name after the last ``/``, any prefix).
 
-        Returns None on missing event, type mismatch, or decode failure.
+        Returns None when there is no event payload or it names another type
+        (including ``Any.Unpack`` refusing ``msg_class``): a mismatch, never an
+        empty message. A payload whose type matches but whose bytes do not
+        decode is an error, not a mismatch: the decoder's
+        ``google.protobuf.message.DecodeError`` is raised, as ``decode_event``,
+        ``try_unpack`` and ``unpack`` raise it. Nothing else is caught.
         """
         if not self._proto.HasField("payload"):
             return None
@@ -267,12 +272,10 @@ class EventPage(Wrapped):
             self._proto.payload.type_url, msg_class.DESCRIPTOR.full_name
         ):
             return None
-        try:
-            msg = msg_class()
-            self._proto.payload.Unpack(msg)
-            return msg
-        except Exception:  # noqa: BLE001 — undecodable payload decodes to None
+        msg = msg_class()
+        if not self._proto.payload.Unpack(msg):
             return None
+        return msg
 
 
 class CommandPage(Wrapped):

@@ -107,17 +107,20 @@ def decode_event(page: EventPage, full_type_name: str, msg_class: type[T]) -> T 
     type name is a runtime variable.
 
     Returns None when there is no page or payload, or the type does not
-    match. A payload whose type matches but whose bytes do not decode is an
-    error, not a mismatch: the decoder's
-    ``google.protobuf.message.DecodeError`` is raised, as ``try_unpack``
-    and ``unpack`` raise it.
+    match: the type URL names another type, or ``msg_class`` is not the type
+    the name and payload agree on (``Any.Unpack`` refuses it). A mismatch is
+    never an empty message. A payload whose type matches but whose bytes do
+    not decode is an error, not a mismatch: the decoder's
+    ``google.protobuf.message.DecodeError`` is raised, as ``try_unpack``,
+    ``unpack`` and ``EventPage.decode_typed`` raise it.
     """
     if page is None or not page.HasField("payload"):
         return None
     if not type_url_matches(page.payload.type_url, full_type_name):
         return None
     msg = msg_class()
-    page.payload.Unpack(msg)
+    if not page.payload.Unpack(msg):
+        return None
     return msg
 
 
