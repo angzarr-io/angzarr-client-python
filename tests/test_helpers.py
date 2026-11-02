@@ -280,6 +280,15 @@ class TestDecodeEvent:
         assert result.domain == "test"
         assert result.edition == "abc"
 
+    def test_returns_none_when_msg_class_does_not_match_the_name(self) -> None:
+        """The name matches the payload but msg_class is another type: Unpack
+        refuses, and that is a mismatch: None, never an empty message."""
+        from angzarr_client._pb import Cover, EventBook
+
+        page = EventPage(sequence=1)
+        page.payload.Pack(Cover(domain="test"))
+        assert decode_event(page, "io.angzarr.v1.Cover", EventBook) is None
+
     def test_raises_decode_error_for_undecodable_payload(self) -> None:
         """A payload whose type matches but whose bytes do not decode raises
         the decoder's DecodeError: it is no mismatch, so no None."""

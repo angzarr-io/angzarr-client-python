@@ -270,9 +270,15 @@ def _then_type_url_is(state: _State, type_url: str) -> None:
 
 @when("I decode the event as OrderCreated")
 def _when_decode_as_order_created(state: _State) -> None:
-    """Decode using full type-name matching against our test message."""
+    """Decode as a class whose full name is ``orders.OrderCreated``, so a
+    matching page decodes and a mismatched one returns None (the
+    StringValue stand-in names another type: decode_event would refuse it)."""
     assert state.current_event is not None
-    result = decode_event(state.current_event, "orders.OrderCreated", _MSG_CLASS)
+    result = decode_event(
+        state.current_event,
+        "orders.OrderCreated",
+        _message_class("orders", "OrderCreated"),
+    )
     if result is None:
         state.decode_is_none = True
     else:
@@ -435,11 +441,10 @@ def _then_decoding_succeeds(state: _State) -> None:
 
 @then("I should get an OrderCreated message")
 def _then_should_get_order_created(state: _State) -> None:
-    # The decoded message is our StringValue stand-in; confirm we got
-    # SOME message back (the field-level assertion is not portable
-    # to the synthetic event type).
+    # The decoded message is the synthetic orders.OrderCreated; its fields
+    # are immaterial, its type is the assertion.
     assert state.decoded_msg is not None
-    assert isinstance(state.decoded_msg, _MSG_CLASS)
+    assert state.decoded_msg.DESCRIPTOR.full_name == "orders.OrderCreated"
 
 
 @then("the full type_url prefix should be ignored")

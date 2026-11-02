@@ -2,6 +2,9 @@
 
 from uuid import UUID as PyUUID
 
+import pytest
+from google.protobuf.message import DecodeError
+
 from angzarr_client._pb import (
     CommandBook as CommandBookProto,
 )
@@ -300,6 +303,36 @@ class TestEventPageW:
         wrapper = EventPage(EventPageProto(sequence=1))
         result = wrapper.decode_typed(CoverProto)
         assert result is None
+
+    def test_decode_typed_raises_decode_error_for_undecodable_payload(self) -> None:
+        """A payload whose type matches but whose bytes do not decode raises
+        the decoder's DecodeError: it is no mismatch, so no None."""
+        proto = EventPageProto(sequence=1)
+        proto.payload.type_url = "type.googleapis.com/io.angzarr.v1.Cover"
+        proto.payload.value = b"\xff\xff\xff\xff"
+        with pytest.raises(DecodeError):
+            EventPage(proto).decode_typed(CoverProto)
+
+    def test_decode_typed_propagates_an_unpack_failure(self, monkeypatch) -> None:
+        """Whatever Unpack raises reaches the caller: nothing is swallowed."""
+        proto = EventPageProto(sequence=1)
+        proto.payload.Pack(CoverProto(domain="x"))
+
+        def boom(self, _msg):
+            raise RuntimeError("decoding failed")
+
+        monkeypatch.setattr(type(proto.payload), "Unpack", boom)
+        with pytest.raises(RuntimeError, match="decoding failed"):
+            EventPage(proto).decode_typed(CoverProto)
+
+    def test_decode_typed_returns_none_when_unpack_reports_a_mismatch(
+        self, monkeypatch
+    ) -> None:
+        """Unpack returning False is a mismatch: None, never an empty message."""
+        proto = EventPageProto(sequence=1)
+        proto.payload.Pack(CoverProto(domain="x"))
+        monkeypatch.setattr(type(proto.payload), "Unpack", lambda self, _msg: False)
+        assert EventPage(proto).decode_typed(CoverProto) is None
 
 
 class TestCommandPageW:
