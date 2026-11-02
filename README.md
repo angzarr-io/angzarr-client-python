@@ -155,6 +155,23 @@ A descriptor built any other way (by hand, as a `types_pb2.ComponentDescriptor`)
 works the same: the host answers `Describe` with whatever it is given,
 unchanged.
 
+### A process manager's rollback
+
+`Compensation` (decision 14.74) pairs each step of a process manager, in
+code, with its undo, and builds the rollback from them; its journal is the
+PM's own events, folded into its state. `step(name, completed_by=,
+undoes=, recorded=, undo=)` registers a step: `recorded(state)` reads the
+event that recorded it done (a `completed_by`, or None while it is not),
+`undo(event)` builds its undo, an event of the PM's own that its outbound
+policy turns into `undoes` (the destination's message class). Registering
+checks `undoes` against its descriptor: one declared a command, which may be
+refused, is warned of (`warnings`, logged, code `UNDO_TARGETS_COMMAND`,
+details `step`, `command`). `rollback(state, reason)` is the failed event,
+then each completed step's undo, newest first; `reply(state, event)` the
+reply, and once rolled back its undo at once; `undo_refused(state,
+undoes)` the step's CompensationFailed. angzarr-embedded's
+`markup::Compensation` is the same in Rust.
+
 ### As a child of an in-app runtime
 
 angzarr-embedded (the Rust runtime that runs inside an application) launches

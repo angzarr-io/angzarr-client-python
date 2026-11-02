@@ -126,6 +126,10 @@ class Compensation:
         checked here, at registration, against the descriptor; one declared
         a command, which may be refused, is warned of."""
         target = _full_name(undoes)
+        if _is_command(undoes):
+            warning = UndoTargetsCommand(step=name, command=target)
+            self._warnings.append(warning)
+            _log.warning("%s", warning)
         self._steps.append(_Step(name, completed_by, target, recorded, undo))
         return self
 
@@ -139,16 +143,31 @@ class Compensation:
         """The rollback of ``state`` for ``reason``: the failed event, then
         the undo of each step the state records done, newest first (the
         reverse of their registration). One handling's events."""
-        raise NotImplementedError("rollback")
+        events = [self._failed(state, reason)]
+        for step in reversed(self._steps):
+            done = step.recorded(state)
+            if done is not None:
+                events.append(step.undo(done))
+        return events
 
     def reply(self, state: Any, reply: Any) -> list:
         """The events recording ``reply``, the event that records a step
         done: the reply alone, or, once ``state`` has rolled back (a reply
         that arrived late), the reply and at once its step's undo."""
-        raise NotImplementedError("reply")
+        events = [reply]
+        if self._rolled_back(state):
+            for step in self._steps:
+                if type(reply) is step.completed_by:
+                    events.append(step.undo(reply))
+                    break
+        return events
 
     def undo_refused(self, state: Any, undoes: Any) -> Any:
         """The event recording that the undo becoming ``undoes`` (a protobuf
         message class, or its full name) was refused: its step's
         CompensationFailed; None when no step's undo becomes it."""
-        raise NotImplementedError("undo_refused")
+        target = undoes if isinstance(undoes, str) else _full_name(undoes)
+        for step in self._steps:
+            if step.target == target:
+                return self._compensation_failed(state, step.name)
+        return None
