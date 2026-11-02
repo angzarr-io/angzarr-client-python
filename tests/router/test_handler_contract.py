@@ -1161,6 +1161,31 @@ def _answers_ship(world, domain):
     world.policy.on_event(fx.fq(order_pb2.OrderPlaced), lambda _e, _c: [world.command])
 
 
+def _stock_hold_requested() -> types_pb2.CommandBook:
+    """A StockHoldRequested fact for "inventory", as a policy's business code
+    returns one for a type its destination declares a fact (decision 14.69):
+    the Fact arm, its payload alone. The fixture declares no such message, so
+    its payload is named by type URL, empty."""
+    fact = types_pb2.CommandBook(cover=fx.cover_of("inventory", "inv-7"))
+    fact.page.fact.payload.CopyFrom(
+        any_pb2.Any(type_url="type.googleapis.com/orders.v1.StockHoldRequested")
+    )
+    return fact
+
+
+@given(
+    "its business code answers an OrderPlaced event with a ReserveStock command and then "
+    "a StockHoldRequested fact"
+)
+def _answers_command_then_fact(world):
+    command = types_pb2.CommandBook(cover=fx.cover_of("inventory", "inv-7"))
+    command.page.command.payload.CopyFrom(pack(order_pb2.ReserveStock()))
+    world.outputs = [command, _stock_hold_requested()]
+    world.policy.on_event(
+        fx.fq(order_pb2.OrderPlaced), lambda _e, _c: list(world.outputs)
+    )
+
+
 _ORDER_PAGES = {
     "OrderPlaced": order_pb2.OrderPlaced,
     "OrderNoteAdded": order_pb2.OrderNoteAdded,
@@ -1205,6 +1230,19 @@ def _no_reaction_for(world, seq):
 def _ship_unchanged(world):
     [reaction] = world.answer.reactions
     assert list(reaction.commands) == [world.command]
+
+
+@then(
+    "the answer's one reaction carries the ReserveStock command and then the StockHoldRequested "
+    "fact, unchanged"
+)
+def _command_then_fact_unchanged(world):
+    [reaction] = world.answer.reactions
+    assert list(reaction.commands) == world.outputs
+    assert [page.page.WhichOneof("body") for page in reaction.commands] == [
+        "command",
+        "fact",
+    ]
 
 
 @then("the answer is not refused")
