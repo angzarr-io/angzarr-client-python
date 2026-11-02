@@ -21,11 +21,12 @@ pre-commit:
     test:
       run: just test-commit
 
-# A merge commit is tested as a commit is, and red tests fail it.
+# A merge commit is tested as a commit is: one bringing red tests onto the
+# default branch is refused, one onto another branch is warned.
 pre-merge-commit:
   commands:
     test:
-      run: just test-commit merging
+      run: just test-commit
 
 # No mutation testing in any hook: it runs while tests are written and judged
 # (`just mutation-push`, by hand), at the end of an unattended run, and in the

@@ -66,10 +66,10 @@ test: prepare
 # The test gate the git hooks run (pre-commit, pre-merge-commit), under the
 # red-on-branches rule: red tests (pytest exit 1, failing tests) are committed
 # on any branch but the default one, with a warning that the branch cannot
-# merge until they pass, and refused on the default branch and on a merge
-# commit. Everything else (preparing the environment, collection errors, an
+# merge until they pass, and refused on the default branch (a merge commit
+# into it too). Everything else (preparing the environment, collection errors, an
 # interrupted run) fails everywhere.
-test-commit merging="":
+test-commit:
     #!/usr/bin/env bash
     set -uo pipefail
     cd {{TOP}}
@@ -82,10 +82,6 @@ test-commit merging="":
     default="${default#origin/}"
     default="${default:-main}"
     branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo HEAD)"
-    if [ -n "{{merging}}" ]; then
-        echo "FAIL tests: red tests cannot be merged" >&2
-        exit 1
-    fi
     if [ "$branch" = "$default" ] || [ "$branch" = "HEAD" ]; then
         echo "FAIL tests: red tests cannot be committed on $branch; commit them on a branch" >&2
         exit 1
