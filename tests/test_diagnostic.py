@@ -220,3 +220,10 @@ def test_the_generated_args_are_the_descriptors():
         assert tuple(options.Extensions[reasons_pb2.reason].args) == args
     assert set(_ARGS) == set(_live_keys())
     assert reason_args.EXT_ERR_TXT == "ext_err_txt"
+
+
+def test_every_key_declares_a_status_or_is_a_readiness_refusal():
+    # Decision 14.65: one table per package, generated from the options.
+    status = {**reason_args.STATUS, **embedded_args.STATUS, **distributed_args.STATUS}
+    assert set(status) == set(_ARGS)
+    assert {s for s in status.values() if s is not None} <= {3, 9, 10, 12, 13, 14, 15}

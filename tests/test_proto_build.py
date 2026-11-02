@@ -133,3 +133,36 @@ def test_each_transport_has_its_own_reason_args_and_catalog(tmp_path):
     core = runpy.run_path(str(tmp_path / "proto" / "io/angzarr/v1/reason_args.py"))
     assert "HOST_REASON_HANDSHAKE_MALFORMED" not in core["ARGS"]
     assert "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN" in core["ARGS"]
+
+
+def test_each_keys_status_is_generated_beside_its_args(tmp_path):
+    # Decision 14.65: a key's status is its (reason) option's, generated as
+    # the google.rpc.Code number it travels with; None for a readiness key,
+    # which never travels as a status.
+    proto_build.generate_protos(tmp_path / "proto")
+    core = runpy.run_path(str(tmp_path / "proto" / "io/angzarr/v1/reason_args.py"))
+    assert core["STATUS"]["ROUTER_REASON_PERSISTED_EVENT_CORRUPT"] == 15
+    assert core["STATUS"]["ROUTER_REASON_NO_COMPONENT_OF_KIND"] == 12
+    assert core["STATUS"]["COORDINATOR_REASON_EDITION_NOT_FORKED"] == 9
+    assert core["STATUS"]["COORDINATOR_REASON_MISSING_RULES_VERSION"] is None
+    assert set(core["STATUS"]) == set(core["ARGS"])
+    embedded = runpy.run_path(
+        str(tmp_path / "proto" / "io/angzarr/transport/embedded/v1/reason_args.py")
+    )
+    assert embedded["STATUS"]["HOST_REASON_PROBE_INPUT"] == 3
+
+
+def test_a_live_key_without_its_status_fails_the_build():
+    from google.protobuf import descriptor_pb2
+
+    from angzarr_client.proto.io.angzarr.v1 import reasons_pb2
+
+    file = descriptor_pb2.FileDescriptorProto(name="io/angzarr/v1/reasons.proto")
+    enum = file.enum_type.add(name="RouterReason")
+    enum.value.add(name="ROUTER_REASON_UNSPECIFIED", number=0)
+    live = enum.value.add(name="ROUTER_REASON_LIVE", number=1)
+    live.options.Extensions[reasons_pb2.reason].args.append("limit")
+    with pytest.raises(
+        proto_build.ProtoBuildError, match="ROUTER_REASON_LIVE declares no status"
+    ):
+        proto_build._package_args(file, ("RouterReason",), reasons_pb2.reason)

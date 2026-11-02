@@ -1013,3 +1013,18 @@ def test_a_fact_s_recorded_pages_fold_with_the_meta_replay_sees():
     assert meta.HasField("fact")
     assert seen == [meta, meta]
     assert seen == _replayed(resp.events, meta)
+
+
+# --- decision 14.65: a key travels under the status its option declares --
+
+
+def test_every_router_key_is_raised_under_its_declared_status():
+    from angzarr_client.proto.io.angzarr.v1 import reason_args
+
+    for key in reason_args.ARGS:
+        if key.startswith("ROUTER_REASON_"):
+            assert CodedError(key).grpc == reason_args.STATUS[key], key
+    assert CodedError("A_HANDLERS_OWN_KEY").grpc == GrpcCode.INTERNAL
+    assert CodedError("ROUTER_REASON_NO_COMPONENT_OF_KIND", GrpcCode.INTERNAL).grpc == (
+        GrpcCode.INTERNAL
+    )
