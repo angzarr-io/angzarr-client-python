@@ -176,7 +176,7 @@ def test_policy_handle_returns_the_commands_grouped_by_trigger(started):
     stub = policy_pb2_grpc.PolicyServiceStub(channel)
     resp = stub.Handle(_increased_book("order", 2), timeout=5)
     assert [r.trigger_sequence for r in resp.reactions] == [0, 1]
-    assert [c.cover.domain for r in resp.reactions for c in r.commands] == [
+    assert [c.cover.domain for r in resp.reactions for c in r.outputs] == [
         "inventory",
         "inventory",
     ]

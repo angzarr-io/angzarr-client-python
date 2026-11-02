@@ -491,12 +491,12 @@ def _policy_emits(world, domain, seq):
     assert world.err is None, f"refused: {world.err}"
     [reaction] = world.answer.reactions
     assert reaction.trigger_sequence == int(seq)
-    assert [c.cover.domain for c in reaction.commands] == [domain]
+    assert [c.cover.domain for c in reaction.outputs] == [domain]
 
 
 @then("the command carries no router-stamped provenance")
 def _no_provenance(world):
-    [command] = world.answer.reactions[0].commands
+    [command] = world.answer.reactions[0].outputs
     assert command == fx.reserve_for("inventory")
 
 
@@ -1217,7 +1217,7 @@ def _reactions(world, datatable):
     ]
     for reaction, row in zip(reactions, rows):
         assert row["commands"] == "one ReserveStock"
-        [command] = reaction.commands
+        [command] = reaction.outputs
         assert fx.fq_of(command.page.command.payload) == fx.fq(order_pb2.ReserveStock)
 
 
@@ -1229,7 +1229,7 @@ def _no_reaction_for(world, seq):
 @then("the answer's one reaction carries that ShipOrder command unchanged")
 def _ship_unchanged(world):
     [reaction] = world.answer.reactions
-    assert list(reaction.commands) == [world.command]
+    assert list(reaction.outputs) == [world.command]
 
 
 @then(
@@ -1238,8 +1238,8 @@ def _ship_unchanged(world):
 )
 def _command_then_fact_unchanged(world):
     [reaction] = world.answer.reactions
-    assert list(reaction.commands) == world.outputs
-    assert [page.page.WhichOneof("body") for page in reaction.commands] == [
+    assert list(reaction.outputs) == world.outputs
+    assert [page.page.WhichOneof("body") for page in reaction.outputs] == [
         "command",
         "fact",
     ]

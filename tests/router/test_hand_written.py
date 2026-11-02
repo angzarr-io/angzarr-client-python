@@ -109,7 +109,7 @@ def test_a_hand_written_policy_answers_its_commands_by_trigger(policy_channel):
     book = _book("alpha", counter_pb2.Increased(), counter_pb2.Increased(), first=7)
     response = stub.Handle(book, timeout=5)
     assert [r.trigger_sequence for r in response.reactions] == [7, 8]
-    assert [c.cover.domain for r in response.reactions for c in r.commands] == [
+    assert [c.cover.domain for r in response.reactions for c in r.outputs] == [
         "beta",
         "beta",
     ]

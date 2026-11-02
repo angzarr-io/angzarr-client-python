@@ -562,7 +562,7 @@ def test_a_policy_handler_registered_with_on_event_reads_the_source_cover():
     ).meta.rules_version = "2"
     resp = router.dispatch_policy(book)
     assert seen == [(book.pages[0].payload, book.cover, 3)]
-    assert [(r.trigger_sequence, list(r.commands)) for r in resp.reactions] == [(3, [])]
+    assert [(r.trigger_sequence, list(r.outputs)) for r in resp.reactions] == [(3, [])]
 
 
 def test_a_policy_handler_sees_its_trigger_meta_and_none_for_a_bookless_cover():
