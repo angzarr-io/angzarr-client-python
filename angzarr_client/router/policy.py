@@ -73,8 +73,8 @@ class PolicyDispatch:
             ctx = PageContext(
                 cover, page.sequence, page.meta if page.HasField("meta") else None
             )
-            commands = call(ctx, thunk, page.payload, ctx) or []
-            resp.reactions.add(trigger_sequence=page.sequence, commands=commands)
+            outputs = call(ctx, thunk, page.payload, ctx) or []
+            resp.reactions.add(trigger_sequence=page.sequence, outputs=outputs)
         return resp
 
     def refused(self, refusal: policy_pb2.Refusal) -> policy_pb2.OnRefusedResponse:
