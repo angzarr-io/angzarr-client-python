@@ -1,3 +1,9 @@
+> **Status: currently out of scope.** This repository is behind the angzarr spec and is incompatible with the current runtime and API. It is not maintained until it is ported or archived.
+>
+> - **Spec:** it targets angzarr-project `3213925` (2026-11-02); angzarr-project `main` is now `19f4bd7` (2026-11-20), and the `chore/project-f7362501` branch's bump to `f736250` was never merged.
+> - **Known differences:** the package builds, but 36 test modules fail at collection against the newer spec: the library still uses `CommandResponse` and `ConflictResolution` and the retired child handshake and descriptor checks (reason keys are ported). The port needs removal of `Handling` and `ConflictResolution`, `CommandResult`, the Command | Fact split, descriptor checks and the child handshake (now the coordinator's), and typed refusal messages. See `BEHIND-SPEC.md` on `chore/project-f7362501`.
+> - **Use instead:** [angzarr-client-rust](https://github.com/angzarr-io/angzarr-client-rust) and [angzarr-examples-rust](https://github.com/angzarr-io/angzarr-examples-rust) are the current reference implementations; the spec is [angzarr-project](https://github.com/angzarr-io/angzarr-project).
+
 # angzarr-client (Python)
 
 The home of [Angzarr](https://angzarr.io) for Python:
