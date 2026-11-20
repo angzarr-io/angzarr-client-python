@@ -45,7 +45,7 @@ FIXTURE = (
 )
 
 # The item an order applier cannot fold: a fold that fails on it is a
-# handler bug (ROUTER_REASON_FOLD_FAILED, ROUTER_REASON_FOLD_FAILED_EMITTED).
+# handler bug (ANGZARR_REASON_FOLD_FAILED, ANGZARR_REASON_FOLD_FAILED_EMITTED).
 ROTTEN = "rotten"
 
 _log = logging.getLogger(__name__)

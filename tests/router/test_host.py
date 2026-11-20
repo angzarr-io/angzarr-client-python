@@ -140,10 +140,10 @@ def test_an_unclassified_handler_failure_is_a_coded_internal_error(started):
     stub = command_handler_pb2_grpc.CommandHandlerServiceStub(channel)
     with pytest.raises(grpc.RpcError) as err:
         stub.Handle(builders.fail_hard_command(), timeout=5)
-    assert err.value.details() == "ROUTER_REASON_UNHANDLED_HANDLER_ERROR"
+    assert err.value.details() == "ANGZARR_REASON_UNHANDLED_HANDLER_ERROR"
     info = _error_info(err.value)
     assert (info.reason, dict(info.metadata)) == (
-        "ROUTER_REASON_UNHANDLED_HANDLER_ERROR",
+        "ANGZARR_REASON_UNHANDLED_HANDLER_ERROR",
         {},
     )
 
@@ -159,7 +159,7 @@ def test_a_fact_without_a_fact_handler_is_refused(started):
     with pytest.raises(grpc.RpcError) as err:
         stub.Handle(request, timeout=5)
     assert err.value.code() == grpc.StatusCode.INTERNAL
-    assert _error_info(err.value).reason == "ROUTER_REASON_NO_FACT_HANDLER"
+    assert _error_info(err.value).reason == "ANGZARR_REASON_NO_FACT_HANDLER"
 
 
 # --- Policy / process manager / projector / upcaster -------------------------
@@ -273,8 +273,8 @@ def test_a_component_host_refuses_an_upcaster():
         with pytest.raises(ConfigurationError) as refused:
             host.start("127.0.0.1:0")
         assert (refused.value.code, str(refused.value)) == (
-            "HOST_REASON_UPCASTER_WITH_COMPONENT",
-            "HOST_REASON_UPCASTER_WITH_COMPONENT component=CounterAggregate",
+            "ANGZARR_REASON_UPCASTER_WITH_COMPONENT",
+            "ANGZARR_REASON_UPCASTER_WITH_COMPONENT component=CounterAggregate",
         )
         assert refused.value.details == {"component": "CounterAggregate"}
         assert host.address == ""
@@ -306,18 +306,18 @@ def test_an_upcaster_coded_error_travels_as_its_key_and_args(started):
 
 def test_an_unexpected_exception_is_unhandled_caused_by_a_panic(started):
     # Decision 14.37: an escaped exception is
-    # ROUTER_REASON_UNHANDLED_HANDLER_ERROR with cause
-    # ROUTER_REASON_HANDLER_PANICKED; its text stays in the host's own log.
+    # ANGZARR_REASON_UNHANDLED_HANDLER_ERROR with cause
+    # ANGZARR_REASON_HANDLER_PANICKED; its text stays in the host's own log.
     channel = started(_upcaster_host(_FailingUpcaster(RuntimeError("boom"))))
     stub = upcaster_pb2_grpc.UpcasterServiceStub(channel)
     with pytest.raises(grpc.RpcError) as err:
         stub.Upcast(upcaster_pb2.UpcastRequest(), timeout=5)
     assert err.value.code() == grpc.StatusCode.INTERNAL
-    assert err.value.details() == "ROUTER_REASON_UNHANDLED_HANDLER_ERROR"
+    assert err.value.details() == "ANGZARR_REASON_UNHANDLED_HANDLER_ERROR"
     info = _error_info(err.value)
     assert (info.reason, dict(info.metadata)) == (
-        "ROUTER_REASON_UNHANDLED_HANDLER_ERROR",
-        {"cause": "ROUTER_REASON_HANDLER_PANICKED"},
+        "ANGZARR_REASON_UNHANDLED_HANDLER_ERROR",
+        {"cause": "ANGZARR_REASON_HANDLER_PANICKED"},
     )
     raw = dict(err.value.trailing_metadata())["grpc-status-details-bin"]
     assert b"boom" not in raw
@@ -386,9 +386,9 @@ def test_a_host_given_a_second_component_refuses_to_start(first, second):
         assert host.descriptor.name == first_table.name
         with pytest.raises(ConfigurationError) as exc:
             host.start("127.0.0.1:0")
-        assert exc.value.code == "ROUTER_REASON_DUPLICATE_COMPONENT"
+        assert exc.value.code == "ANGZARR_REASON_DUPLICATE_COMPONENT"
         assert str(exc.value).startswith(
-            "ROUTER_REASON_DUPLICATE_COMPONENT registered="
+            "ANGZARR_REASON_DUPLICATE_COMPONENT registered="
         )
         assert exc.value.details == {
             "registered": first_table.name,
@@ -465,8 +465,8 @@ def test_start_serves_an_upcaster_only_host_and_refuses_a_second_start():
     with pytest.raises(ConfigurationError) as refused:
         ComponentHost(Router()).start("127.0.0.1:0")
     assert (refused.value.code, str(refused.value)) == (
-        "HOST_REASON_NO_COMPONENTS_REGISTERED",
-        "HOST_REASON_NO_COMPONENTS_REGISTERED",
+        "ANGZARR_REASON_NO_COMPONENTS_REGISTERED",
+        "ANGZARR_REASON_NO_COMPONENTS_REGISTERED",
     )
     host = _counter_host()
     host.start("127.0.0.1:0")

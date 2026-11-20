@@ -43,7 +43,11 @@ def test_generated_protos_import_under_the_package(tmp_path):
     } <= names
     assert not any(name.startswith("io/angzarr/status") for name in names)
     assert not any(name.startswith("io/angzarr/router") for name in names)
-    text = (tmp_path / "proto" / "io/angzarr/v1/command_handler_pb2.py").read_text()
+    text = (
+        tmp_path
+        / "proto"
+        / "io/angzarr/transport/distributed/v1/command_handler_pb2.py"
+    ).read_text()
     assert "from angzarr_client.proto.io.angzarr.v1 import types_pb2" in text
     assert re.search(r"^from io\.", text, re.MULTILINE) is None
 
@@ -89,12 +93,12 @@ def test_the_reason_args_and_the_catalog_are_generated_beside_the_reasons(tmp_pa
         == (proto_build.PROJECT_PROTO / "io/angzarr/v1/reasons.en-US.ftl").read_text()
     )
     namespace = runpy.run_path(str(tmp_path / "proto" / "io/angzarr/v1/reason_args.py"))
-    assert namespace["ARGS"]["ROUTER_REASON_ANY_DECODE_FAILED"] == (
+    assert namespace["ARGS"]["ANGZARR_REASON_ANY_DECODE_FAILED"] == (
         "message_type",
         "ext_err_txt",
     )
-    assert namespace["ARGS"]["ROUTER_REASON_HANDLER_PANICKED"] == ()
-    assert "ROUTER_REASON_UNSPECIFIED" not in namespace["ARGS"]
+    assert namespace["ARGS"]["ANGZARR_REASON_HANDLER_PANICKED"] == ()
+    assert "ANGZARR_REASON_UNSPECIFIED" not in namespace["ARGS"]
     assert namespace["MESSAGE_TYPE"] == "message_type"
     assert namespace["REFUSED"] == "refused"
 
@@ -105,13 +109,13 @@ def test_a_live_key_without_its_option_fails_the_build():
     from angzarr_client.proto.io.angzarr.v1 import reasons_pb2
 
     file = descriptor_pb2.FileDescriptorProto(name="io/angzarr/v1/reasons.proto")
-    enum = file.enum_type.add(name="RouterReason")
-    enum.value.add(name="ROUTER_REASON_UNSPECIFIED", number=0)
-    enum.value.add(name="ROUTER_REASON_LIVE", number=1)
+    enum = file.enum_type.add(name="AngzarrReason")
+    enum.value.add(name="ANGZARR_REASON_UNSPECIFIED", number=0)
+    enum.value.add(name="ANGZARR_REASON_LIVE", number=1)
     with pytest.raises(
-        proto_build.ProtoBuildError, match="ROUTER_REASON_LIVE declares no args"
+        proto_build.ProtoBuildError, match="ANGZARR_REASON_LIVE declares no args"
     ):
-        proto_build._package_args(file, ("RouterReason",), reasons_pb2.reason)
+        proto_build._package_args(file, ("AngzarrReason",), reasons_pb2.reason)
 
 
 def test_each_transport_has_its_own_reason_args_and_catalog(tmp_path):
@@ -122,12 +126,12 @@ def test_each_transport_has_its_own_reason_args_and_catalog(tmp_path):
     for package, key, args in (
         (
             "io/angzarr/transport/embedded/v1",
-            "HOST_REASON_HANDSHAKE_MALFORMED",
-            ("line",),
+            "EMBEDDED_REASON_CHILD_NOT_SERVING",
+            ("component", "status", "timeout_ms"),
         ),
         (
             "io/angzarr/transport/distributed/v1",
-            "COORDINATOR_REASON_PAYLOAD_UNAVAILABLE",
+            "DISTRIBUTED_REASON_PAYLOAD_UNAVAILABLE",
             ("uri", "cause"),
         ),
     ):
@@ -135,8 +139,8 @@ def test_each_transport_has_its_own_reason_args_and_catalog(tmp_path):
         namespace = runpy.run_path(str(tmp_path / "proto" / package / "reason_args.py"))
         assert namespace["ARGS"][key] == args
     core = runpy.run_path(str(tmp_path / "proto" / "io/angzarr/v1/reason_args.py"))
-    assert "HOST_REASON_HANDSHAKE_MALFORMED" not in core["ARGS"]
-    assert "HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN" in core["ARGS"]
+    assert "EMBEDDED_REASON_CHILD_NOT_SERVING" not in core["ARGS"]
+    assert "ANGZARR_REASON_NO_INPUT_DOMAIN" in core["ARGS"]
 
 
 def test_each_keys_status_is_generated_beside_its_args(tmp_path):
@@ -145,15 +149,15 @@ def test_each_keys_status_is_generated_beside_its_args(tmp_path):
     # which never travels as a status.
     proto_build.generate_protos(tmp_path / "proto")
     core = runpy.run_path(str(tmp_path / "proto" / "io/angzarr/v1/reason_args.py"))
-    assert core["STATUSES"]["ROUTER_REASON_PERSISTED_EVENT_CORRUPT"] == 15
-    assert core["STATUSES"]["ROUTER_REASON_NO_COMPONENT_OF_KIND"] == 12
-    assert core["STATUSES"]["COORDINATOR_REASON_EDITION_NOT_FORKED"] == 9
-    assert core["STATUSES"]["COORDINATOR_REASON_MISSING_RULES_VERSION"] is None
+    assert core["STATUSES"]["ANGZARR_REASON_PERSISTED_EVENT_CORRUPT"] == 15
+    assert core["STATUSES"]["ANGZARR_REASON_NO_COMPONENT_OF_KIND"] == 12
+    assert core["STATUSES"]["ANGZARR_REASON_EDITION_NOT_FORKED"] == 9
+    assert core["STATUSES"]["ANGZARR_REASON_MISSING_RULES_VERSION"] is None
     assert set(core["STATUSES"]) == set(core["ARGS"])
     embedded = runpy.run_path(
         str(tmp_path / "proto" / "io/angzarr/transport/embedded/v1/reason_args.py")
     )
-    assert embedded["STATUSES"]["HOST_REASON_PROBE_INPUT"] == 3
+    assert embedded["STATUSES"]["EMBEDDED_REASON_PROBE_INPUT"] == 3
 
 
 def test_a_live_key_without_its_status_fails_the_build():
@@ -162,11 +166,28 @@ def test_a_live_key_without_its_status_fails_the_build():
     from angzarr_client.proto.io.angzarr.v1 import reasons_pb2
 
     file = descriptor_pb2.FileDescriptorProto(name="io/angzarr/v1/reasons.proto")
-    enum = file.enum_type.add(name="RouterReason")
-    enum.value.add(name="ROUTER_REASON_UNSPECIFIED", number=0)
-    live = enum.value.add(name="ROUTER_REASON_LIVE", number=1)
+    enum = file.enum_type.add(name="AngzarrReason")
+    enum.value.add(name="ANGZARR_REASON_UNSPECIFIED", number=0)
+    live = enum.value.add(name="ANGZARR_REASON_LIVE", number=1)
     live.options.Extensions[reasons_pb2.reason].args.append("limit")
     with pytest.raises(
-        proto_build.ProtoBuildError, match="ROUTER_REASON_LIVE declares no status"
+        proto_build.ProtoBuildError, match="ANGZARR_REASON_LIVE declares no status"
     ):
-        proto_build._package_args(file, ("RouterReason",), reasons_pb2.reason)
+        proto_build._package_args(file, ("AngzarrReason",), reasons_pb2.reason)
+
+
+def test_the_isolated_build_env_carries_what_the_reasons_module_imports():
+    """The build hook loads core's generated reasons_pb2 to read the
+    ``(reason)`` option; that module imports google.rpc.code_pb2, which
+    googleapis-common-protos supplies. pip and uv build in an isolated
+    environment holding only [build-system] requires, so the package must
+    be named there, not only in the runtime dependencies."""
+    text = (proto_build.ROOT / "pyproject.toml").read_text()
+    requires = re.search(
+        r"^\[build-system\]\s*(?:#.*\n)*requires = \[(.*?)\]",
+        text,
+        re.DOTALL | re.MULTILINE,
+    )
+    assert requires and "googleapis-common-protos" in requires.group(1)
+    reasons = (proto_build.PROJECT_PROTO / "io/angzarr/v1/reasons.proto").read_text()
+    assert "google/rpc/code.proto" in reasons

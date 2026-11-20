@@ -91,6 +91,6 @@ def test_the_parent_would_refuse_a_descriptor_that_breaks_a_rule():
         name="Totals", kind=types_pb2.COMPONENT_KIND_PROJECTOR
     )
     assert _refusal(descriptor) == (
-        "COORDINATOR_REASON_MISSING_RULES_VERSION",
+        "ANGZARR_REASON_MISSING_RULES_VERSION",
         {"component": "Totals"},
     )

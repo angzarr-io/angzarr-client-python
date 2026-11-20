@@ -1,7 +1,9 @@
 [build-system]
 # grpcio-tools generates the framework protos (protoc + gRPC plugin, protobuf
-# 7.x gencode; hatch_build.py, scripts/proto_build.py).
-requires = ["hatchling", "grpcio-tools>=1.84,<1.85"]
+# 7.x gencode; hatch_build.py, scripts/proto_build.py). The hook loads core's
+# generated reasons_pb2, which imports google.rpc.code_pb2 (reasons.proto's
+# ReasonStatus), so googleapis-common-protos is a build requirement too.
+requires = ["hatchling", "grpcio-tools>=1.84,<1.85", "googleapis-common-protos>=1.65"]
 build-backend = "hatchling.build"
 
 [project]

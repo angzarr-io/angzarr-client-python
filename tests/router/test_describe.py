@@ -121,7 +121,7 @@ def test_the_coordinators_refusals_come_before_the_projectors_input():
     projector = ProjectorDispatch("All", counter_pb2.CounterProjectorState)
     with pytest.raises(ConfigurationError) as info:
         describe(projector)
-    assert info.value.code == "COORDINATOR_REASON_MISSING_RULES_VERSION"
+    assert info.value.code == "ANGZARR_REASON_MISSING_RULES_VERSION"
 
 
 # --- the rules version ---------------------------------------------------------
@@ -135,9 +135,9 @@ def test_the_rules_version_defaults_to_the_tables_own():
 def test_without_a_rules_version_nothing_is_described():
     with pytest.raises(ConfigurationError) as info:
         describe(counter_aggregate([]))
-    assert info.value.code == "COORDINATOR_REASON_MISSING_RULES_VERSION"
+    assert info.value.code == "ANGZARR_REASON_MISSING_RULES_VERSION"
     assert str(info.value) == (
-        "COORDINATOR_REASON_MISSING_RULES_VERSION component=CounterAggregate"
+        "ANGZARR_REASON_MISSING_RULES_VERSION component=CounterAggregate"
     )
     assert info.value.details == {"component": "CounterAggregate"}
 
@@ -260,7 +260,7 @@ def test_resolutions_on_a_stateless_kind_are_refused(table):
 def test_a_policy_with_no_output_domain_is_refused():
     with pytest.raises(ConfigurationError) as info:
         describe(order_policy("", []), rules_version=VERSION)
-    assert info.value.code == "COORDINATOR_REASON_POLICY_NO_OUTPUT_DOMAIN"
+    assert info.value.code == "ANGZARR_REASON_POLICY_NO_OUTPUT_DOMAIN"
     assert info.value.details == {"component": "OrderPolicy"}
 
 
@@ -288,7 +288,7 @@ def test_no_state_on_a_stateful_kind_is_refused():
         rules_version=VERSION,
     )
     assert _refusal(descriptor) == (
-        "COORDINATOR_REASON_MISSING_STATE_TYPE",
+        "ANGZARR_REASON_MISSING_STATE_TYPE",
         {
             "component": "Fulfillment",
             "component_kind": "COMPONENT_KIND_PROCESS_MANAGER",
@@ -317,7 +317,7 @@ def test_the_rules_are_checked_in_the_coordinators_order():
         starting_types=["x.Y"],
         state=types_pb2.StateDescriptor(type_url="/x.S"),
     )
-    assert _refusal(descriptor)[0] == "COORDINATOR_REASON_MISSING_RULES_VERSION"
+    assert _refusal(descriptor)[0] == "ANGZARR_REASON_MISSING_RULES_VERSION"
     descriptor.rules_version = VERSION
     assert _refusal(descriptor)[0] == "COORDINATOR_REASON_STARTING_TYPES_ON_NON_PM"
     del descriptor.starting_types[:]
@@ -328,7 +328,7 @@ def test_the_rules_are_checked_in_the_coordinators_order():
     descriptor.inputs.add(domain="b")
     assert _refusal(descriptor)[0] == "COORDINATOR_REASON_POLICY_INPUT_COUNT"
     del descriptor.inputs[1:]
-    assert _refusal(descriptor)[0] == "COORDINATOR_REASON_POLICY_NO_OUTPUT_DOMAIN"
+    assert _refusal(descriptor)[0] == "ANGZARR_REASON_POLICY_NO_OUTPUT_DOMAIN"
     descriptor.output_domain = "b"
     assert _refusal(descriptor) is None
 

@@ -192,4 +192,4 @@ def test_an_unhandled_command_is_refused_with_its_reason(pm_channel):
     request.command.page.command.payload.CopyFrom(pack(order_pb2.ShipOrder()))
     with pytest.raises(grpc.RpcError) as err:
         stub.Handle(request, timeout=5)
-    assert err.value.details() == "ROUTER_REASON_UNKNOWN_COMMAND_TYPE"
+    assert err.value.details() == "ANGZARR_REASON_UNKNOWN_COMMAND_TYPE"

@@ -134,13 +134,13 @@ it from the table:
 
 The coordinator refuses a descriptor that breaks one of these rules (in this
 order, each its `CoordinatorReason` key): an empty `rules_version`
-(`COORDINATOR_REASON_MISSING_RULES_VERSION`); `starting_types` on a kind
+(`ANGZARR_REASON_MISSING_RULES_VERSION`); `starting_types` on a kind
 other than a process manager (`COORDINATOR_REASON_STARTING_TYPES_ON_NON_PM`);
 no `state` on an aggregate or a process manager
-(`COORDINATOR_REASON_MISSING_STATE_TYPE`), or a `state` on a policy or a
+(`ANGZARR_REASON_MISSING_STATE_TYPE`), or a `state` on a policy or a
 projector (`COORDINATOR_REASON_STATE_ON_STATELESS_KIND`); a policy without
 exactly one input (`COORDINATOR_REASON_POLICY_INPUT_COUNT`) or without an
-`output_domain` (`COORDINATOR_REASON_POLICY_NO_OUTPUT_DOMAIN`); an
+`output_domain` (`ANGZARR_REASON_POLICY_NO_OUTPUT_DOMAIN`); an
 `output_domain` on any other kind
 (`COORDINATOR_REASON_OUTPUT_DOMAIN_ON_NON_POLICY`). A refused component is
 never delivered to. `describe` never builds such a descriptor: it raises

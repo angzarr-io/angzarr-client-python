@@ -160,7 +160,7 @@ def test_a_descriptor_of_another_rules_version_is_refused(kind):
     assert host.descriptor is None
     with pytest.raises(ConfigurationError) as start:
         host.start("127.0.0.1:0")
-    assert start.value.code == codes.HOST_REASON_NO_COMPONENTS_REGISTERED
+    assert start.value.code == codes.ANGZARR_REASON_NO_COMPONENTS_REGISTERED
 
 
 @pytest.mark.parametrize(
@@ -190,7 +190,7 @@ def _assert_projector_refused(host: ComponentHost, table, descriptor) -> None:
     assert host.descriptor is None
     with pytest.raises(ConfigurationError) as start:
         host.start("127.0.0.1:0")
-    assert start.value.code == codes.HOST_REASON_NO_COMPONENTS_REGISTERED
+    assert start.value.code == codes.ANGZARR_REASON_NO_COMPONENTS_REGISTERED
 
 
 def test_a_projector_table_naming_no_domain_is_refused():

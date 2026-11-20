@@ -47,9 +47,9 @@ PROJECT_TREES = (
 # (and to the package's proto/), with its key enums: its reasons.proto, its
 # catalog, and the args module generated from it sit there.
 REASON_PACKAGES = {
-    "io/angzarr/v1": ("RouterReason", "HostReason", "CoordinatorReason"),
-    "io/angzarr/transport/embedded/v1": ("HostReason",),
-    "io/angzarr/transport/distributed/v1": ("CoordinatorReason",),
+    "io/angzarr/v1": ("AngzarrReason",),
+    "io/angzarr/transport/embedded/v1": ("EmbeddedReason",),
+    "io/angzarr/transport/distributed/v1": ("DistributedReason",),
 }
 # Core's reasons module, which declares the (reason) option.
 CORE_REASONS = "io/angzarr/v1"
@@ -174,18 +174,13 @@ def _declared(
     }
 
 
-# ReasonStatus's READINESS (reasons.proto; decision 14.65): no
-# google.rpc.Code, since a readiness refusal never travels as a status.
-_READINESS = 100
-
-
 def _package_args(
     file, enums: tuple[str, ...], reason
 ) -> tuple[dict[str, tuple[str, ...]], dict[str, int | None]]:
     """One reasons.proto's live keys' args and statuses, by key, from its
     descriptor ``file``, for its key ``enums``: a status as the
-    google.rpc.Code number it travels with (a ReasonStatus value's number
-    is its code's), None for a readiness refusal."""
+    google.rpc.Code number it travels with (the (reason) option's
+    ``grpc_status``), None for a readiness refusal."""
     from google.protobuf import descriptor_pb2
 
     found = {e.name: e for e in file.enum_type}
@@ -204,13 +199,14 @@ def _package_args(
                     f"{value.name} declares no args (its (reason) option)"
                 )
             option = options.Extensions[reason]
-            if not option.status:
+            surface = option.WhichOneof("surfaces")
+            if surface is None:
                 raise ProtoBuildError(
                     f"{value.name} declares no status (its (reason) option)"
                 )
             declared[value.name] = tuple(option.args)
             statuses[value.name] = (
-                None if option.status == _READINESS else option.status
+                None if surface == "readiness" else option.grpc_status
             )
     return declared, statuses
 

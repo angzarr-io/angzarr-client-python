@@ -4,8 +4,8 @@
 A handler fails with one of :class:`Rejection`, :class:`Refused`,
 :class:`Immediate`, :class:`Bug` or :class:`RetryableBug`, or with the
 :class:`UnclassifiedError` it does not classify. Anything else escaping
-business code is Python's panic: ``ROUTER_REASON_UNHANDLED_HANDLER_ERROR``
-with cause ``ROUTER_REASON_HANDLER_PANICKED`` (decision 14.42, C-0669). What
+business code is Python's panic: ``ANGZARR_REASON_UNHANDLED_HANDLER_ERROR``
+with cause ``ANGZARR_REASON_HANDLER_PANICKED`` (decision 14.42, C-0669). What
 escaped is logged here, never answered. The router answers a status and a key and never classifies
 them: the four classes are the coordinator's (decision 14.42).
 """
@@ -20,7 +20,7 @@ from google.rpc import error_details_pb2, status_pb2
 
 from ..diagnostic import display
 from ..proto.io.angzarr.v1 import reason_args
-from ..proto.io.angzarr.v1.reasons_pb2 import RouterReason
+from ..proto.io.angzarr.v1.reasons_pb2 import AngzarrReason
 
 _log = logging.getLogger(__name__)
 
@@ -28,25 +28,22 @@ _log = logging.getLogger(__name__)
 ERROR_INFO_DOMAIN = "angzarr.io"
 
 # The router's reason keys (angzarr-project proto/io/angzarr/v1/reasons.proto,
-# decision 14.44). A key on the wire is its RouterReason value's full name,
-# the prefix included ("ROUTER_REASON_FOLD_FAILED"), never its number.
-_key = RouterReason.Name
-UNHANDLED_HANDLER_ERROR = _key(RouterReason.ROUTER_REASON_UNHANDLED_HANDLER_ERROR)
-HANDLER_PANICKED = _key(RouterReason.ROUTER_REASON_HANDLER_PANICKED)
-COMMAND_REFUSED = _key(RouterReason.ROUTER_REASON_COMMAND_REFUSED)
-FOLD_FAILED = _key(RouterReason.ROUTER_REASON_FOLD_FAILED)
-FOLD_FAILED_EMITTED = _key(RouterReason.ROUTER_REASON_FOLD_FAILED_EMITTED)
-PERSISTED_EVENT_CORRUPT = _key(RouterReason.ROUTER_REASON_PERSISTED_EVENT_CORRUPT)
-ANY_DECODE_FAILED = _key(RouterReason.ROUTER_REASON_ANY_DECODE_FAILED)
-UNKNOWN_COMMAND_TYPE = _key(RouterReason.ROUTER_REASON_UNKNOWN_COMMAND_TYPE)
-NO_FACT_HANDLER = _key(RouterReason.ROUTER_REASON_NO_FACT_HANDLER)
-NO_REFUSAL_HANDLER = _key(RouterReason.ROUTER_REASON_NO_REFUSAL_HANDLER)
-CONFLICT_RESOLUTION_UNSUPPORTED = _key(
-    RouterReason.ROUTER_REASON_CONFLICT_RESOLUTION_UNSUPPORTED
-)
-NO_COMPONENT_OF_KIND = _key(RouterReason.ROUTER_REASON_NO_COMPONENT_OF_KIND)
-NO_HANDLERS_REGISTERED = _key(RouterReason.ROUTER_REASON_NO_HANDLERS_REGISTERED)
-DUPLICATE_COMPONENT = _key(RouterReason.ROUTER_REASON_DUPLICATE_COMPONENT)
+# decision 14.44). A key on the wire is its AngzarrReason value's full name,
+# the prefix included ("ANGZARR_REASON_FOLD_FAILED"), never its number.
+_key = AngzarrReason.Name
+UNHANDLED_HANDLER_ERROR = _key(AngzarrReason.ANGZARR_REASON_UNHANDLED_HANDLER_ERROR)
+HANDLER_PANICKED = _key(AngzarrReason.ANGZARR_REASON_HANDLER_PANICKED)
+COMMAND_REFUSED = _key(AngzarrReason.ANGZARR_REASON_COMMAND_REFUSED)
+FOLD_FAILED = _key(AngzarrReason.ANGZARR_REASON_FOLD_FAILED)
+FOLD_FAILED_EMITTED = _key(AngzarrReason.ANGZARR_REASON_FOLD_FAILED_EMITTED)
+PERSISTED_EVENT_CORRUPT = _key(AngzarrReason.ANGZARR_REASON_PERSISTED_EVENT_CORRUPT)
+ANY_DECODE_FAILED = _key(AngzarrReason.ANGZARR_REASON_ANY_DECODE_FAILED)
+UNKNOWN_COMMAND_TYPE = _key(AngzarrReason.ANGZARR_REASON_UNKNOWN_COMMAND_TYPE)
+NO_FACT_HANDLER = _key(AngzarrReason.ANGZARR_REASON_NO_FACT_HANDLER)
+NO_REFUSAL_HANDLER = _key(AngzarrReason.ANGZARR_REASON_NO_REFUSAL_HANDLER)
+NO_COMPONENT_OF_KIND = _key(AngzarrReason.ANGZARR_REASON_NO_COMPONENT_OF_KIND)
+NO_HANDLERS_REGISTERED = _key(AngzarrReason.ANGZARR_REASON_NO_HANDLERS_REGISTERED)
+DUPLICATE_COMPONENT = _key(AngzarrReason.ANGZARR_REASON_DUPLICATE_COMPONENT)
 
 
 class GrpcCode(enum.IntEnum):
@@ -163,7 +160,7 @@ class Rejection(CodedError):
 
 class Refused(CodedError):
     """A typed refusal: one of the command's ``refuses`` messages. It
-    travels as ``ROUTER_REASON_COMMAND_REFUSED``, ``refusal_type`` naming the
+    travels as ``ANGZARR_REASON_COMMAND_REFUSED``, ``refusal_type`` naming the
     object's type, and the object in the status details, under ``status``,
     given positionally: its Reason value's ``refusal_status`` (decision
     14.52), one of the business set, FAILED_PRECONDITION (the default),
@@ -190,7 +187,7 @@ class Immediate(CodedError):
 
 
 class Bug(CodedError):
-    """A fatal bug: INTERNAL ``ROUTER_REASON_UNHANDLED_HANDLER_ERROR``, the
+    """A fatal bug: INTERNAL ``ANGZARR_REASON_UNHANDLED_HANDLER_ERROR``, the
     handler's key as its ``cause`` and each arg as ``cause.<arg>``."""
 
     def __init__(self, key: str, **args: object) -> None:
@@ -200,7 +197,7 @@ class Bug(CodedError):
 
 class RetryableBug(CodedError):
     """A retryable bug (a dependency is down, say):
-    ``ROUTER_REASON_UNHANDLED_HANDLER_ERROR`` under the status the handler picks, given positionally: UNAVAILABLE,
+    ``ANGZARR_REASON_UNHANDLED_HANDLER_ERROR`` under the status the handler picks, given positionally: UNAVAILABLE,
     DEADLINE_EXCEEDED or RESOURCE_EXHAUSTED; any other is a
     :class:`ValueError`. Its key and args are the cause, as a :class:`Bug`'s."""
 
@@ -215,9 +212,9 @@ class RetryableBug(CodedError):
 
 class UnclassifiedError(Exception):
     """An error business code does not classify (Rust's unclassified
-    handler error): ``ROUTER_REASON_UNHANDLED_HANDLER_ERROR`` with no cause.
+    handler error): ``ANGZARR_REASON_UNHANDLED_HANDLER_ERROR`` with no cause.
     Its text stays in the handler's log. Any OTHER exception escaping business code is a
-    panic, cause ``ROUTER_REASON_HANDLER_PANICKED`` (decision 14.42, C-0669)."""
+    panic, cause ``ANGZARR_REASON_HANDLER_PANICKED`` (decision 14.42, C-0669)."""
 
 
 def type_name(type_url: str) -> str:
@@ -233,7 +230,7 @@ def pack(msg) -> any_pb2.Any:
 
 
 def any_decode_error(type_url: str, cause: BaseException) -> CodedError:
-    """INTERNAL ``ROUTER_REASON_ANY_DECODE_FAILED``: bytes that do not decode
+    """INTERNAL ``ANGZARR_REASON_ANY_DECODE_FAILED``: bytes that do not decode
     as the message ``type_url`` names (``message_type``), the protobuf runtime's
     own text carried verbatim as ``ext_err_txt``."""
     return CodedError(
@@ -255,7 +252,7 @@ def unknown_type(code: str, type_url: str) -> CodedError:
 def escaped(exc: Exception) -> CodedError:
     """What an exception escaping business code is answered as: a coded
     error as itself, an :class:`UnclassifiedError` as
-    ``ROUTER_REASON_UNHANDLED_HANDLER_ERROR`` with no cause, anything else as
+    ``ANGZARR_REASON_UNHANDLED_HANDLER_ERROR`` with no cause, anything else as
     a panic. Logs what escaped."""
     if isinstance(exc, CodedError):
         return exc
@@ -269,7 +266,7 @@ def escaped(exc: Exception) -> CodedError:
 
 def as_cause(exc: Exception) -> dict[str, str]:
     """A failing applier's or fold's failure as the ``cause`` args of the
-    ``ROUTER_REASON_FOLD_FAILED`` it causes: a handler bug's own cause (none
+    ``ANGZARR_REASON_FOLD_FAILED`` it causes: a handler bug's own cause (none
     for an unclassified error), any other coded error's key and args."""
     coded = escaped(exc)
     if coded.code == UNHANDLED_HANDLER_ERROR:

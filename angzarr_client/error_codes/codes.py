@@ -8,9 +8,9 @@ value it is, its English the spec's catalog (decision 14.60).
 """
 
 from ..proto.io.angzarr.transport.embedded.v1.reasons_pb2 import (
-    HostReason as ChildReason,
+    EmbeddedReason as ChildReason,
 )
-from ..proto.io.angzarr.v1.reasons_pb2 import HostReason, RouterReason
+from ..proto.io.angzarr.v1.reasons_pb2 import AngzarrReason
 
 # Validation
 VALUE_NOT_POSITIVE = "VALUE_NOT_POSITIVE"
@@ -43,26 +43,26 @@ GRPC_ERROR = "GRPC_ERROR"
 # full name, the prefix included.
 # An error escaped a handler, or it failed as a bug; its cause names why
 # (decision 14.37).
-ROUTER_REASON_UNHANDLED_HANDLER_ERROR = RouterReason.Name(
-    RouterReason.ROUTER_REASON_UNHANDLED_HANDLER_ERROR
+ANGZARR_REASON_UNHANDLED_HANDLER_ERROR = AngzarrReason.Name(
+    AngzarrReason.ANGZARR_REASON_UNHANDLED_HANDLER_ERROR
 )
-# The cause of a ROUTER_REASON_UNHANDLED_HANDLER_ERROR when an exception
+# The cause of a ANGZARR_REASON_UNHANDLED_HANDLER_ERROR when an exception
 # escaped.
-ROUTER_REASON_HANDLER_PANICKED = RouterReason.Name(
-    RouterReason.ROUTER_REASON_HANDLER_PANICKED
+ANGZARR_REASON_HANDLER_PANICKED = AngzarrReason.Name(
+    AngzarrReason.ANGZARR_REASON_HANDLER_PANICKED
 )
-HOST_REASON_NO_COMPONENTS_REGISTERED = HostReason.Name(
-    HostReason.HOST_REASON_NO_COMPONENTS_REGISTERED
+ANGZARR_REASON_NO_COMPONENTS_REGISTERED = AngzarrReason.Name(
+    AngzarrReason.ANGZARR_REASON_NO_COMPONENTS_REGISTERED
 )
 # An upcaster is its own sidecar host (decision 14.39): a host given a
 # component and an upcaster is refused (details: component).
-HOST_REASON_UPCASTER_WITH_COMPONENT = HostReason.Name(
-    HostReason.HOST_REASON_UPCASTER_WITH_COMPONENT
+ANGZARR_REASON_UPCASTER_WITH_COMPONENT = AngzarrReason.Name(
+    AngzarrReason.ANGZARR_REASON_UPCASTER_WITH_COMPONENT
 )
 # A host serves exactly one component; a second registration is refused
 # (details: registered, refused).
-ROUTER_REASON_DUPLICATE_COMPONENT = RouterReason.Name(
-    RouterReason.ROUTER_REASON_DUPLICATE_COMPONENT
+ANGZARR_REASON_DUPLICATE_COMPONENT = AngzarrReason.Name(
+    AngzarrReason.ANGZARR_REASON_DUPLICATE_COMPONENT
 )
 
 # Child process (angzarr_client.child)
@@ -78,13 +78,13 @@ HOST_REASON_HANDSHAKE_MALFORMED = ChildReason.Name(
 # Component descriptors (angzarr_client.descriptor, ComponentHost)
 # A descriptor whose rules_version is not the version the component's
 # answers report (details: component, described, reported; C-0743).
-HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH = HostReason.Name(
-    HostReason.HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH
+HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH = AngzarrReason.Name(
+    AngzarrReason.HOST_REASON_DESCRIPTOR_RULES_VERSION_MISMATCH
 )
 # A projector naming no domain it reads: its table's domains or its
 # descriptor's inputs empty (details: component; C-0747, decision 14.55).
-HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN = HostReason.Name(
-    HostReason.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN
+HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN = AngzarrReason.Name(
+    AngzarrReason.HOST_REASON_PROJECTOR_NO_INPUT_DOMAIN
 )
 # The component host's own refusals to start.
 HOST_SERVICE_UNNAMED = "HOST_SERVICE_UNNAMED"

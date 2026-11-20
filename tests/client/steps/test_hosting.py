@@ -404,7 +404,7 @@ def _app_served(world: _World, name: str) -> None:
 @then("starting fails with a configuration error naming both components")
 def _config_error_naming_both(world: _World) -> None:
     assert isinstance(world.start_error, ConfigurationError)
-    assert world.start_error.code == "ROUTER_REASON_DUPLICATE_COMPONENT"
+    assert world.start_error.code == "ANGZARR_REASON_DUPLICATE_COMPONENT"
     assert world.start_error.details == {
         "registered": "order-component",
         "refused": "payment-component",
@@ -445,7 +445,7 @@ def _none_registered(world: _World) -> None:
     assert world.host.descriptor is None
     with pytest.raises(ConfigurationError) as info:
         world.host.start("127.0.0.1:0")
-    assert info.value.code == "HOST_REASON_NO_COMPONENTS_REGISTERED"
+    assert info.value.code == "ANGZARR_REASON_NO_COMPONENTS_REGISTERED"
 
 
 @then("no service is served")
@@ -457,4 +457,4 @@ def _nothing_served(world: _World) -> None:
 @then("starting fails with a configuration error")
 def _config_error(world: _World) -> None:
     assert isinstance(world.start_error, ConfigurationError)
-    assert world.start_error.code == "HOST_REASON_NO_COMPONENTS_REGISTERED"
+    assert world.start_error.code == "ANGZARR_REASON_NO_COMPONENTS_REGISTERED"

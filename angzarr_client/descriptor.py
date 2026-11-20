@@ -36,7 +36,7 @@ The descriptor's fields, as the coordinator reads them (``types.proto``,
 The coordinator refuses a descriptor that breaks a rule (decision 14.42,
 angzarr-embedded-host's ``descriptor::validate``), in this order, each with
 its ``CoordinatorReason`` key: an empty rules version
-(``COORDINATOR_REASON_MISSING_RULES_VERSION``); starting types on a kind
+(``ANGZARR_REASON_MISSING_RULES_VERSION``); starting types on a kind
 other than a process manager (``..._STARTING_TYPES_ON_NON_PM``); no state on
 an aggregate or a process manager (``..._MISSING_STATE_TYPE``), a state on a
 policy or a projector (``..._STATE_ON_STATELESS_KIND``); a policy without
@@ -192,7 +192,7 @@ def _refusal(descriptor: types_pb2.ComponentDescriptor):
         reason_args.COMPONENT_KIND: types_pb2.ComponentKind.Name(kind),
     }
     if not descriptor.rules_version:
-        return _reason(CoordinatorReason.COORDINATOR_REASON_MISSING_RULES_VERSION), (
+        return _reason(CoordinatorReason.ANGZARR_REASON_MISSING_RULES_VERSION), (
             component
         )
     if kind != _PROCESS_MANAGER and descriptor.starting_types:
@@ -203,7 +203,7 @@ def _refusal(descriptor: types_pb2.ComponentDescriptor):
     has_state = descriptor.HasField("state")
     if kind in _STATEFUL and not has_state:
         return (
-            _reason(CoordinatorReason.COORDINATOR_REASON_MISSING_STATE_TYPE),
+            _reason(CoordinatorReason.ANGZARR_REASON_MISSING_STATE_TYPE),
             with_kind,
         )
     if kind in (_POLICY, _PROJECTOR) and has_state:
@@ -219,7 +219,7 @@ def _refusal(descriptor: types_pb2.ComponentDescriptor):
             }
         if not descriptor.output_domain:
             return (
-                _reason(CoordinatorReason.COORDINATOR_REASON_POLICY_NO_OUTPUT_DOMAIN),
+                _reason(CoordinatorReason.ANGZARR_REASON_POLICY_NO_OUTPUT_DOMAIN),
                 component,
             )
     elif descriptor.output_domain:

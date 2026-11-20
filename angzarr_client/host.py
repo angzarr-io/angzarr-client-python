@@ -4,7 +4,7 @@ binding over gRPC, next to the gRPC health service.
 One business process hosts exactly one component (an aggregate, process
 manager, policy or projector) for its one coordinator; a second registration
 is not hosted, and the host refuses to start, naming both
-(``ROUTER_REASON_DUPLICATE_COMPONENT``). The host knows framework concepts
+(``ANGZARR_REASON_DUPLICATE_COMPONENT``). The host knows framework concepts
 only. An application registers its component (a generated
 ``new_<component>_dispatch(handler)`` table, or a hand-built one) and,
 optionally, its own gRPC services; the host exposes:
@@ -25,15 +25,15 @@ optionally, its own gRPC services; the host exposes:
 An upcaster is its component's sidecar, a process of its own (decision
 14.39): a host given only an upcaster serves ``UpcasterService`` and health,
 and nothing else; a host given a component and an upcaster refuses to start
-(``HOST_REASON_UPCASTER_WITH_COMPONENT``).
+(``ANGZARR_REASON_UPCASTER_WITH_COMPONENT``).
 
 Dispatch is the router's. A coded failure from the router travels as its
 gRPC status, a key and an argument map, never text (decision 14.37): the
 status message is the error's code, and the ``grpc-status-details-bin``
 trailer carries a ``google.rpc.Status`` whose ``ErrorInfo`` has the code as
 its reason and the args as its metadata. Any other exception is
-``ROUTER_REASON_UNHANDLED_HANDLER_ERROR`` with cause
-``ROUTER_REASON_HANDLER_PANICKED``; its text goes to the host's log only.
+``ANGZARR_REASON_UNHANDLED_HANDLER_ERROR`` with cause
+``ANGZARR_REASON_HANDLER_PANICKED``; its text goes to the host's log only.
 
 Health doubles as readiness: every served service (and the overall server,
 ``""``) reports ``NOT_SERVING`` until the readiness supervisor has seen the
@@ -161,9 +161,9 @@ class _Dispatcher:
         except Exception as exc:  # noqa: BLE001
             self._log.error("dispatch_failed", error=str(exc))
             failure = CodedError(
-                codes.ROUTER_REASON_UNHANDLED_HANDLER_ERROR,
+                codes.ANGZARR_REASON_UNHANDLED_HANDLER_ERROR,
                 None,
-                {reason_args.CAUSE: codes.ROUTER_REASON_HANDLER_PANICKED},
+                {reason_args.CAUSE: codes.ANGZARR_REASON_HANDLER_PANICKED},
             )
         details = failure.status().SerializeToString()
         context.set_trailing_metadata(((_STATUS_DETAILS_KEY, details),))
@@ -371,7 +371,7 @@ class ComponentHost:
         component's upcaster sidecar (decision 14.39), serving the upcaster
         and health only. Its component's coordinator calls it; a host given
         a component too refuses to start
-        (``HOST_REASON_UPCASTER_WITH_COMPONENT``)."""
+        (``ANGZARR_REASON_UPCASTER_WITH_COMPONENT``)."""
         self._upcaster = upcaster
         return self
 
@@ -407,14 +407,14 @@ class ComponentHost:
         binds a free port, reflected in the returned address."""
         if self._kind is not None and self._upcaster is not None:
             raise ConfigurationError(
-                codes.HOST_REASON_UPCASTER_WITH_COMPONENT,
+                codes.ANGZARR_REASON_UPCASTER_WITH_COMPONENT,
                 details={reason_args.COMPONENT: self._component_name},
             )
         if self._kind is None and self._upcaster is None:
-            raise ConfigurationError(codes.HOST_REASON_NO_COMPONENTS_REGISTERED)
+            raise ConfigurationError(codes.ANGZARR_REASON_NO_COMPONENTS_REGISTERED)
         if self._refused:
             raise ConfigurationError(
-                codes.ROUTER_REASON_DUPLICATE_COMPONENT,
+                codes.ANGZARR_REASON_DUPLICATE_COMPONENT,
                 details={
                     reason_args.REGISTERED: self._component_name,
                     reason_args.REFUSED: ", ".join(self._refused),

@@ -72,9 +72,9 @@ _DENIAL = CodedError(
 # The detailed status: a framework reason key with its args, and a second
 # detail after the ErrorInfo.
 _DETAILED = CodedError(
-    codes.ROUTER_REASON_UNHANDLED_HANDLER_ERROR,
+    codes.ANGZARR_REASON_UNHANDLED_HANDLER_ERROR,
     GrpcCode.INTERNAL,
-    {reason_args.CAUSE: codes.ROUTER_REASON_HANDLER_PANICKED},
+    {reason_args.CAUSE: codes.ANGZARR_REASON_HANDLER_PANICKED},
 )
 _RETRY = error_details_pb2.RetryInfo(retry_delay=duration_pb2.Duration(seconds=2))
 
@@ -451,12 +451,12 @@ def _then_get_full_status(state: _State) -> None:
 def _then_access_status_parts(state: _State) -> None:
     status = _err(state).status()
     assert status.code == GrpcCode.INTERNAL
-    assert status.message == codes.ROUTER_REASON_UNHANDLED_HANDLER_ERROR
+    assert status.message == codes.ANGZARR_REASON_UNHANDLED_HANDLER_ERROR
     info = error_details_pb2.ErrorInfo()
     assert status.details[0].Unpack(info)
     assert info.reason == status.message
     assert dict(info.metadata) == {
-        reason_args.CAUSE: codes.ROUTER_REASON_HANDLER_PANICKED
+        reason_args.CAUSE: codes.ANGZARR_REASON_HANDLER_PANICKED
     }
     retry = error_details_pb2.RetryInfo()
     assert status.details[1].Unpack(retry)

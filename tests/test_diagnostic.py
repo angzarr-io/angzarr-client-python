@@ -28,11 +28,9 @@ _VARIABLE = re.compile(r"\$([A-Za-z][A-Za-z0-9_-]*)")
 # Every package's key enums (decision 14.64): core's three, then each
 # transport's.
 _ENUMS = (
-    reasons_pb2.RouterReason,
-    reasons_pb2.HostReason,
-    reasons_pb2.CoordinatorReason,
-    embedded_reasons.HostReason,
-    distributed_reasons.CoordinatorReason,
+    reasons_pb2.AngzarrReason,
+    embedded_reasons.EmbeddedReason,
+    distributed_reasons.DistributedReason,
 )
 
 # Every key's args, every package's.
@@ -178,7 +176,7 @@ def test_each_packages_catalog_holds_its_own_keys():
     assert embedded == set(embedded_args.ARGS)
     assert distributed == set(distributed_args.ARGS)
     assert "HOST_REASON_HANDSHAKE_MALFORMED" in embedded
-    assert "COORDINATOR_REASON_PAYLOAD_UNAVAILABLE" in distributed
+    assert "DISTRIBUTED_REASON_PAYLOAD_UNAVAILABLE" in distributed
 
 
 def test_every_spec_message_names_only_args_its_key_declares():
