@@ -30,7 +30,7 @@ cli:
     set -euo pipefail
     if [ -n "${ANGZARR_CLI:-}" ]; then echo "using ANGZARR_CLI=$ANGZARR_CLI"; exit 0; fi
     if [ -x "{{CLI}}" ] && [ "$(cat {{TOP}}/.tools/angzarr.rev 2>/dev/null)" = "{{CLI_REV}}" ]; then exit 0; fi
-    cargo install --quiet --locked --git https://github.com/angzarr-io/angzarr-cli --rev {{CLI_REV}} angzarr-cli --root {{TOP}}/.tools
+    cargo install --quiet --locked --git https://github.com/angzarr-io/angzarr-cli-legacy --rev {{CLI_REV}} angzarr-cli --root {{TOP}}/.tools
     echo "{{CLI_REV}}" > {{TOP}}/.tools/angzarr.rev
 
 # The handler-contract tier's fixture messages
