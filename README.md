@@ -1,3 +1,5 @@
+> **Behind the spec:** this branch bumps `angzarr-project` to f736250 (main, 2026-11-20) and is known to be way behind the spec; it is not meant to be merged as-is. See [BEHIND-SPEC.md](BEHIND-SPEC.md).
+
 # angzarr-client (Python)
 
 The home of [Angzarr](https://angzarr.io) for Python:
